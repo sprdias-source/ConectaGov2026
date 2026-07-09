@@ -15,14 +15,13 @@ import ContabilidadePage from './pages/ContabilidadePage'
 import DiagnosticoPage from './pages/DiagnosticoPage'
 import BIConcorrenciaPage from './pages/BIConcorrenciaPage'
 import ExtratoOFXPage from './pages/ExtratoOFXPage'
+import UsuariosPage from './pages/UsuariosPage'
 import { useRecurringEngine } from './hooks/useRecurringEngine'
 import { useOnlineStatus } from './hooks/useOnlineStatus'
-
 export default function App() {
   const { lastError } = useRecurringEngine()
   const [dismissed, setDismissed] = useState(false)
   const isOnline = useOnlineStatus()
-
   return (
     <RequireAuth>
       <AppShell>
@@ -58,6 +57,7 @@ export default function App() {
           <Route path="/diagnostico" element={<DiagnosticoPage />} />
           <Route path="/bi-concorrencia" element={<BIConcorrenciaPage />} />
           <Route path="/extrato" element={<ExtratoOFXPage />} />
+          <Route path="/usuarios" element={<UsuariosPage />} />
         </Routes>
       </AppShell>
     </RequireAuth>
