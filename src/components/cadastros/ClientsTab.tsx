@@ -1,18 +1,25 @@
 import { useState, useMemo, useEffect } from 'react'
 import { todayLocalISO } from '../../lib/dateUtils'
-import { Search, Plus, Pencil, Trash2, Globe, Phone, MessageCircle, Users, EyeOff, Eye, Power } from 'lucide-react'
+import { Search, Plus, Pencil, Trash2, Globe, Phone, MessageCircle, Users, EyeOff, Eye, Power, Lock } from 'lucide-react'
 import { Button } from '../ui/FormControls'
 import { EmptyState } from '../ui/Primitives'
 import ClientFormModal from './ClientFormModal'
 import DeleteWithPasswordDialog from '../ui/DeleteWithPasswordDialog'
 import ErrorAlert from '../ui/ErrorAlert'
 import { useClients } from '../../hooks/useClients'
+import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import type { Client } from '../../types/domain'
 
 type FilterMode = 'todos' | 'mensalistas' | 'individuais'
 
 export default function ClientsTab() {
   const { clients, isLoading, addClient, updateClient, deleteClient, toggleClientActive, checkClientHasFinancialHistory } = useClients()
+  // Dono da própria conta sempre tem 'edicao'. Membro de equipe segue o que
+  // foi configurado na tela de permissões — se for só 'visualizacao', os
+  // botões de criar/editar/apagar/ativar somem desta tela.
+  const { nivel: nivelAcesso } = usePermissaoFerramenta('clientes')
+  const podeEditar = nivelAcesso === 'edicao'
+
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<FilterMode>('todos')
   const [showInactive, setShowInactive] = useState(false)
@@ -101,9 +108,11 @@ export default function ClientsTab() {
               className="bg-base-850 border border-base-700 rounded-lg pl-8 pr-3 py-1.5 text-[13px] text-base-100 placeholder:text-base-500 outline-none focus:border-accent-400 w-56"
             />
           </div>
-          <Button onClick={() => { setEditing(null); setModalOpen(true) }}>
-            <Plus className="w-4 h-4" /> Novo Cliente
-          </Button>
+          {podeEditar && (
+            <Button onClick={() => { setEditing(null); setModalOpen(true) }}>
+              <Plus className="w-4 h-4" /> Novo Cliente
+            </Button>
+          )}
         </div>
       </div>
 
@@ -115,9 +124,16 @@ export default function ClientsTab() {
           {showInactive ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
           {showInactive ? 'Mostrando inativos' : 'Mostrar inativos'}
         </button>
-        <button onClick={exportCsv} className="text-[12px] font-semibold text-positive-400 hover:text-positive-300 flex items-center gap-1.5">
-          Exportar CSV
-        </button>
+        <div className="flex items-center gap-3">
+          {!podeEditar && (
+            <span className="text-[12px] font-semibold text-base-500 flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5" /> Somente visualização
+            </span>
+          )}
+          <button onClick={exportCsv} className="text-[12px] font-semibold text-positive-400 hover:text-positive-300 flex items-center gap-1.5">
+            Exportar CSV
+          </button>
+        </div>
       </div>
 
       <ErrorAlert error={deleteClient.error || toggleClientActive.error} />
@@ -137,7 +153,9 @@ export default function ClientsTab() {
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Endereço</th>
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Contatos</th>
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Email/Site</th>
-                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Ações</th>
+                  {podeEditar && (
+                    <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Ações</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -166,23 +184,25 @@ export default function ClientsTab() {
                       {c.email && <div className="text-base-300 truncate max-w-[160px]">{c.email}</div>}
                       {c.website && <div className="flex items-center gap-1 text-accent-400 mt-0.5"><Globe className="w-3 h-3" />{c.website}</div>}
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => toggleClientActive.mutate({ client: c, isActive: !c.isActive })}
-                          title={c.isActive ? 'Inativar cliente (preserva histórico)' : 'Reativar cliente'}
-                          className={`p-1.5 rounded transition hover:bg-base-800 ${c.isActive ? 'text-base-400 hover:text-warning-400' : 'text-positive-400 hover:text-positive-300'}`}
-                        >
-                          <Power className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => { setEditing(c); setModalOpen(true) }} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => setDeleting(c)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
+                    {podeEditar && (
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => toggleClientActive.mutate({ client: c, isActive: !c.isActive })}
+                            title={c.isActive ? 'Inativar cliente (preserva histórico)' : 'Reativar cliente'}
+                            className={`p-1.5 rounded transition hover:bg-base-800 ${c.isActive ? 'text-base-400 hover:text-warning-400' : 'text-positive-400 hover:text-positive-300'}`}
+                          >
+                            <Power className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => { setEditing(c); setModalOpen(true) }} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => setDeleting(c)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -191,27 +211,31 @@ export default function ClientsTab() {
         )}
       </div>
 
-      <ClientFormModal
-        open={modalOpen}
-        onClose={() => { setModalOpen(false); setEditing(null) }}
-        onSave={handleSave}
-        initial={editing}
-        isSaving={addClient.isPending || updateClient.isPending}
-        error={addClient.error || updateClient.error}
-      />
+      {podeEditar && (
+        <>
+          <ClientFormModal
+            open={modalOpen}
+            onClose={() => { setModalOpen(false); setEditing(null) }}
+            onSave={handleSave}
+            initial={editing}
+            isSaving={addClient.isPending || updateClient.isPending}
+            error={addClient.error || updateClient.error}
+          />
 
-      <DeleteWithPasswordDialog
-        open={!!deleting}
-        title="Excluir Cliente Definitivamente"
-        entityLabel={`O cliente "${deleting?.name}"`}
-        financialWarning={financialWarning}
-        onCancel={() => setDeleting(null)}
-        onConfirm={() => {
-          if (deleting) deleteClient.mutate(deleting, { onSuccess: () => setDeleting(null) })
-        }}
-        isLoading={deleteClient.isPending}
-        error={deleteClient.error}
-      />
+          <DeleteWithPasswordDialog
+            open={!!deleting}
+            title="Excluir Cliente Definitivamente"
+            entityLabel={`O cliente "${deleting?.name}"`}
+            financialWarning={financialWarning}
+            onCancel={() => setDeleting(null)}
+            onConfirm={() => {
+              if (deleting) deleteClient.mutate(deleting, { onSuccess: () => setDeleting(null) })
+            }}
+            isLoading={deleteClient.isPending}
+            error={deleteClient.error}
+          />
+        </>
+      )}
     </div>
   )
 }
