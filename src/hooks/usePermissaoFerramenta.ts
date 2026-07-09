@@ -40,7 +40,7 @@ export function usePermissaoFerramenta(toolKey: string): { nivel: NivelAcesso; c
         .select('id')
         .eq('member_user_id', user.id)
         .eq('status', 'ativo')
-        .maybeSingle()
+        .maybeSingle() as { data: { id: string } | null }
 
       if (!vinculo) {
         // Não é membro de equipe de ninguém — é dono da própria conta.
@@ -56,7 +56,7 @@ export function usePermissaoFerramenta(toolKey: string): { nivel: NivelAcesso; c
         .select('nivel_acesso')
         .eq('team_member_id', vinculo.id)
         .eq('tool_key', toolKey)
-        .maybeSingle()
+        .maybeSingle() as { data: { nivel_acesso: string } | null }
 
       if (!cancelado) {
         setNivel((permissao?.nivel_acesso as NivelAcesso) ?? 'sem_acesso')
