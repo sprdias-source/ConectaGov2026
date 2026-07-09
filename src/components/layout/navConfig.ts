@@ -1,20 +1,17 @@
 import {
   LayoutDashboard, FolderKanban, Wallet, CalendarRange, FileBarChart,
-  Receipt, FileSignature, Users, Calculator, ShieldCheck, Target, FileText, type LucideIcon,
+  Receipt, FileSignature, Users, Calculator, ShieldCheck, Target, FileText, UserCog, type LucideIcon,
 } from 'lucide-react'
-
 export interface NavItem {
   key: string
   label: string
   path: string
   icon: LucideIcon
 }
-
 export interface NavGroup {
   label: string
   items: NavItem[]
 }
-
 // Agrupado por finalidade em vez de uma lista plana — com 11 telas, uma
 // parede única de itens idênticos dificulta achar o que se procura.
 // Cada grupo carrega um pequeno cabeçalho (sem caixa, só tipografia) para
@@ -49,10 +46,10 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Sistema',
     items: [
+      { key: 'usuarios', label: 'Usuários', path: '/usuarios', icon: UserCog },
       { key: 'diagnostico', label: 'Diagnóstico', path: '/diagnostico', icon: ShieldCheck },
     ],
   },
 ]
-
 // Mantido para qualquer código que ainda dependa da lista plana.
 export const NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((g) => g.items)
