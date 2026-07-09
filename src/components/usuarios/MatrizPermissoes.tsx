@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
 import { SupabaseClient } from '@supabase/supabase-js'
+import { UserPlus, Users } from 'lucide-react'
+import { Button, Select } from '../ui/FormControls'
+import { EmptyState } from '../ui/Primitives'
 
 type Ferramenta = { key: string; nome: string; ordem: number }
 type Membro = { id: string; nome: string | null; email: string | null; status: string }
@@ -69,7 +72,6 @@ export default function MatrizPermissoes({ supabase }: Props) {
   }
 
   async function alterarNivel(teamMemberId: string, toolKey: string, novoNivel: string) {
-    // Atualiza local primeiro (resposta imediata na tela), depois grava
     setPermissoes((atual) =>
       atual.map((p) =>
         p.team_member_id === teamMemberId && p.tool_key === toolKey
@@ -89,82 +91,89 @@ export default function MatrizPermissoes({ supabase }: Props) {
       ?? 'sem_acesso'
   }
 
-  if (carregando) return <p>Carregando equipe...</p>
-
   return (
     <div>
-      <h2 style={{ fontSize: 18, marginBottom: 12 }}>Equipe e permissões</h2>
-
-      <div style={{
-        display: 'flex', gap: 8, marginBottom: 20, padding: 12,
-        background: '#f5f5f5', borderRadius: 6, flexWrap: 'wrap',
-      }}>
-        <input
-          type="email"
-          placeholder="E-mail do novo membro"
-          value={emailConvite}
-          onChange={(e) => setEmailConvite(e.target.value)}
-          style={{ flex: 1, minWidth: 200, padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
-        />
-        <input
-          type="text"
-          placeholder="Nome (opcional)"
-          value={nomeConvite}
-          onChange={(e) => setNomeConvite(e.target.value)}
-          style={{ flex: 1, minWidth: 160, padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
-        />
-        <button
-          onClick={convidar}
-          disabled={!emailConvite.trim() || convidando}
-          style={{
-            padding: '8px 16px', borderRadius: 4, border: 'none',
-            background: '#2563eb', color: '#fff', fontWeight: 600, cursor: 'pointer',
-          }}
-        >
+      <div className="flex flex-wrap items-end gap-2 mb-5">
+        <div className="flex-1 min-w-[200px]">
+          <label className="block text-[11px] font-bold uppercase tracking-wider text-base-500 mb-1">
+            E-mail do novo membro
+          </label>
+          <input
+            type="email"
+            value={emailConvite}
+            onChange={(e) => setEmailConvite(e.target.value)}
+            placeholder="pessoa@email.com"
+            className="w-full bg-base-850 border border-base-700 rounded-lg px-3 py-2 text-[13px] text-base-100 placeholder:text-base-500 outline-none focus:border-accent-400"
+          />
+        </div>
+        <div className="flex-1 min-w-[160px]">
+          <label className="block text-[11px] font-bold uppercase tracking-wider text-base-500 mb-1">
+            Nome (opcional)
+          </label>
+          <input
+            type="text"
+            value={nomeConvite}
+            onChange={(e) => setNomeConvite(e.target.value)}
+            placeholder="Nome da pessoa"
+            className="w-full bg-base-850 border border-base-700 rounded-lg px-3 py-2 text-[13px] text-base-100 placeholder:text-base-500 outline-none focus:border-accent-400"
+          />
+        </div>
+        <Button onClick={convidar} disabled={!emailConvite.trim() || convidando}>
+          <UserPlus className="w-4 h-4" />
           {convidando ? 'Convidando...' : 'Convidar membro'}
-        </button>
+        </Button>
       </div>
 
-      {erro && <p style={{ color: '#dc2626', marginBottom: 12 }}>{erro}</p>}
-
-      {membros.length === 0 ? (
-        <p style={{ color: '#666' }}>Nenhum membro na equipe ainda — convide alguém acima.</p>
-      ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              <th style={{ textAlign: 'left', padding: 8, borderBottom: '2px solid #ddd' }}>Membro</th>
-              {ferramentas.map((f) => (
-                <th key={f.key} style={{ textAlign: 'left', padding: 8, borderBottom: '2px solid #ddd' }}>
-                  {f.nome}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {membros.map((m) => (
-              <tr key={m.id}>
-                <td style={{ padding: 8, borderBottom: '1px solid #eee' }}>
-                  {m.nome || m.email}
-                </td>
-                {ferramentas.map((f) => (
-                  <td key={f.key} style={{ padding: 8, borderBottom: '1px solid #eee' }}>
-                    <select
-                      value={nivelAtual(m.id, f.key)}
-                      onChange={(e) => alterarNivel(m.id, f.key, e.target.value)}
-                      style={{ padding: 4, borderRadius: 4, border: '1px solid #ccc' }}
-                    >
-                      {NIVEIS.map((n) => (
-                        <option key={n} value={n}>{LABEL_NIVEL[n]}</option>
-                      ))}
-                    </select>
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {erro && (
+        <div className="bg-negative-500/10 border border-negative-500/25 rounded-lg p-3 mb-4 text-[13px] text-negative-300">
+          {erro}
+        </div>
       )}
+
+      <div className="bg-base-900/60 border border-base-700/50 rounded-xl overflow-hidden">
+        {carregando ? (
+          <div className="p-10 text-center text-base-500 text-sm">Carregando equipe...</div>
+        ) : membros.length === 0 ? (
+          <EmptyState icon={Users} title="Nenhum membro na equipe ainda" description="Convide alguém pelo formulário acima para começar." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-base-800 text-left">
+                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Membro</th>
+                  {ferramentas.map((f) => (
+                    <th key={f.key} className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">
+                      {f.nome}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {membros.map((m) => (
+                  <tr key={m.id} className="border-b border-base-800/60 hover:bg-base-850/40 transition">
+                    <td className="px-4 py-3 font-semibold text-base-100">
+                      {m.nome || m.email}
+                    </td>
+                    {ferramentas.map((f) => (
+                      <td key={f.key} className="px-4 py-3">
+                        <Select
+                          value={nivelAtual(m.id, f.key)}
+                          onChange={(e) => alterarNivel(m.id, f.key, e.target.value)}
+                          className="text-[12px]"
+                        >
+                          {NIVEIS.map((n) => (
+                            <option key={n} value={n}>{LABEL_NIVEL[n]}</option>
+                          ))}
+                        </Select>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
