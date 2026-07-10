@@ -8,6 +8,7 @@ import { useClients } from '../../hooks/useClients'
 import { useFinancialAccounts } from '../../hooks/useFinancialAccounts'
 import { useCategories } from '../../hooks/useCategories'
 import { usePaymentMethods } from '../../hooks/usePaymentMethods'
+import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import TransactionFormModal from './TransactionFormModal'
 import CategoryManagerModal from './CategoryManagerModal'
 import PaymentMethodManagerModal from './PaymentMethodManagerModal'
@@ -24,6 +25,8 @@ export default function ContasLancamentosTab() {
   const { accounts } = useFinancialAccounts()
   const { categoriesPagar, categoriesReceber } = useCategories()
   const { paymentMethods } = usePaymentMethods()
+  const { nivel: nivelFinanceiro } = usePermissaoFerramenta('financeiro')
+  const podeEditar = nivelFinanceiro === 'edicao'
 
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth())
@@ -80,6 +83,7 @@ export default function ContasLancamentosTab() {
   }
 
   const handleStatusClick = (t: Transaction) => {
+    if (!podeEditar) return
     if (t.status === 'Pago') {
       updateTransactionStatus.mutate({ tx: t, newStatus: 'Pendente' })
     } else {
@@ -99,6 +103,11 @@ export default function ContasLancamentosTab() {
     <div>
       <div className="flex items-center gap-3 mb-4 w-full">
         <MonthHorizontalPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
+        {!podeEditar && (
+          <span className="ml-auto text-[11px] font-semibold text-base-500 bg-base-850 border border-base-700 rounded-full px-3 py-1">
+            Somente visualização
+          </span>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
@@ -142,17 +151,19 @@ export default function ContasLancamentosTab() {
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar lançamentos..." className="pl-8 w-52" />
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={() => setCategoryManagerOpen(true)}>
-            <Tags className="w-4 h-4" /> Categorias
-          </Button>
-          <Button variant="secondary" onClick={() => setPaymentMethodManagerOpen(true)}>
-            <CreditCard className="w-4 h-4" /> Formas de Pagamento
-          </Button>
-          <Button onClick={() => { setEditing(null); setModalOpen(true) }}>
-            <Plus className="w-4 h-4" /> Novo Lançamento
-          </Button>
-        </div>
+        {podeEditar && (
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => setCategoryManagerOpen(true)}>
+              <Tags className="w-4 h-4" /> Categorias
+            </Button>
+            <Button variant="secondary" onClick={() => setPaymentMethodManagerOpen(true)}>
+              <CreditCard className="w-4 h-4" /> Formas de Pagamento
+            </Button>
+            <Button onClick={() => { setEditing(null); setModalOpen(true) }}>
+              <Plus className="w-4 h-4" /> Novo Lançamento
+            </Button>
+          </div>
+        )}
       </div>
 
       <ErrorAlert error={updateTransactionStatus.error || deleteTransaction.error} />
@@ -173,7 +184,9 @@ export default function ContasLancamentosTab() {
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Recebido/Pago em</th>
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right bg-base-850/40">Valor</th>
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Status</th>
-                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Ações</th>
+                  {podeEditar && (
+                    <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Ações</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -198,23 +211,25 @@ export default function ContasLancamentosTab() {
                       {t.type === 'Receber' ? '+' : '−'}{formatBRL(t.value)}
                     </td>
                     <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => handleStatusClick(t)}
-                          title={t.status === 'Pago' ? 'Marcar como pendente' : 'Confirmar pagamento/recebimento'}
-                          className={`p-1.5 rounded transition ${t.status === 'Pago' ? 'text-positive-400 hover:bg-base-800' : 'text-base-400 hover:text-positive-400 hover:bg-base-800'}`}
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => { setEditing(t); setModalOpen(true) }} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => setDeleting(t)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
+                    {podeEditar && (
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => handleStatusClick(t)}
+                            title={t.status === 'Pago' ? 'Marcar como pendente' : 'Confirmar pagamento/recebimento'}
+                            className={`p-1.5 rounded transition ${t.status === 'Pago' ? 'text-positive-400 hover:bg-base-800' : 'text-base-400 hover:text-positive-400 hover:bg-base-800'}`}
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => { setEditing(t); setModalOpen(true) }} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => setDeleting(t)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -224,49 +239,53 @@ export default function ContasLancamentosTab() {
         <PaginationControls page={page} totalPages={totalPages} totalItems={totalItems} pageSize={pageSize} onPageChange={setPage} />
       </div>
 
-      <TransactionFormModal
-        open={modalOpen}
-        onClose={() => { setModalOpen(false); setEditing(null) }}
-        onSave={handleSave}
-        initial={editing}
-        clients={clients}
-        accounts={accounts}
-        categoriesPagar={categoriesPagar}
-        categoriesReceber={categoriesReceber}
-        paymentMethods={paymentMethods}
-        isSaving={addTransactions.isPending || updateTransaction.isPending}
-        error={addTransactions.error || updateTransaction.error}
-      />
+      {podeEditar && (
+        <>
+          <TransactionFormModal
+            open={modalOpen}
+            onClose={() => { setModalOpen(false); setEditing(null) }}
+            onSave={handleSave}
+            initial={editing}
+            clients={clients}
+            accounts={accounts}
+            categoriesPagar={categoriesPagar}
+            categoriesReceber={categoriesReceber}
+            paymentMethods={paymentMethods}
+            isSaving={addTransactions.isPending || updateTransaction.isPending}
+            error={addTransactions.error || updateTransaction.error}
+          />
 
-      <QuickPaymentModal
-        open={!!payingTx}
-        onClose={() => setPayingTx(null)}
-        transaction={payingTx}
-        onConfirm={confirmPayment}
-        isSaving={updateTransactionStatus.isPending}
-        error={updateTransactionStatus.error}
-      />
+          <QuickPaymentModal
+            open={!!payingTx}
+            onClose={() => setPayingTx(null)}
+            transaction={payingTx}
+            onConfirm={confirmPayment}
+            isSaving={updateTransactionStatus.isPending}
+            error={updateTransactionStatus.error}
+          />
 
-      <CategoryManagerModal
-        open={categoryManagerOpen}
-        onClose={() => setCategoryManagerOpen(false)}
-      />
+          <CategoryManagerModal
+            open={categoryManagerOpen}
+            onClose={() => setCategoryManagerOpen(false)}
+          />
 
-      <PaymentMethodManagerModal
-        open={paymentMethodManagerOpen}
-        onClose={() => setPaymentMethodManagerOpen(false)}
-      />
+          <PaymentMethodManagerModal
+            open={paymentMethodManagerOpen}
+            onClose={() => setPaymentMethodManagerOpen(false)}
+          />
 
-      <ConfirmDialog
-        open={!!deleting}
-        title="Excluir lançamento?"
-        description={`Tem certeza que deseja excluir "${deleting?.description}"?`}
-        confirmLabel="Excluir"
-        danger
-        onCancel={() => setDeleting(null)}
-        onConfirm={() => { if (deleting) deleteTransaction.mutate(deleting, { onSuccess: () => setDeleting(null) }) }}
-        isLoading={deleteTransaction.isPending}
-      />
+          <ConfirmDialog
+            open={!!deleting}
+            title="Excluir lançamento?"
+            description={`Tem certeza que deseja excluir "${deleting?.description}"?`}
+            confirmLabel="Excluir"
+            danger
+            onCancel={() => setDeleting(null)}
+            onConfirm={() => { if (deleting) deleteTransaction.mutate(deleting, { onSuccess: () => setDeleting(null) }) }}
+            isLoading={deleteTransaction.isPending}
+          />
+        </>
+      )}
     </div>
   )
 }
