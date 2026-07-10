@@ -6,6 +6,7 @@ import { formatBRL } from '../../hooks/useAccountBalances'
 import { useEmpenhos } from '../../hooks/useEmpenhos'
 import { useClients } from '../../hooks/useClients'
 import { useBiddings } from '../../hooks/useBiddings'
+import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import EmpenhoFormModal from './EmpenhoFormModal'
 import DeleteWithPasswordDialog from '../ui/DeleteWithPasswordDialog'
 import ErrorAlert from '../ui/ErrorAlert'
@@ -24,6 +25,8 @@ export default function EmpenhosTab() {
   } = useEmpenhos()
   const { clients } = useClients()
   const { biddings } = useBiddings()
+  const { nivel: nivelFinanceiro } = usePermissaoFerramenta('financeiro')
+  const podeEditar = nivelFinanceiro === 'edicao'
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Empenho | null>(null)
   const [deleting, setDeleting] = useState<Empenho | null>(null)
@@ -71,9 +74,15 @@ export default function EmpenhosTab() {
             Para dar baixa no recebimento de uma parcela, acesse a aba <strong className="text-base-300">Contas & Lançamentos</strong>.
           </p>
         </div>
-        <Button onClick={() => { setEditing(null); setModalOpen(true) }} disabled={clients.length === 0}>
-          <Plus className="w-4 h-4" /> Novo Empenho
-        </Button>
+        {podeEditar ? (
+          <Button onClick={() => { setEditing(null); setModalOpen(true) }} disabled={clients.length === 0}>
+            <Plus className="w-4 h-4" /> Novo Empenho
+          </Button>
+        ) : (
+          <span className="text-[11px] font-semibold text-base-500 bg-base-850 border border-base-700 rounded-full px-3 py-1">
+            Somente visualização
+          </span>
+        )}
       </div>
 
       <div className="flex justify-end mb-2">
@@ -106,7 +115,9 @@ export default function EmpenhosTab() {
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 bg-base-850/40">Comissão</th>
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Parcelamento</th>
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Status</th>
-                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Ações</th>
+                  {podeEditar && (
+                    <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Ações</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -137,41 +148,43 @@ export default function EmpenhosTab() {
                       </span>
                     </td>
                     <td className="px-4 py-3"><StatusBadge status={e.status} /></td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        {e.status === 'Pendente' && (
+                    {podeEditar && (
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {e.status === 'Pendente' && (
+                            <button
+                              onClick={() => updateEmpenhoStatus.mutate({ empenho: e, newStatus: 'Faturado' })}
+                              title="Marcar como faturado"
+                              className="p-1.5 text-base-400 hover:text-positive-400 hover:bg-base-800 rounded transition"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {e.status !== 'Cancelado' && (
+                            <button
+                              onClick={() => updateEmpenhoStatus.mutate({ empenho: e, newStatus: 'Cancelado' })}
+                              title="Cancelar empenho"
+                              className="p-1.5 text-base-400 hover:text-warning-400 hover:bg-base-800 rounded transition"
+                            >
+                              <Ban className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           <button
-                            onClick={() => updateEmpenhoStatus.mutate({ empenho: e, newStatus: 'Faturado' })}
-                            title="Marcar como faturado"
-                            className="p-1.5 text-base-400 hover:text-positive-400 hover:bg-base-800 rounded transition"
+                            onClick={() => toggleEmpenhoActive.mutate({ empenho: e, isActive: !e.isActive })}
+                            title={e.isActive ? 'Inativar empenho (preserva histórico)' : 'Reativar empenho'}
+                            className={`p-1.5 rounded transition hover:bg-base-800 ${e.isActive ? 'text-base-400 hover:text-warning-400' : 'text-positive-400 hover:text-positive-300'}`}
                           >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <Power className="w-3.5 h-3.5" />
                           </button>
-                        )}
-                        {e.status !== 'Cancelado' && (
-                          <button
-                            onClick={() => updateEmpenhoStatus.mutate({ empenho: e, newStatus: 'Cancelado' })}
-                            title="Cancelar empenho"
-                            className="p-1.5 text-base-400 hover:text-warning-400 hover:bg-base-800 rounded transition"
-                          >
-                            <Ban className="w-3.5 h-3.5" />
+                          <button onClick={() => { setEditing(e); setModalOpen(true) }} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                            <Pencil className="w-3.5 h-3.5" />
                           </button>
-                        )}
-                        <button
-                          onClick={() => toggleEmpenhoActive.mutate({ empenho: e, isActive: !e.isActive })}
-                          title={e.isActive ? 'Inativar empenho (preserva histórico)' : 'Reativar empenho'}
-                          className={`p-1.5 rounded transition hover:bg-base-800 ${e.isActive ? 'text-base-400 hover:text-warning-400' : 'text-positive-400 hover:text-positive-300'}`}
-                        >
-                          <Power className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => { setEditing(e); setModalOpen(true) }} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => setDeleting(e)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
+                          <button onClick={() => setDeleting(e)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -180,27 +193,31 @@ export default function EmpenhosTab() {
         )}
       </div>
 
-      <EmpenhoFormModal
-        open={modalOpen}
-        onClose={() => { setModalOpen(false); setEditing(null) }}
-        onSave={handleSave}
-        initial={editing}
-        clients={clients}
-        biddings={biddings}
-        isSaving={addEmpenho.isPending || updateEmpenho.isPending}
-        error={addEmpenho.error || updateEmpenho.error}
-      />
+      {podeEditar && (
+        <>
+          <EmpenhoFormModal
+            open={modalOpen}
+            onClose={() => { setModalOpen(false); setEditing(null) }}
+            onSave={handleSave}
+            initial={editing}
+            clients={clients}
+            biddings={biddings}
+            isSaving={addEmpenho.isPending || updateEmpenho.isPending}
+            error={addEmpenho.error || updateEmpenho.error}
+          />
 
-      <DeleteWithPasswordDialog
-        open={!!deleting}
-        title="Excluir Empenho Definitivamente"
-        entityLabel={`O empenho "${deleting?.numeroEmpenho}"`}
-        financialWarning={financialWarning}
-        onCancel={() => setDeleting(null)}
-        onConfirm={() => { if (deleting) deleteEmpenho.mutate(deleting, { onSuccess: () => setDeleting(null) }) }}
-        isLoading={deleteEmpenho.isPending}
-        error={deleteEmpenho.error}
-      />
+          <DeleteWithPasswordDialog
+            open={!!deleting}
+            title="Excluir Empenho Definitivamente"
+            entityLabel={`O empenho "${deleting?.numeroEmpenho}"`}
+            financialWarning={financialWarning}
+            onCancel={() => setDeleting(null)}
+            onConfirm={() => { if (deleting) deleteEmpenho.mutate(deleting, { onSuccess: () => setDeleting(null) }) }}
+            isLoading={deleteEmpenho.isPending}
+            error={deleteEmpenho.error}
+          />
+        </>
+      )}
     </div>
   )
 }
