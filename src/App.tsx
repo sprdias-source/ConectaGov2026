@@ -16,6 +16,7 @@ import DiagnosticoPage from './pages/DiagnosticoPage'
 import BIConcorrenciaPage from './pages/BIConcorrenciaPage'
 import ExtratoOFXPage from './pages/ExtratoOFXPage'
 import UsuariosPage from './pages/UsuariosPage'
+import MinhaContaPage from './pages/MinhaContaPage'
 import { useRecurringEngine } from './hooks/useRecurringEngine'
 import { useOnlineStatus } from './hooks/useOnlineStatus'
 export default function App() {
@@ -58,6 +59,7 @@ export default function App() {
           <Route path="/bi-concorrencia" element={<BIConcorrenciaPage />} />
           <Route path="/extrato" element={<ExtratoOFXPage />} />
           <Route path="/usuarios" element={<UsuariosPage />} />
+          <Route path="/minha-conta" element={<MinhaContaPage />} />
         </Routes>
       </AppShell>
     </RequireAuth>
