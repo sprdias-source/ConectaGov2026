@@ -7,6 +7,7 @@ import { Button } from '../ui/FormControls'
 import ErrorAlert from '../ui/ErrorAlert'
 import { supabase } from '../../lib/supabase'
 import { useClientDocuments, calcDocStatus, diasRestantes } from '../../hooks/useClientDocuments'
+import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import { CERT_CONFIG } from '../../types/domain'
 import type { ClientDocument, DocumentTipo, DocumentStatus } from '../../types/domain'
 
@@ -52,11 +53,13 @@ const EDGE_FUNCTIONS: Record<Exclude<DocumentTipo, 'manual'>, string> = {
 
 export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Props) {
   const { documents, uploadAndSave, deleteDocument, getDownloadUrl } = useClientDocuments(clientId)
+  const { nivel: nivelCadastros } = usePermissaoFerramenta('cadastros')
+  const podeEditar = nivelCadastros === 'edicao'
   const [buscando, setBuscando] = useState<DocumentTipo | null>(null)
   const [errosBusca, setErrosBusca] = useState<Partial<Record<DocumentTipo, string>>>({})
 
   const handleBuscarAutomatico = async (tipo: Exclude<DocumentTipo, 'manual'>) => {
-    if (!cnpj) return
+    if (!cnpj || !podeEditar) return
     setBuscando(tipo)
     setErrosBusca((prev) => { const n = { ...prev }; delete n[tipo]; return n })
     try {
@@ -102,6 +105,7 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
   }
 
   const handleUploadSubmit = async (tipo: DocumentTipo, nome: string, autoRenovavel = false) => {
+    if (!podeEditar) return
     if (!selectedFile && !autoRenovavel) return
     if (selectedFile) {
       await uploadAndSave.mutateAsync({
@@ -144,6 +148,11 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {!podeEditar && (
+            <span className="text-[11px] font-semibold text-base-500 bg-base-850 border border-base-700 rounded-full px-3 py-1">
+              Somente visualização
+            </span>
+          )}
           {documents.some((d) => d.storagePath) && (
             <button
               onClick={handleDownloadAll}
@@ -198,8 +207,8 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {/* Botão de busca automática — aparece quando há CNPJ disponível */}
-                  {cnpj && (
+                  {/* Botão de busca automática — aparece quando há CNPJ disponível e o nível permite edição */}
+                  {cnpj && podeEditar && (
                     <button
                       onClick={() => handleBuscarAutomatico(tipo)}
                       disabled={buscando === tipo}
@@ -223,14 +232,16 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
                       <Download className="w-3.5 h-3.5" />
                     </button>
                   )}
-                  <button
-                    onClick={() => setUploadingTipo(isUploading ? null : tipo)}
-                    title="Enviar manualmente"
-                    className={`p-1.5 rounded transition ${isUploading ? 'text-accent-300 bg-accent-500/10' : 'text-base-400 hover:text-accent-300 hover:bg-base-800'}`}
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                  </button>
-                  {doc?.storagePath && (
+                  {podeEditar && (
+                    <button
+                      onClick={() => setUploadingTipo(isUploading ? null : tipo)}
+                      title="Enviar manualmente"
+                      className={`p-1.5 rounded transition ${isUploading ? 'text-accent-300 bg-accent-500/10' : 'text-base-400 hover:text-accent-300 hover:bg-base-800'}`}
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {doc?.storagePath && podeEditar && (
                     <button
                       onClick={() => setUploadingTipo(isUploading ? null : tipo)}
                       title="Renovar certidão"
@@ -239,7 +250,7 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
                       <RefreshCw className="w-3.5 h-3.5" />
                     </button>
                   )}
-                  {doc && (
+                  {doc && podeEditar && (
                     <button
                       onClick={() => deleteDocument.mutate(doc)}
                       title="Remover"
@@ -263,7 +274,7 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
               )}
 
               {/* Formulário de upload manual para esta certidão */}
-              {isUploading && (
+              {isUploading && podeEditar && (
                 <div className="border-t border-base-800 px-4 py-3 bg-base-900/40 flex flex-col gap-3">
                   <p className="text-[11px] text-accent-300 font-semibold">
                     Upload manual — {cfg.label}
@@ -326,17 +337,19 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
           <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">
             Documentos manuais
           </p>
-          <button
-            onClick={() => setShowManual(!showManual)}
-            className="flex items-center gap-1 text-[11px] text-accent-300 hover:text-accent-200 transition"
-          >
-            <Plus className="w-3 h-3" />
-            {showManual ? 'Cancelar' : 'Adicionar documento'}
-            {showManual ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-          </button>
+          {podeEditar && (
+            <button
+              onClick={() => setShowManual(!showManual)}
+              className="flex items-center gap-1 text-[11px] text-accent-300 hover:text-accent-200 transition"
+            >
+              <Plus className="w-3 h-3" />
+              {showManual ? 'Cancelar' : 'Adicionar documento'}
+              {showManual ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            </button>
+          )}
         </div>
 
-        {showManual && (
+        {showManual && podeEditar && (
           <div className="bg-base-850/60 border border-accent-500/20 rounded-xl px-4 py-3 flex flex-col gap-3">
             <p className="text-[11px] text-accent-300 font-semibold">Novo documento manual</p>
             <div className="grid grid-cols-2 gap-3">
@@ -410,9 +423,11 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
                     <Download className="w-3.5 h-3.5" />
                   </button>
                 )}
-                <button onClick={() => deleteDocument.mutate(doc)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                {podeEditar && (
+                  <button onClick={() => deleteDocument.mutate(doc)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             </div>
           )
