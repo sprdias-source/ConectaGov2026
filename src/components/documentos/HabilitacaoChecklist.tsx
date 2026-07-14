@@ -8,6 +8,7 @@ import ErrorAlert from '../ui/ErrorAlert'
 import { supabase } from '../../lib/supabase'
 import { useClientDocuments, calcDocStatus, diasRestantes } from '../../hooks/useClientDocuments'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
+import AcoesDocumentoManual from './AcoesDocumentoManual'
 import { CERT_CONFIG } from '../../types/domain'
 import type { ClientDocument, DocumentTipo, DocumentStatus } from '../../types/domain'
 
@@ -49,6 +50,7 @@ const EDGE_FUNCTIONS: Record<Exclude<DocumentTipo, 'manual'>, string> = {
   cnd_estadual_rs: 'buscar-cnd-estadual-rs',
   fgts: 'buscar-fgts',
   cnd_municipal: 'buscar-cnd-municipal-vacaria',
+  certidao_falencia_rs: 'buscar-certidao-falencia-rs',
 }
 
 export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Props) {
@@ -171,7 +173,7 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
         <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">
           Certidões automáticas
           {cnpj
-            ? <span className="ml-2 text-accent-400 normal-case font-normal">Clique em "Buscar auto" para baixar do portal oficial</span>
+            ? <span className="ml-2 text-accent-400 normal-case font-normal">Clique em "Buscar auto" para baixar do portal oficial, ou "Buscar manualmente" caso prefira resolver você mesmo</span>
             : <span className="ml-2 text-base-600 normal-case font-normal">CNPJ necessário para busca automática</span>
           }
         </p>
@@ -273,7 +275,20 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
                 </div>
               )}
 
-              {/* Formulário de upload manual para esta certidão */}
+              {/* Ação manual híbrida — sempre disponível pra qualquer nível de edição,
+                  independente do status da busca automática (não só quando ela falha) */}
+              {podeEditar && (
+                <div className="border-t border-base-800 px-4 py-2">
+                  <AcoesDocumentoManual
+                    clientId={clientId}
+                    tipo={tipo}
+                    nomeDocumento={cfg.label}
+                    uploadAndSave={uploadAndSave.mutateAsync}
+                  />
+                </div>
+              )}
+
+              {/* Formulário de upload manual (upload direto de PDF já em mãos) para esta certidão */}
               {isUploading && podeEditar && (
                 <div className="border-t border-base-800 px-4 py-3 bg-base-900/40 flex flex-col gap-3">
                   <p className="text-[11px] text-accent-300 font-semibold">
