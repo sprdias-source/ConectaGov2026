@@ -60,8 +60,21 @@ export default function AcoesDocumentoManual({ clientId, tipo, nomeDocumento, up
       if (portal.camposNecessarios.includes('nome')) payload.nome = cliente.name ?? ''
       if (portal.camposNecessarios.includes('endereco')) payload.endereco = cliente.address ?? ''
 
-      await navigator.clipboard.writeText(JSON.stringify(payload))
-      window.open(portal.url, '_blank')
+      // Os dados vão embutidos direto na URL (fragmento #conectagov_dados=...),
+      // não mais pela área de transferência — o navegador exige que a página
+      // esteja "em foco" pra deixar ler o clipboard, e isso falhava de forma
+      // instável (ex: depois de um alert() fechar). Um fragmento de URL não
+      // depende de nenhuma permissão e o site oficial ignora essa parte
+      // normalmente (nunca é enviada ao servidor).
+      const dadosCodificados = encodeURIComponent(JSON.stringify(payload))
+      const separador = portal.url.includes('#') ? '&' : '#'
+      const urlComDados = `${portal.url}${separador}conectagov_dados=${dadosCodificados}`
+
+      // Mantém a cópia pro clipboard também, como reforço/fallback manual
+      // (se falhar, não é problema — a URL já carrega os dados de verdade).
+      try { await navigator.clipboard.writeText(JSON.stringify(payload)) } catch { /* ignorado de propósito */ }
+
+      window.open(urlComDados, '_blank')
 
       // Já deixa a data de validade sugerida pronta pro upload seguinte
       const sugestao = new Date()
