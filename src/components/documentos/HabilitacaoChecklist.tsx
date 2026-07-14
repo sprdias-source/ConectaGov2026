@@ -51,6 +51,7 @@ const EDGE_FUNCTIONS: Record<Exclude<DocumentTipo, 'manual'>, string> = {
   fgts: 'buscar-fgts',
   cnd_municipal: 'buscar-cnd-municipal-vacaria',
   certidao_falencia_rs: 'buscar-certidao-falencia-rs',
+  cnpj_cartao: 'buscar-cnpj-cartao',
 }
 
 export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Props) {
