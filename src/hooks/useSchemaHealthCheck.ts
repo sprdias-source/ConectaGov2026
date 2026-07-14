@@ -39,7 +39,7 @@ export function useSchemaHealthCheck() {
         // --- Checagens novas: documentos/certidões (migrations 019-021, 027) ---
         { table: 'client_documents', columns: 'tipo,storage_path,auto_renovavel,observacoes', label: 'Documentos de Habilitação (certidões e campo de observações)' },
         { table: 'captcha_sessions', columns: 'id', label: 'Captcha Manual (tabela)' },
-        { table: 'document_types', columns: 'id', label: 'Checklist de Documentos — catálogo (tabela)' },
+        { table: 'document_types', columns: 'codigo', label: 'Checklist de Documentos — catálogo (tabela)' },
         { table: 'document_logs', columns: 'id', label: 'Log de Documentos (tabela)' },
         // --- Checagens novas: sistema multiusuário (migrations 013, 022-023, 025-026) ---
         { table: 'system_tools', columns: 'key,nome', label: 'Multiusuário — catálogo de ferramentas (tabela)' },
