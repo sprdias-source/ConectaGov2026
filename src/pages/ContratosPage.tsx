@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { FileSignature, Copy, Printer } from 'lucide-react'
+import { FileSignature, Copy, Printer, Lock } from 'lucide-react'
 import { PageHeader, Card } from '../components/ui/Primitives'
 import { Field, Input, Select, Textarea, Button } from '../components/ui/FormControls'
 import DocumentUploader from '../components/ui/DocumentUploader'
@@ -7,6 +7,7 @@ import ErrorAlert from '../components/ui/ErrorAlert'
 import { useClients } from '../hooks/useClients'
 import { useBiddings } from '../hooks/useBiddings'
 import { useContracts } from '../hooks/useContracts'
+import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 
 function buildContractText(opts: {
   clientName: string
@@ -50,6 +51,8 @@ export default function ContratosPage() {
   const { clients } = useClients()
   const { biddings } = useBiddings()
   const { contracts, addContract } = useContracts()
+  const { nivel: nivelAcesso } = usePermissaoFerramenta('contratos')
+  const podeEditar = nivelAcesso === 'edicao'
 
   const [clientId, setClientId] = useState('')
   const [biddingId, setBiddingId] = useState('')
@@ -95,6 +98,14 @@ export default function ContratosPage() {
     <div className="pb-10">
       <PageHeader title="Módulo de Contratos" subtitle="Gere contratos jurídicos de prestação de serviços com preenchimento automático" icon={FileSignature} />
 
+      {!podeEditar && (
+        <div className="px-6 mt-4 flex justify-end">
+          <span className="text-[12px] font-semibold text-base-500 flex items-center gap-1.5">
+            <Lock className="w-3.5 h-3.5" /> Somente visualização
+          </span>
+        </div>
+      )}
+
       <div className="px-6 mt-4 grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4">
         <Card className="p-5">
           <h3 className="text-sm font-bold text-base-100 mb-4">Parâmetros de Adesão</h3>
@@ -129,9 +140,11 @@ export default function ContratosPage() {
               <Textarea rows={3} value={clausulaAdicional} onChange={(e) => setClausulaAdicional(e.target.value)} placeholder="Texto adicional opcional para incluir no contrato" />
             </Field>
 
-            <Button onClick={handleSave} disabled={!client || addContract.isPending}>
-              {addContract.isPending ? 'Salvando...' : 'Salvar Contrato Gerado'}
-            </Button>
+            {podeEditar && (
+              <Button onClick={handleSave} disabled={!client || addContract.isPending}>
+                {addContract.isPending ? 'Salvando...' : 'Salvar Contrato Gerado'}
+              </Button>
+            )}
             <ErrorAlert error={addContract.error} />
           </div>
         </Card>
@@ -182,7 +195,9 @@ export default function ContratosPage() {
                         </p>
                       </div>
                     </div>
-                    <DocumentUploader entityType="contrato" entityId={c.id} category="Contrato" label="Anexar Contrato Assinado" />
+                    {podeEditar && (
+                      <DocumentUploader entityType="contrato" entityId={c.id} category="Contrato" label="Anexar Contrato Assinado" />
+                    )}
                   </div>
                 )
               })}
