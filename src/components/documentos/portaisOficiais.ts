@@ -45,4 +45,9 @@ export const PORTAIS_OFICIAIS: Record<string, {
     camposNecessarios: ['cnpj', 'nome', 'endereco'],
     validadeDiasSugerida: 90,
   },
+  cnpj_cartao: {
+    url: 'https://solucoes.receita.fazenda.gov.br/Servicos/cnpjreva/',
+    camposNecessarios: ['cnpj'],
+    validadeDiasSugerida: 60,
+  },
 }
