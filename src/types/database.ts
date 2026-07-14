@@ -345,6 +345,7 @@ export type Database = {
           data_validade: string | null
           id: string
           nome: string
+          observacoes: string | null
           status: string
           storage_path: string | null
           tipo: string
@@ -359,6 +360,7 @@ export type Database = {
           data_validade?: string | null
           id?: string
           nome: string
+          observacoes?: string | null
           status?: string
           storage_path?: string | null
           tipo: string
@@ -373,6 +375,7 @@ export type Database = {
           data_validade?: string | null
           id?: string
           nome?: string
+          observacoes?: string | null
           status?: string
           storage_path?: string | null
           tipo?: string
