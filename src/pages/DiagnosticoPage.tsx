@@ -61,16 +61,13 @@ export default function DiagnosticoPage() {
             </ul>
             <div className="bg-base-850/60 border border-base-700/50 rounded-lg p-4 text-[13px] text-base-300">
               <p className="font-semibold text-base-200 mb-1.5">Como corrigir:</p>
-              <ol className="list-decimal list-inside space-y-1 text-base-400">
-                <li>Acesse seu projeto no Supabase</li>
-                <li>Vá em <strong className="text-base-200">SQL Editor → New query</strong></li>
-                <li>Cole e execute o conteúdo do arquivo <code className="bg-base-800 px-1.5 py-0.5 rounded text-accent-300">003_automacao_licitacoes.sql</code> (se ainda não executou)</li>
-                <li>Cole e execute também o arquivo <code className="bg-base-800 px-1.5 py-0.5 rounded text-accent-300">004_correcao_payment_type.sql</code></li>
-                <li>Cole e execute também o arquivo <code className="bg-base-800 px-1.5 py-0.5 rounded text-accent-300">005_inativacao.sql</code></li>
-                <li>Cole e execute também o arquivo <code className="bg-base-800 px-1.5 py-0.5 rounded text-accent-300">008_fix_empenho_bidding_cascade.sql</code></li>
-                <li>Cole e execute também o arquivo <code className="bg-base-800 px-1.5 py-0.5 rounded text-accent-300">009_payment_methods.sql</code></li>
-                <li>Volte aqui e clique em "Verificar novamente"</li>
-              </ol>
+              <p className="text-base-400">
+                Cada item acima corresponde a uma migration SQL específica do projeto (pasta{' '}
+                <code className="bg-base-800 px-1.5 py-0.5 rounded text-accent-300">supabase/migrations/</code>).
+                Verifique qual migration cria a tabela/coluna faltante e execute ela no{' '}
+                <strong className="text-base-200">SQL Editor</strong> do Supabase (Dashboard do projeto).
+                Depois, clique em "Verificar novamente" acima para confirmar.
+              </p>
             </div>
           </Card>
         )}
