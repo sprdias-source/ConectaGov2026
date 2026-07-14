@@ -256,6 +256,7 @@ export type DocumentTipo =
   | 'cnd_estadual_rs'
   | 'fgts'
   | 'cnd_municipal'
+  | 'certidao_falencia_rs'
   | 'manual'
 
 export type DocumentStatus = 'valido' | 'vencendo' | 'vencido' | 'pendente' | 'erro'
@@ -312,5 +313,11 @@ export const CERT_CONFIG: Record<Exclude<DocumentTipo, 'manual'>, {
     validadeDias: 90,
     alertaDias: 15,
     portal: 'webapp1-vacaria.cidade360.cloud',
+  },
+  certidao_falencia_rs: {
+    label: 'Certidão Negativa de Falência — TJRS',
+    validadeDias: 90,
+    alertaDias: 15,
+    portal: 'tjrs.jus.br',
   },
 }
