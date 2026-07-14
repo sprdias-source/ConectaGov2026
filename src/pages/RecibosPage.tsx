@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { todayLocalISO } from '../lib/dateUtils'
-import { Receipt, FileText, Printer, DollarSign } from 'lucide-react'
+import { Receipt, FileText, Printer, DollarSign, Lock } from 'lucide-react'
 import { PageHeader, Card } from '../components/ui/Primitives'
 import { Field, Input, Select, Textarea, Button } from '../components/ui/FormControls'
 import DocumentUploader from '../components/ui/DocumentUploader'
@@ -8,10 +8,13 @@ import ErrorAlert from '../components/ui/ErrorAlert'
 import { useClients } from '../hooks/useClients'
 import { useReceipts } from '../hooks/useReceipts'
 import { formatBRL } from '../hooks/useAccountBalances'
+import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 
 export default function RecibosPage() {
   const { clients } = useClients()
   const { addReceipt, isSaving } = useReceipts()
+  const { nivel: nivelAcesso } = usePermissaoFerramenta('recibos')
+  const podeEditar = nivelAcesso === 'edicao'
   const [kind, setKind] = useState<'Recibo' | 'Orcamento'>('Recibo')
   const [clientId, setClientId] = useState('')
   const [value, setValue] = useState(0)
@@ -31,6 +34,14 @@ export default function RecibosPage() {
       <PageHeader title="Faturamento, Orçamentos & Recibos" subtitle="Emita recibos profissionais ou propostas de prestação de serviço" icon={Receipt} />
 
       <div className="px-6 mt-4">
+        {!podeEditar && (
+          <div className="flex justify-end mb-2">
+            <span className="text-[12px] font-semibold text-base-500 flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5" /> Somente visualização
+            </span>
+          </div>
+        )}
+
         <div className="flex gap-1.5 mb-4">
           <button
             onClick={() => setKind('Recibo')}
@@ -70,9 +81,11 @@ export default function RecibosPage() {
               <Field label="Histórico / Descritivo do Serviço">
                 <Textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
               </Field>
-              <Button onClick={handleGenerate} disabled={!canGenerate || isSaving}>
-                {isSaving ? 'Gerando...' : `Gerar ${kind === 'Recibo' ? 'Recibo' : 'Orçamento'}`}
-              </Button>
+              {podeEditar && (
+                <Button onClick={handleGenerate} disabled={!canGenerate || isSaving}>
+                  {isSaving ? 'Gerando...' : `Gerar ${kind === 'Recibo' ? 'Recibo' : 'Orçamento'}`}
+                </Button>
+              )}
               <ErrorAlert error={addReceipt.error} />
             </div>
           </Card>
@@ -109,9 +122,11 @@ export default function RecibosPage() {
           </Card>
         </div>
 
-        <Card className="p-5 mt-4">
-          <DocumentUploader entityType="recibo" entityId="geral" category="Recibo" label="Anexar Recibo/Nota Recebida" />
-        </Card>
+        {podeEditar && (
+          <Card className="p-5 mt-4">
+            <DocumentUploader entityType="recibo" entityId="geral" category="Recibo" label="Anexar Recibo/Nota Recebida" />
+          </Card>
+        )}
       </div>
     </div>
   )
