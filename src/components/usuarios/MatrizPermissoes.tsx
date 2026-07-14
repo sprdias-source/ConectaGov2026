@@ -72,6 +72,10 @@ export default function MatrizPermissoes({ supabase }: Props) {
   }
 
   async function alterarNivel(teamMemberId: string, toolKey: string, novoNivel: string) {
+    const membro = membros.find((m) => m.id === teamMemberId)
+    const ferramenta = ferramentas.find((f) => f.key === toolKey)
+    const nivelAntigo = nivelAtual(teamMemberId, toolKey)
+
     setPermissoes((atual) =>
       atual.map((p) =>
         p.team_member_id === teamMemberId && p.tool_key === toolKey
@@ -84,6 +88,21 @@ export default function MatrizPermissoes({ supabase }: Props) {
       .update({ nivel_acesso: novoNivel, atualizado_em: new Date().toISOString() })
       .eq('team_member_id', teamMemberId)
       .eq('tool_key', toolKey)
+
+    // Log de auditoria — best effort: se falhar, não interrompe a mudança
+    // de permissão em si, só perde o registro do histórico.
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        await supabase.from('audit_logs').insert({
+          user_id: user.id,
+          action: 'Alterou Permissão',
+          details: `${membro?.nome || membro?.email || 'Membro'}: ${ferramenta?.nome || toolKey} de "${LABEL_NIVEL[nivelAntigo] ?? nivelAntigo}" para "${LABEL_NIVEL[novoNivel] ?? novoNivel}"`,
+        })
+      }
+    } catch (logErr) {
+      console.warn('MatrizPermissoes: falha ao gravar log de auditoria:', logErr)
+    }
   }
 
   function nivelAtual(teamMemberId: string, toolKey: string) {
