@@ -257,6 +257,7 @@ export type DocumentTipo =
   | 'fgts'
   | 'cnd_municipal'
   | 'certidao_falencia_rs'
+  | 'cnpj_cartao'
   | 'manual'
 
 export type DocumentStatus = 'valido' | 'vencendo' | 'vencido' | 'pendente' | 'erro'
@@ -319,5 +320,11 @@ export const CERT_CONFIG: Record<Exclude<DocumentTipo, 'manual'>, {
     validadeDias: 90,
     alertaDias: 15,
     portal: 'tjrs.jus.br',
+  },
+  cnpj_cartao: {
+    label: 'Cartão CNPJ — Comprovante de Inscrição e Situação Cadastral',
+    validadeDias: 60,
+    alertaDias: 15,
+    portal: 'solucoes.receita.fazenda.gov.br',
   },
 }
