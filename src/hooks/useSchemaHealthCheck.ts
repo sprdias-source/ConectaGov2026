@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
-import type { Database } from '../types/database.types'
+import type { Database } from '../types/database'
 
 export interface SchemaCheckResult {
   ok: boolean
