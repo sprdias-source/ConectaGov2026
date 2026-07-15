@@ -37,10 +37,19 @@ export interface Client {
   cnpj: string | null
   address: string | null
   cep: string | null
+  bairro: string | null
+  cidade: string | null
+  inscricaoEstadual: string | null
   phone: string | null
   whatsapp: string | null
   email: string | null
   website: string | null
+  bancoNome: string | null
+  bancoAgencia: string | null
+  bancoConta: string | null
+  responsavelNome: string | null
+  responsavelCpf: string | null
+  responsavelCargo: string | null
   isMensalista: boolean
   valorMensalidade: number | null
   periodoMeses: number | null
@@ -61,6 +70,8 @@ export interface Bidding {
   tipo: BiddingTipo
   objeto: string
   orgao: string
+  municipio: string | null
+  uf: string | null
   valorLicitado: number
   valorOfertado: number | null
   status: BiddingStatus
@@ -90,6 +101,8 @@ export interface BiddingItem {
   descricao: string
   unidade: string | null
   quantidade: number
+  marca: string | null
+  referencia: string | null
   valorUnitarioLicitado: number
   valorUnitarioOfertado: number | null
   createdAt: string
