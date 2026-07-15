@@ -99,6 +99,7 @@ export const fromBiddingRow = (r: Row<'biddings'>): Bidding => ({
   taxaExito: r.taxa_exito !== null ? Number(r.taxa_exito) : null,
   representante: r.representante,
   observacaoEtapa: r.observacao_etapa,
+  diasValidadeProposta: r.dias_validade_proposta,
   isActive: r.is_active,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
@@ -129,6 +130,7 @@ export const toBiddingInsert = (b: Partial<Bidding>, userId: string): Database['
   taxa_exito: b.taxaExito ?? null,
   representante: b.representante ?? null,
   observacao_etapa: b.observacaoEtapa ?? null,
+  dias_validade_proposta: b.diasValidadeProposta ?? '60 (sessenta)',
   is_active: b.isActive ?? true,
 })
 
