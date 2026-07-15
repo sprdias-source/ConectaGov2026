@@ -23,6 +23,8 @@ const emptyForm = (clients: Client[]): Partial<Bidding> => ({
   tipo: 'Menor Preço',
   objeto: '',
   orgao: '',
+  municipio: '',
+  uf: '',
   valorLicitado: 0,
   valorOfertadoReal: null,
   status: 'Em Andamento',
@@ -102,6 +104,15 @@ export default function BiddingFormModal({
             <Field label="Órgão Licitante" required>
               <Input required value={form.orgao ?? ''} onChange={(e) => setForm({ ...form, orgao: e.target.value })} placeholder="Ex: Prefeitura Municipal de Sorocaba" />
             </Field>
+
+            <div className="grid grid-cols-[1fr_100px] gap-4">
+              <Field label="Município do Órgão">
+                <Input value={form.municipio ?? ''} onChange={(e) => setForm({ ...form, municipio: e.target.value })} placeholder="Ex: Imaruí" />
+              </Field>
+              <Field label="UF">
+                <Input value={form.uf ?? ''} onChange={(e) => setForm({ ...form, uf: e.target.value.toUpperCase().slice(0, 2) })} placeholder="SC" maxLength={2} />
+              </Field>
+            </div>
 
             <div className="grid grid-cols-2 gap-4">
               <Field label="Modalidade" required>
