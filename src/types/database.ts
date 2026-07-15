@@ -83,8 +83,10 @@ export type Database = {
           created_at: string
           descricao: string
           id: string
+          marca: string | null
           numero_item: string
           quantidade: number
+          referencia: string | null
           unidade: string | null
           updated_at: string
           user_id: string
@@ -96,8 +98,10 @@ export type Database = {
           created_at?: string
           descricao: string
           id?: string
+          marca?: string | null
           numero_item: string
           quantidade?: number
+          referencia?: string | null
           unidade?: string | null
           updated_at?: string
           user_id: string
@@ -109,8 +113,10 @@ export type Database = {
           created_at?: string
           descricao?: string
           id?: string
+          marca?: string | null
           numero_item?: string
           quantidade?: number
+          referencia?: string | null
           unidade?: string | null
           updated_at?: string
           user_id?: string
@@ -137,6 +143,7 @@ export type Database = {
           id: string
           is_active: boolean
           modalidade: string
+          municipio: string | null
           numero_edital: string | null
           objeto: string
           observacao_etapa: string | null
@@ -150,6 +157,7 @@ export type Database = {
           taxa_participacao_lancada: boolean
           tipo: string
           tipo_disputa: string
+          uf: string | null
           updated_at: string
           user_id: string
           valor_licitado: number
@@ -165,6 +173,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           modalidade: string
+          municipio?: string | null
           numero_edital?: string | null
           objeto: string
           observacao_etapa?: string | null
@@ -178,6 +187,7 @@ export type Database = {
           taxa_participacao_lancada?: boolean
           tipo: string
           tipo_disputa?: string
+          uf?: string | null
           updated_at?: string
           user_id: string
           valor_licitado?: number
@@ -193,6 +203,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           modalidade?: string
+          municipio?: string | null
           numero_edital?: string | null
           objeto?: string
           observacao_etapa?: string | null
@@ -206,6 +217,7 @@ export type Database = {
           taxa_participacao_lancada?: boolean
           tipo?: string
           tipo_disputa?: string
+          uf?: string | null
           updated_at?: string
           user_id?: string
           valor_licitado?: number
@@ -387,7 +399,12 @@ export type Database = {
       clients: {
         Row: {
           address: string | null
+          bairro: string | null
+          banco_agencia: string | null
+          banco_conta: string | null
+          banco_nome: string | null
           cep: string | null
+          cidade: string | null
           cnpj: string | null
           created_at: string
           data_cadastro: string | null
@@ -396,11 +413,15 @@ export type Database = {
           dia_vencimento: number | null
           email: string | null
           id: string
+          inscricao_estadual: string | null
           is_active: boolean
           is_mensalista: boolean
           name: string
           periodo_meses: number | null
           phone: string | null
+          responsavel_cargo: string | null
+          responsavel_cpf: string | null
+          responsavel_nome: string | null
           updated_at: string
           user_id: string
           valor_mensalidade: number | null
@@ -409,7 +430,12 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          bairro?: string | null
+          banco_agencia?: string | null
+          banco_conta?: string | null
+          banco_nome?: string | null
           cep?: string | null
+          cidade?: string | null
           cnpj?: string | null
           created_at?: string
           data_cadastro?: string | null
@@ -418,11 +444,15 @@ export type Database = {
           dia_vencimento?: number | null
           email?: string | null
           id?: string
+          inscricao_estadual?: string | null
           is_active?: boolean
           is_mensalista?: boolean
           name: string
           periodo_meses?: number | null
           phone?: string | null
+          responsavel_cargo?: string | null
+          responsavel_cpf?: string | null
+          responsavel_nome?: string | null
           updated_at?: string
           user_id: string
           valor_mensalidade?: number | null
@@ -431,7 +461,12 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          bairro?: string | null
+          banco_agencia?: string | null
+          banco_conta?: string | null
+          banco_nome?: string | null
           cep?: string | null
+          cidade?: string | null
           cnpj?: string | null
           created_at?: string
           data_cadastro?: string | null
@@ -440,11 +475,15 @@ export type Database = {
           dia_vencimento?: number | null
           email?: string | null
           id?: string
+          inscricao_estadual?: string | null
           is_active?: boolean
           is_mensalista?: boolean
           name?: string
           periodo_meses?: number | null
           phone?: string | null
+          responsavel_cargo?: string | null
+          responsavel_cpf?: string | null
+          responsavel_nome?: string | null
           updated_at?: string
           user_id?: string
           valor_mensalidade?: number | null
