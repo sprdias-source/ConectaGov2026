@@ -9,7 +9,10 @@ import { fetchCnpjData, fetchCepData, formatCnpjMask, formatCepMask } from '../.
 import type { Client } from '../../types/domain'
 
 const emptyForm: Partial<Client> = {
-  name: '', cnpj: '', address: '', cep: '', phone: '', whatsapp: '', email: '', website: '',
+  name: '', cnpj: '', address: '', cep: '', bairro: '', cidade: '', inscricaoEstadual: '',
+  phone: '', whatsapp: '', email: '', website: '',
+  bancoNome: '', bancoAgencia: '', bancoConta: '',
+  responsavelNome: '', responsavelCpf: '', responsavelCargo: '',
   isMensalista: false, valorMensalidade: undefined, periodoMeses: 12, diaVencimento: 10,
   dataCadastro: todayLocalISO(),
 }
@@ -57,6 +60,11 @@ export default function ClientFormModal({
       ...f,
       name: data.razaoSocial || data.nomeFantasia || f.name,
       address: `${data.logradouro}${data.numero ? ', ' + data.numero : ''} - ${data.bairro}, ${data.municipio} - ${data.uf}`,
+      // Além do endereço completo (mantido por compatibilidade com o que já
+      // existia), já preenchemos bairro/cidade separados também, que são
+      // exigidos pelo modelo de Proposta de Preços.
+      bairro: data.bairro || f.bairro,
+      cidade: data.municipio || f.cidade,
       cep: data.cep ? formatCepMask(data.cep) : f.cep,
       phone: data.telefone || f.phone,
       email: data.email || f.email,
@@ -78,6 +86,8 @@ export default function ClientFormModal({
     setForm((f) => ({
       ...f,
       address: `${data.logradouro} - ${data.bairro}, ${data.localidade} - ${data.uf}`,
+      bairro: data.bairro || f.bairro,
+      cidade: data.localidade || f.cidade,
     }))
     setCepStatus('success')
     setCepMessage('Endereço preenchido a partir do CEP.')
@@ -112,9 +122,14 @@ export default function ClientFormModal({
           )}
         </Field>
 
-        <Field label="Nome / Razão Social" required>
-          <Input required value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ex: Construtora Vale do Sol Ltda" />
-        </Field>
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_180px] gap-4">
+          <Field label="Nome / Razão Social" required>
+            <Input required value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ex: Construtora Vale do Sol Ltda" />
+          </Field>
+          <Field label="Inscrição Estadual">
+            <Input value={form.inscricaoEstadual ?? ''} onChange={(e) => setForm({ ...form, inscricaoEstadual: e.target.value })} placeholder="Se houver" />
+          </Field>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-[160px_1fr] gap-4">
           <Field label="CEP">
@@ -140,6 +155,15 @@ export default function ClientFormModal({
           <p className="text-[11px] text-negative-400 flex items-center gap-1 -mt-2"><AlertCircle className="w-3 h-3" /> {cepMessage}</p>
         )}
 
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="Bairro">
+            <Input value={form.bairro ?? ''} onChange={(e) => setForm({ ...form, bairro: e.target.value })} placeholder="Preenchido junto com CNPJ/CEP, mas pode ajustar" />
+          </Field>
+          <Field label="Cidade">
+            <Input value={form.cidade ?? ''} onChange={(e) => setForm({ ...form, cidade: e.target.value })} placeholder="Preenchido junto com CNPJ/CEP, mas pode ajustar" />
+          </Field>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="Telefone">
             <Input value={form.phone ?? ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="(00) 0000-0000" />
@@ -155,6 +179,32 @@ export default function ClientFormModal({
         <Field label="Website">
           <Input value={form.website ?? ''} onChange={(e) => setForm({ ...form, website: e.target.value })} placeholder="www.empresa.com.br" />
         </Field>
+
+        <div className="border-t border-base-800 pt-4">
+          <p className="text-[12px] font-bold text-base-300 mb-3">Dados para Propostas de Preços</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <Field label="Banco">
+              <Input value={form.bancoNome ?? ''} onChange={(e) => setForm({ ...form, bancoNome: e.target.value })} placeholder="Ex: 756 - Sicoob" />
+            </Field>
+            <Field label="Agência">
+              <Input value={form.bancoAgencia ?? ''} onChange={(e) => setForm({ ...form, bancoAgencia: e.target.value })} placeholder="0000" />
+            </Field>
+            <Field label="Conta Corrente">
+              <Input value={form.bancoConta ?? ''} onChange={(e) => setForm({ ...form, bancoConta: e.target.value })} placeholder="00000-0" />
+            </Field>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Field label="Responsável Legal">
+              <Input value={form.responsavelNome ?? ''} onChange={(e) => setForm({ ...form, responsavelNome: e.target.value })} placeholder="Nome completo" />
+            </Field>
+            <Field label="CPF do Responsável">
+              <Input value={form.responsavelCpf ?? ''} onChange={(e) => setForm({ ...form, responsavelCpf: e.target.value })} placeholder="000.000.000-00" />
+            </Field>
+            <Field label="Cargo do Responsável">
+              <Input value={form.responsavelCargo ?? ''} onChange={(e) => setForm({ ...form, responsavelCargo: e.target.value })} placeholder="Ex: Sócio Administrador" />
+            </Field>
+          </div>
+        </div>
 
         <Field label="Data de Cadastro">
           <Input type="date" value={form.dataCadastro ?? ''} onChange={(e) => setForm({ ...form, dataCadastro: e.target.value })} />
