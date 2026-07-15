@@ -139,6 +139,7 @@ export type Database = {
           created_at: string
           data_abertura: string
           data_cadastro: string
+          dias_validade_proposta: string | null
           etapa: string | null
           id: string
           is_active: boolean
@@ -169,6 +170,7 @@ export type Database = {
           created_at?: string
           data_abertura: string
           data_cadastro?: string
+          dias_validade_proposta?: string | null
           etapa?: string | null
           id?: string
           is_active?: boolean
@@ -199,6 +201,7 @@ export type Database = {
           created_at?: string
           data_abertura?: string
           data_cadastro?: string
+          dias_validade_proposta?: string | null
           etapa?: string | null
           id?: string
           is_active?: boolean
