@@ -88,6 +88,7 @@ export interface Bidding {
   taxaExito: number | null
   representante: string | null
   observacaoEtapa: string | null
+  diasValidadeProposta: string | null
   isActive: boolean
   createdAt: string
   updatedAt: string
