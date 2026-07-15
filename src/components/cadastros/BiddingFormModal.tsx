@@ -33,6 +33,7 @@ const emptyForm = (clients: Client[]): Partial<Bidding> => ({
   tipoDisputa: 'Item',
   taxaParticipacao: null,
   etapa: 'Análise de Edital',
+  diasValidadeProposta: '60 (sessenta)',
 })
 
 export default function BiddingFormModal({
@@ -202,6 +203,10 @@ export default function BiddingFormModal({
 
             <Field label="Observações da Etapa">
               <Textarea rows={2} value={form.observacaoEtapa ?? ''} onChange={(e) => setForm({ ...form, observacaoEtapa: e.target.value })} />
+            </Field>
+
+            <Field label="Validade da Proposta (texto livre, ex: 60 (sessenta))">
+              <Input value={form.diasValidadeProposta ?? ''} onChange={(e) => setForm({ ...form, diasValidadeProposta: e.target.value })} placeholder="60 (sessenta)" />
             </Field>
           </>
         ) : (
