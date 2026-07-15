@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Plus, Pencil, Trash2, Gavel, Power, Eye, EyeOff, Lock } from 'lucide-react'
+import { Plus, Pencil, Trash2, Gavel, Power, Eye, EyeOff, Lock, FileText, Loader2 } from 'lucide-react'
 import { Button } from '../ui/FormControls'
 import { EmptyState, StatusBadge } from '../ui/Primitives'
 import { formatBRL } from '../../hooks/useAccountBalances'
+import { supabase } from '../../lib/supabase'
 import BiddingFormModal from './BiddingFormModal'
 import DeleteWithPasswordDialog from '../ui/DeleteWithPasswordDialog'
 import ErrorAlert from '../ui/ErrorAlert'
@@ -23,6 +24,8 @@ export default function BiddingsTab() {
   const [deleting, setDeleting] = useState<Bidding | null>(null)
   const [showInactive, setShowInactive] = useState(false)
   const [financialWarning, setFinancialWarning] = useState<string | undefined>()
+  const [gerandoPropostaId, setGerandoPropostaId] = useState<string | null>(null)
+  const [erroGeracao, setErroGeracao] = useState<string | null>(null)
 
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? 'Cliente removido'
   const isMensalista = (id: string) => clients.find((c) => c.id === id)?.isMensalista ?? false
@@ -58,6 +61,41 @@ export default function BiddingsTab() {
       updateBidding.mutate({ bidding: { ...editing, ...data } as Bidding, items }, { onSuccess: () => { setModalOpen(false); setEditing(null) } })
     } else {
       addBidding.mutate({ bidding: data, items }, { onSuccess: () => setModalOpen(false) })
+    }
+  }
+
+  const handleGerarProposta = async (b: Bidding) => {
+    setGerandoPropostaId(b.id)
+    setErroGeracao(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/gerar-proposta`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ clientId: b.clientId, biddingId: b.id }),
+      })
+      const resultado = await res.json()
+      if (!res.ok || resultado.error) {
+        throw new Error(resultado.error || 'Erro desconhecido ao gerar a proposta')
+      }
+
+      // Decodifica o base64 e dispara o download no navegador
+      const bytes = Uint8Array.from(atob(resultado.fileBase64), (c) => c.charCodeAt(0))
+      const blob = new Blob([bytes], { type: resultado.mimeType })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = resultado.fileName || 'proposta.docx'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setErroGeracao(`Licitação "${b.objeto.slice(0, 40)}": ${String(err)}`)
+    } finally {
+      setGerandoPropostaId(null)
     }
   }
 
@@ -97,6 +135,11 @@ export default function BiddingsTab() {
       </div>
 
       <ErrorAlert error={deleteBidding.error || toggleBiddingActive.error} />
+      {erroGeracao && (
+        <div className="bg-negative-500/10 border border-negative-500/25 rounded-lg p-3 mb-4 text-[13px] text-negative-300">
+          {erroGeracao}
+        </div>
+      )}
 
       <div className="bg-base-900/60 border border-base-700/50 rounded-xl overflow-hidden">
         {isLoading ? (
@@ -115,9 +158,7 @@ export default function BiddingsTab() {
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Valor Licitado</th>
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 bg-base-850/40">Valor Ofertado</th>
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Status</th>
-                  {podeEditar && (
-                    <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Ações</th>
-                  )}
+                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -145,25 +186,35 @@ export default function BiddingsTab() {
                       {b.valorOfertadoReal ? <span className="text-positive-400">{formatBRL(b.valorOfertadoReal)}</span> : <span className="text-base-500">—</span>}
                     </td>
                     <td className="px-4 py-3"><StatusBadge status={b.status} /></td>
-                    {podeEditar && (
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => toggleBiddingActive.mutate({ bidding: b, isActive: !b.isActive })}
-                            title={b.isActive ? 'Inativar licitação (preserva histórico)' : 'Reativar licitação'}
-                            className={`p-1.5 rounded transition hover:bg-base-800 ${b.isActive ? 'text-base-400 hover:text-warning-400' : 'text-positive-400 hover:text-positive-300'}`}
-                          >
-                            <Power className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => { setEditing(b); setModalOpen(true) }} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => setDeleting(b)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    )}
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => handleGerarProposta(b)}
+                          disabled={gerandoPropostaId === b.id}
+                          title="Gerar Proposta de Preços (.docx)"
+                          className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition disabled:opacity-50 disabled:cursor-wait"
+                        >
+                          {gerandoPropostaId === b.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                        </button>
+                        {podeEditar && (
+                          <>
+                            <button
+                              onClick={() => toggleBiddingActive.mutate({ bidding: b, isActive: !b.isActive })}
+                              title={b.isActive ? 'Inativar licitação (preserva histórico)' : 'Reativar licitação'}
+                              className={`p-1.5 rounded transition hover:bg-base-800 ${b.isActive ? 'text-base-400 hover:text-warning-400' : 'text-positive-400 hover:text-positive-300'}`}
+                            >
+                              <Power className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => { setEditing(b); setModalOpen(true) }} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => setDeleting(b)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
