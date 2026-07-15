@@ -33,7 +33,7 @@ export default function BiddingItemsEditor({
   const addRow = () => {
     emitChange([
       ...drafts,
-      { _key: newKey(), numeroItem: String(drafts.length + 1), descricao: '', unidade: 'UN', quantidade: 1, valorUnitarioLicitado: 0, valorUnitarioOfertado: null },
+      { _key: newKey(), numeroItem: String(drafts.length + 1), descricao: '', unidade: 'UN', quantidade: 1, marca: '', referencia: '', valorUnitarioLicitado: 0, valorUnitarioOfertado: null },
     ])
   }
 
@@ -95,6 +95,8 @@ export default function BiddingItemsEditor({
             descricao,
             unidade: String(get('unidade', 'un', 'und') ?? 'UN'),
             quantidade: qtd ?? 1,
+            marca: String(get('marca', 'fabricante', 'marca/fabricante') ?? '') || undefined,
+            referencia: String(get('referência', 'referencia', 'ref', 'ref.', 'modelo') ?? '') || undefined,
             valorUnitarioLicitado: valorUnit ?? 0,
             valorUnitarioOfertado: null,
           })
@@ -151,6 +153,8 @@ export default function BiddingItemsEditor({
                 <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500">Descrição</th>
                 <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-20">Unid.</th>
                 <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-20">Qtd.</th>
+                <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Marca</th>
+                <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Referência</th>
                 <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Vl. Unit. Licitado</th>
                 <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Vl. Unit. Ofertado</th>
                 <th className="px-2 py-2 w-8" />
@@ -172,6 +176,12 @@ export default function BiddingItemsEditor({
                     <Input type="number" value={d.quantidade ?? ''} onChange={(e) => updateRow(d._key, { quantidade: parseFloat(e.target.value) || 0 })} className="!py-1 !px-2 text-[12px]" />
                   </td>
                   <td className="px-2 py-1.5">
+                    <Input value={d.marca ?? ''} onChange={(e) => updateRow(d._key, { marca: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <Input value={d.referencia ?? ''} onChange={(e) => updateRow(d._key, { referencia: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
+                  </td>
+                  <td className="px-2 py-1.5">
                     <Input type="number" step="0.01" value={d.valorUnitarioLicitado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioLicitado: parseFloat(e.target.value) || 0 })} className="!py-1 !px-2 text-[12px]" />
                   </td>
                   <td className="px-2 py-1.5">
@@ -187,7 +197,7 @@ export default function BiddingItemsEditor({
             </tbody>
             <tfoot>
               <tr className="border-t border-base-700 bg-base-850/60">
-                <td colSpan={4} className="px-2 py-2 text-right text-[11px] font-bold text-base-400">Totais:</td>
+                <td colSpan={6} className="px-2 py-2 text-right text-[11px] font-bold text-base-400">Totais:</td>
                 <td className="px-2 py-2 font-mono font-bold text-base-200">{formatBRL(totalLicitado)}</td>
                 <td className="px-2 py-2 font-mono font-bold text-accent-300">{formatBRL(totalOfertado)}</td>
                 <td />
