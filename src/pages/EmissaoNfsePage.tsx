@@ -30,7 +30,7 @@ export default function EmissaoNfsePage() {
     setConfigEditavel(config)
   }
 
-  const handlePreencherNfse = () => {
+  const handlePreencherNfse = async () => {
     if (!clienteSelecionado || !valorServico) return
 
     const payload = {
@@ -51,13 +51,19 @@ export default function EmissaoNfsePage() {
       exigibilidadeIss: config.exigibilidadeIss,
     }
 
-    // Mesmo esquema já usado no bookmarklet de preenchimento de CNPJ: os
-    // dados vão embutidos na própria URL (hash), sem depender de
-    // clipboard — o bookmarklet (a construir) lê esse hash e preenche o
-    // formulário, deixando a conferência e o clique final por conta do
-    // usuário.
-    const hash = `conectagov_nfse=${encodeURIComponent(btoa(JSON.stringify(payload)))}`
-    window.open(`${URL_PORTAL_NFSE}#${hash}`, '_blank')
+    // Copia pra área de transferência em vez de embutir na URL — o login
+    // do portal da prefeitura redireciona e apaga qualquer hash (#...) da
+    // URL, mas o clipboard sobrevive tranquilo a isso. O favorito
+    // "Preencher NFS-e" lê daqui.
+    const base64 = btoa(JSON.stringify(payload))
+    try {
+      await navigator.clipboard.writeText(base64)
+    } catch {
+      // Se o clipboard falhar (permissão negada, etc.), ainda abre o
+      // portal — o usuário só não vai conseguir usar o favorito depois.
+    }
+
+    window.open(URL_PORTAL_NFSE, '_blank')
   }
 
   return (
@@ -72,8 +78,8 @@ export default function EmissaoNfsePage() {
         <div className="bg-warning-500/10 border border-warning-500/25 rounded-lg p-3 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 text-warning-400 shrink-0 mt-0.5" />
           <p className="text-[12px] text-warning-300">
-            O preenchimento automático dos campos dentro do portal da prefeitura ainda está sendo construído.
-            Por enquanto, esta tela já prepara os dados — a próxima etapa vai fazer o portal abrir com tudo pronto pra conferência.
+            Este botão copia os dados pra área de transferência e abre o portal da prefeitura numa aba nova.
+            Depois de fazer login e chegar na tela "Gerar NFS-e", clique no favorito <strong>"Preencher NFS-e"</strong> (instalado no navegador) pra preencher os campos automaticamente — confira tudo antes de emitir.
           </p>
         </div>
 
