@@ -10,6 +10,7 @@ import { useFinancialAccounts } from '../../hooks/useFinancialAccounts'
 import { useTransactions } from '../../hooks/useTransactions'
 import { useAccountBalances, formatBRL } from '../../hooks/useAccountBalances'
 import { useBackup } from '../../hooks/useBackup'
+import { useAllClientDocuments } from '../../hooks/useClientDocuments'
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth()
@@ -18,6 +19,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const { transactions } = useTransactions()
   const { standardAccounts, creditCards, balances, patrimonioTotal, unlinkedPaidCount } = useAccountBalances(accounts, transactions)
   const { exportBackup, isExporting } = useBackup()
+  const { documents: clientDocuments } = useAllClientDocuments()
 
   const [patrimonioVisible, setPatrimonioVisible] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -33,6 +35,14 @@ export default function AppShell({ children }: { children: ReactNode }) {
     await signOut()
     navigate('/')
   }
+
+  // Contagem de itens urgentes pro badge da Central de Prazos: certidões
+  // vencendo/vencidas + lançamentos financeiros atrasados. Mantido simples
+  // de propósito — o detalhe completo (incluindo pregões próximos) fica só
+  // na própria tela, aqui é só o "chame a atenção".
+  const alertasUrgentes =
+    clientDocuments.filter((d) => d.status === 'vencendo' || d.status === 'vencido').length +
+    transactions.filter((t) => t.status === 'Atrasado').length
 
   return (
     <div className="min-h-screen bg-base-950 flex flex-col lg:flex-row text-base-100 font-sans antialiased selection:bg-accent-500/30">
@@ -194,6 +204,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
                     >
                       <item.icon className="w-4 h-4 shrink-0" />
                       {item.label}
+                      {item.key === 'central-prazos' && alertasUrgentes > 0 && (
+                        <span className="ml-auto text-[10px] font-bold bg-negative-500 text-white rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center shrink-0">
+                          {alertasUrgentes > 9 ? '9+' : alertasUrgentes}
+                        </span>
+                      )}
                     </NavLink>
                   ))}
                 </div>
