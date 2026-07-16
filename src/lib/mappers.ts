@@ -100,6 +100,7 @@ export const fromBiddingRow = (r: Row<'biddings'>): Bidding => ({
   representante: r.representante,
   observacaoEtapa: r.observacao_etapa,
   diasValidadeProposta: r.dias_validade_proposta,
+  modeloCustomizadoPath: r.modelo_customizado_path,
   isActive: r.is_active,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
@@ -131,6 +132,7 @@ export const toBiddingInsert = (b: Partial<Bidding>, userId: string): Database['
   representante: b.representante ?? null,
   observacao_etapa: b.observacaoEtapa ?? null,
   dias_validade_proposta: b.diasValidadeProposta ?? '60 (sessenta)',
+  modelo_customizado_path: b.modeloCustomizadoPath ?? null,
   is_active: b.isActive ?? true,
 })
 
@@ -259,149 +261,3 @@ export const toTransactionInsert = (t: Partial<Transaction>, userId: string): Da
   bidding_id: t.biddingId ?? null,
   empenho_id: t.empenhoId ?? null,
   account_id: t.accountId ?? null,
-  value: t.value ?? 0,
-  due_date: t.dueDate ?? todayLocalISO(),
-  payment_date: t.paymentDate ?? null,
-  payment_method: t.paymentMethod ?? null,
-  status: t.status ?? 'Pendente',
-  is_projected: t.isProjected ?? false,
-  projection_parent_id: t.projectionParentId ?? null,
-  projection_month_number: t.projectionMonthNumber ?? null,
-  is_recurring: t.isRecurring ?? false,
-  recurring_parent_id: t.recurringParentId ?? null,
-  recurring_day: t.recurringDay ?? null,
-})
-
-export const fromEmployeeRow = (r: Row<'employees'>): Employee => ({
-  id: r.id,
-  userId: r.user_id,
-  name: r.name,
-  role: r.role,
-  paymentType: r.payment_type as Employee['paymentType'],
-  salaryBase: Number(r.salary_base),
-  pixKey: r.pix_key,
-  email: r.email,
-  phone: r.phone,
-  admissionDate: r.admission_date,
-  isActive: r.is_active,
-  inssPercentual: Number(r.inss_percentual ?? 0),
-  irrfPercentual: Number(r.irrf_percentual ?? 0),
-  outrosEncargos: Number(r.outros_encargos ?? 0),
-  createdAt: r.created_at,
-  updatedAt: r.updated_at,
-})
-
-export const toEmployeeInsert = (e: Partial<Employee>, userId: string): Database['public']['Tables']['employees']['Insert'] => ({
-  user_id: userId,
-  name: e.name ?? '',
-  role: e.role ?? null,
-  payment_type: e.paymentType ?? 'PJ',
-  salary_base: e.salaryBase ?? 0,
-  pix_key: e.pixKey ?? null,
-  email: e.email ?? null,
-  phone: e.phone ?? null,
-  admission_date: e.admissionDate ?? null,
-  is_active: e.isActive ?? true,
-  inss_percentual: e.inssPercentual ?? 11,
-  irrf_percentual: e.irrfPercentual ?? 0,
-  outros_encargos: e.outrosEncargos ?? 0,
-})
-
-export const fromContractRow = (r: Row<'contracts'>): Contract => ({
-  id: r.id,
-  userId: r.user_id,
-  clientId: r.client_id,
-  biddingId: r.bidding_id,
-  retentorFixoMensal: r.retentor_fixo_mensal !== null ? Number(r.retentor_fixo_mensal) : null,
-  comissaoExito: r.comissao_exito !== null ? Number(r.comissao_exito) : null,
-  comarcaForo: r.comarca_foro,
-  clausulaAdicional: r.clausula_adicional,
-  conteudoGerado: r.conteudo_gerado,
-  createdAt: r.created_at,
-  updatedAt: r.updated_at,
-})
-
-export const toContractInsert = (c: Partial<Contract>, userId: string): Database['public']['Tables']['contracts']['Insert'] => ({
-  user_id: userId,
-  client_id: c.clientId ?? '',
-  bidding_id: c.biddingId ?? null,
-  retentor_fixo_mensal: c.retentorFixoMensal ?? null,
-  comissao_exito: c.comissaoExito ?? null,
-  comarca_foro: c.comarcaForo ?? null,
-  clausula_adicional: c.clausulaAdicional ?? null,
-  conteudo_gerado: c.conteudoGerado ?? '',
-})
-
-export const fromReceiptRow = (r: Row<'receipts'>): Receipt => ({
-  id: r.id,
-  userId: r.user_id,
-  clientId: r.client_id,
-  kind: r.kind as Receipt['kind'],
-  value: Number(r.value),
-  city: r.city,
-  issueDate: r.issue_date,
-  description: r.description,
-  createdAt: r.created_at,
-})
-
-export const toReceiptInsert = (r: Partial<Receipt>, userId: string): Database['public']['Tables']['receipts']['Insert'] => ({
-  user_id: userId,
-  client_id: r.clientId ?? null,
-  kind: r.kind ?? 'Recibo',
-  value: r.value ?? 0,
-  city: r.city ?? null,
-  issue_date: r.issueDate ?? todayLocalISO(),
-  description: r.description ?? null,
-})
-
-export const fromFileRow = (r: Row<'attached_files'>): AttachedFile => ({
-  id: r.id,
-  userId: r.user_id,
-  name: r.name,
-  sizeBytes: r.size_bytes,
-  mimeType: r.mime_type,
-  storagePath: r.storage_path,
-  category: r.category as AttachedFile['category'],
-  entityType: r.entity_type as AttachedFile['entityType'],
-  entityId: r.entity_id,
-  createdAt: r.created_at,
-})
-
-export const fromAuditLogRow = (r: Row<'audit_logs'>): AuditLog => ({
-  id: r.id,
-  userId: r.user_id,
-  action: r.action,
-  details: r.details,
-  createdAt: r.created_at,
-})
-
-export const fromCategoryRow = (r: Row<'categories'>): Category => ({
-  id: r.id,
-  userId: r.user_id,
-  type: r.type as Category['type'],
-  name: r.name,
-  createdAt: r.created_at,
-})
-
-export const fromPaymentMethodRow = (r: Row<'payment_methods'>): PaymentMethod => ({
-  id: r.id,
-  userId: r.user_id,
-  name: r.name,
-  createdAt: r.created_at,
-})
-
-export const fromClientDocumentRow = (r: Row<'client_documents'>): ClientDocument => ({
-  id: r.id,
-  userId: r.user_id,
-  clientId: r.client_id,
-  tipo: r.tipo as ClientDocument['tipo'],
-  nome: r.nome,
-  storagePath: r.storage_path,
-  dataEmissao: r.data_emissao,
-  dataValidade: r.data_validade,
-  status: r.status as ClientDocument['status'],
-  autoRenovavel: r.auto_renovavel,
-  observacoes: r.observacoes,
-  createdAt: r.created_at,
-  updatedAt: r.updated_at,
-})
