@@ -131,3 +131,28 @@ export function useClientDocuments(clientId?: string) {
     getDownloadUrl,
   }
 }
+
+// Busca as certidões de TODOS os clientes de uma vez — usado pela Central
+// de Prazos e pelo badge de alertas na sidebar, onde a visão precisa ser
+// consolidada em vez de por cliente individual.
+export function useAllClientDocuments() {
+  const { user } = useAuth()
+
+  const query = useQuery({
+    queryKey: [...QUERY_KEY, 'all'],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('client_documents')
+        .select('*')
+        .order('data_validade', { ascending: true })
+      if (error) throw error
+      return data.map(fromClientDocumentRow)
+    },
+  })
+
+  return {
+    documents: query.data ?? [],
+    isLoading: query.isLoading,
+  }
+}
