@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Plus, Pencil, Trash2, Gavel, Power, Eye, EyeOff, Lock, FileText, Loader2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Gavel, Power, Eye, EyeOff, Lock, FileText, FileCheck2, Loader2 } from 'lucide-react'
 import { Button } from '../ui/FormControls'
 import { EmptyState, StatusBadge } from '../ui/Primitives'
 import { formatBRL } from '../../hooks/useAccountBalances'
@@ -24,7 +24,7 @@ export default function BiddingsTab() {
   const [deleting, setDeleting] = useState<Bidding | null>(null)
   const [showInactive, setShowInactive] = useState(false)
   const [financialWarning, setFinancialWarning] = useState<string | undefined>()
-  const [gerandoPropostaId, setGerandoPropostaId] = useState<string | null>(null)
+  const [gerandoPropostaKey, setGerandoPropostaKey] = useState<string | null>(null)
   const [erroGeracao, setErroGeracao] = useState<string | null>(null)
 
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? 'Cliente removido'
@@ -64,8 +64,9 @@ export default function BiddingsTab() {
     }
   }
 
-  const handleGerarProposta = async (b: Bidding) => {
-    setGerandoPropostaId(b.id)
+  const handleGerarProposta = async (b: Bidding, tipo: 'normal' | 'readequada' = 'normal') => {
+    const key = `${b.id}:${tipo}`
+    setGerandoPropostaKey(key)
     setErroGeracao(null)
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -76,7 +77,7 @@ export default function BiddingsTab() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session?.access_token}`,
         },
-        body: JSON.stringify({ clientId: b.clientId, biddingId: b.id }),
+        body: JSON.stringify({ clientId: b.clientId, biddingId: b.id, tipo }),
       })
       const resultado = await res.json()
       if (!res.ok || resultado.error) {
@@ -95,7 +96,7 @@ export default function BiddingsTab() {
     } catch (err) {
       setErroGeracao(`Licitação "${b.objeto.slice(0, 40)}": ${String(err)}`)
     } finally {
-      setGerandoPropostaId(null)
+      setGerandoPropostaKey(null)
     }
   }
 
@@ -162,7 +163,9 @@ export default function BiddingsTab() {
                 </tr>
               </thead>
               <tbody>
-                {paginated.map((b) => (
+                {paginated.map((b) => {
+                  const ganhou = b.status === 'Ganhou'
+                  return (
                   <tr key={b.id} className={`border-b border-base-800/60 hover:bg-base-850/40 transition ${!b.isActive ? 'opacity-50' : ''}`}>
                     <td className="px-4 py-3 max-w-[260px]">
                       <div className="font-semibold text-base-100 truncate flex items-center gap-2">
@@ -189,13 +192,23 @@ export default function BiddingsTab() {
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button
-                          onClick={() => handleGerarProposta(b)}
-                          disabled={gerandoPropostaId === b.id}
+                          onClick={() => handleGerarProposta(b, 'normal')}
+                          disabled={gerandoPropostaKey === `${b.id}:normal`}
                           title="Gerar Proposta de Preços (.docx)"
                           className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition disabled:opacity-50 disabled:cursor-wait"
                         >
-                          {gerandoPropostaId === b.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                          {gerandoPropostaKey === `${b.id}:normal` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
                         </button>
+                        {ganhou && (
+                          <button
+                            onClick={() => handleGerarProposta(b, 'readequada')}
+                            disabled={gerandoPropostaKey === `${b.id}:readequada`}
+                            title="Gerar Proposta Readequada (.docx)"
+                            className="p-1.5 text-base-400 hover:text-positive-400 hover:bg-base-800 rounded transition disabled:opacity-50 disabled:cursor-wait"
+                          >
+                            {gerandoPropostaKey === `${b.id}:readequada` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileCheck2 className="w-3.5 h-3.5" />}
+                          </button>
+                        )}
                         {podeEditar && (
                           <>
                             <button
@@ -216,7 +229,8 @@ export default function BiddingsTab() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
