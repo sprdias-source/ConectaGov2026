@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Plus, Pencil, Trash2, Gavel, Power, Eye, EyeOff, Lock, FileText, FileCheck2, Loader2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Gavel, Power, Eye, EyeOff, Lock, FileText, FileCheck2, FileUp, Loader2 } from 'lucide-react'
 import { Button } from '../ui/FormControls'
 import { EmptyState, StatusBadge } from '../ui/Primitives'
 import { formatBRL } from '../../hooks/useAccountBalances'
@@ -13,8 +13,20 @@ import { useClients } from '../../hooks/useClients'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import type { Bidding, BiddingItem } from '../../types/domain'
 
+function fileParaBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const resultado = reader.result as string
+      resolve(resultado.split(',')[1] ?? '')
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
 export default function BiddingsTab() {
-  const { biddings, isLoading, addBidding, updateBidding, deleteBidding, toggleBiddingActive, checkBiddingHasFinancialHistory } = useBiddings()
+  const { biddings, isLoading, addBidding, updateBidding, deleteBidding, toggleBiddingActive, setModeloCustomizado, checkBiddingHasFinancialHistory } = useBiddings()
   const { clients } = useClients()
   const { nivel: nivelAcesso } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivelAcesso === 'edicao'
@@ -26,6 +38,8 @@ export default function BiddingsTab() {
   const [financialWarning, setFinancialWarning] = useState<string | undefined>()
   const [gerandoPropostaKey, setGerandoPropostaKey] = useState<string | null>(null)
   const [erroGeracao, setErroGeracao] = useState<string | null>(null)
+  const [enviandoModeloId, setEnviandoModeloId] = useState<string | null>(null)
+  const [erroModelo, setErroModelo] = useState<string | null>(null)
 
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? 'Cliente removido'
   const isMensalista = (id: string) => clients.find((c) => c.id === id)?.isMensalista ?? false
@@ -100,6 +114,52 @@ export default function BiddingsTab() {
     }
   }
 
+  const chamarUploadModelo = async (biddingId: string, body: Record<string, unknown>) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/upload-modelo-licitacao`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token}`,
+      },
+      body: JSON.stringify({ biddingId, ...body }),
+    })
+    const resultado = await res.json()
+    if (!res.ok || resultado.error) {
+      throw new Error(resultado.error || 'Erro desconhecido')
+    }
+    return resultado
+  }
+
+  const handleUploadModelo = async (b: Bidding, file: File) => {
+    setEnviandoModeloId(b.id)
+    setErroModelo(null)
+    try {
+      const fileBase64 = await fileParaBase64(file)
+      const resultado = await chamarUploadModelo(b.id, { action: 'upload', fileBase64 })
+      setModeloCustomizado.mutate({ biddingId: b.id, path: resultado.path })
+    } catch (err) {
+      setErroModelo(`Licitação "${b.objeto.slice(0, 40)}": ${String(err)}`)
+    } finally {
+      setEnviandoModeloId(null)
+    }
+  }
+
+  const handleRemoverModelo = async (b: Bidding) => {
+    if (!window.confirm('Remover o modelo próprio desta licitação e voltar a usar o modelo padrão?')) return
+    setEnviandoModeloId(b.id)
+    setErroModelo(null)
+    try {
+      await chamarUploadModelo(b.id, { action: 'remove' })
+      setModeloCustomizado.mutate({ biddingId: b.id, path: null })
+    } catch (err) {
+      setErroModelo(`Licitação "${b.objeto.slice(0, 40)}": ${String(err)}`)
+    } finally {
+      setEnviandoModeloId(null)
+    }
+  }
+
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -141,6 +201,11 @@ export default function BiddingsTab() {
           {erroGeracao}
         </div>
       )}
+      {erroModelo && (
+        <div className="bg-negative-500/10 border border-negative-500/25 rounded-lg p-3 mb-4 text-[13px] text-negative-300">
+          {erroModelo}
+        </div>
+      )}
 
       <div className="bg-base-900/60 border border-base-700/50 rounded-xl overflow-hidden">
         {isLoading ? (
@@ -165,6 +230,8 @@ export default function BiddingsTab() {
               <tbody>
                 {paginated.map((b) => {
                   const ganhou = b.status === 'Ganhou'
+                  const temModeloProprio = !!b.modeloCustomizadoPath
+                  const enviandoEsteModelo = enviandoModeloId === b.id
                   return (
                   <tr key={b.id} className={`border-b border-base-800/60 hover:bg-base-850/40 transition ${!b.isActive ? 'opacity-50' : ''}`}>
                     <td className="px-4 py-3 max-w-[260px]">
@@ -208,6 +275,36 @@ export default function BiddingsTab() {
                           >
                             {gerandoPropostaKey === `${b.id}:readequada` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileCheck2 className="w-3.5 h-3.5" />}
                           </button>
+                        )}
+                        {podeEditar && (
+                          temModeloProprio ? (
+                            <button
+                              onClick={() => handleRemoverModelo(b)}
+                              disabled={enviandoEsteModelo}
+                              title="Modelo próprio enviado — clique para remover e voltar ao padrão"
+                              className="p-1.5 text-accent-300 hover:text-negative-400 hover:bg-base-800 rounded transition disabled:opacity-50 disabled:cursor-wait"
+                            >
+                              {enviandoEsteModelo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileUp className="w-3.5 h-3.5" />}
+                            </button>
+                          ) : (
+                            <label
+                              title="Enviar modelo próprio (.docx) desta prefeitura"
+                              className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition cursor-pointer inline-flex disabled:opacity-50"
+                            >
+                              {enviandoEsteModelo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileUp className="w-3.5 h-3.5" />}
+                              <input
+                                type="file"
+                                accept=".docx"
+                                className="hidden"
+                                disabled={enviandoEsteModelo}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0]
+                                  if (file) handleUploadModelo(b, file)
+                                  e.target.value = ''
+                                }}
+                              />
+                            </label>
+                          )
                         )}
                         {podeEditar && (
                           <>
