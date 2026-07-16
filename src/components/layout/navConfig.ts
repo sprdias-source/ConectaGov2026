@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, FolderKanban, Wallet, CalendarRange, FileBarChart,
   Receipt, FileSignature, Users, Calculator, ShieldCheck, Target, FileText, UserCog, UserCircle,
-  AlarmClock, DollarSign, type LucideIcon,
+  AlarmClock, DollarSign, ScrollText, type LucideIcon,
 } from 'lucide-react'
 export interface NavItem {
   key: string
@@ -32,6 +32,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Documentos',
     items: [
+      { key: 'emissao-nfse', label: 'Emissão de NFS-e', path: '/emissao-nfse', icon: ScrollText },
       { key: 'recibos', label: 'Recibos/Orç', path: '/recibos', icon: Receipt },
       { key: 'contratos', label: 'Contratos', path: '/contratos', icon: FileSignature },
     ],
