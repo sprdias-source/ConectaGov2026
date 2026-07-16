@@ -144,6 +144,7 @@ export type Database = {
           id: string
           is_active: boolean
           modalidade: string
+          modelo_customizado_path: string | null
           municipio: string | null
           numero_edital: string | null
           objeto: string
@@ -175,6 +176,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           modalidade: string
+          modelo_customizado_path?: string | null
           municipio?: string | null
           numero_edital?: string | null
           objeto: string
@@ -206,6 +208,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           modalidade?: string
+          modelo_customizado_path?: string | null
           municipio?: string | null
           numero_edital?: string | null
           objeto?: string
