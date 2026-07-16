@@ -154,7 +154,7 @@ export default function BiddingItemsEditor({
                 <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-20">Unid.</th>
                 <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-20">Qtd.</th>
                 <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Marca</th>
-                <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Referência</th>
+                <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Modelo</th>
                 <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Vl. Unit. Licitado</th>
                 <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Vl. Unit. Ofertado</th>
                 <th className="px-2 py-2 w-8" />
