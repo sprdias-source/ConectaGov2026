@@ -154,6 +154,30 @@ export function useBiddings() {
     },
   })
 
+  // Atualiza só o caminho do modelo de proposta customizado (Storage) —
+  // separado do updateBidding pra não arriscar mexer nos itens da
+  // licitação (updateBidding sempre reescreve bidding_items a partir do
+  // array `items` recebido, e aqui não queremos tocar nisso).
+  const setModeloCustomizado = useMutation({
+    mutationFn: async ({ biddingId, path }: { biddingId: string; path: string | null }) => {
+      const { data, error } = await supabase
+        .from('biddings')
+        .update({ modelo_customizado_path: path })
+        .eq('id', biddingId)
+        .select()
+        .single()
+      if (error) throw error
+      return fromBiddingRow(data)
+    },
+    onSuccess: (updated) => {
+      invalidate()
+      logEvent(
+        updated.modeloCustomizadoPath ? 'Enviou Modelo Próprio de Proposta' : 'Removeu Modelo Próprio de Proposta',
+        `Licitação "${updated.objeto}" (Órgão: ${updated.orgao})`
+      )
+    },
+  })
+
   const checkBiddingHasFinancialHistory = async (biddingId: string): Promise<boolean> => {
     const { count: txCount } = await supabase
       .from('transactions')
@@ -178,6 +202,7 @@ export function useBiddings() {
     updateBidding,
     deleteBidding,
     toggleBiddingActive,
+    setModeloCustomizado,
     checkBiddingHasFinancialHistory,
   }
 }
