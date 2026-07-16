@@ -17,6 +17,8 @@ import BIConcorrenciaPage from './pages/BIConcorrenciaPage'
 import ExtratoOFXPage from './pages/ExtratoOFXPage'
 import UsuariosPage from './pages/UsuariosPage'
 import MinhaContaPage from './pages/MinhaContaPage'
+import CentralPrazosPage from './pages/CentralPrazosPage'
+import RentabilidadePage from './pages/RentabilidadePage'
 import { useRecurringEngine } from './hooks/useRecurringEngine'
 import { useOnlineStatus } from './hooks/useOnlineStatus'
 export default function App() {
@@ -47,6 +49,7 @@ export default function App() {
         )}
         <Routes>
           <Route path="/" element={<DashboardPage />} />
+          <Route path="/central-prazos" element={<CentralPrazosPage />} />
           <Route path="/cadastros" element={<CadastrosPage />} />
           <Route path="/contas" element={<ContasPage />} />
           <Route path="/fluxo" element={<FluxoCaixaPage />} />
@@ -57,6 +60,7 @@ export default function App() {
           <Route path="/contabilidade" element={<ContabilidadePage />} />
           <Route path="/diagnostico" element={<DiagnosticoPage />} />
           <Route path="/bi-concorrencia" element={<BIConcorrenciaPage />} />
+          <Route path="/rentabilidade" element={<RentabilidadePage />} />
           <Route path="/extrato" element={<ExtratoOFXPage />} />
           <Route path="/usuarios" element={<UsuariosPage />} />
           <Route path="/minha-conta" element={<MinhaContaPage />} />
