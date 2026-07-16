@@ -19,6 +19,7 @@ import UsuariosPage from './pages/UsuariosPage'
 import MinhaContaPage from './pages/MinhaContaPage'
 import CentralPrazosPage from './pages/CentralPrazosPage'
 import RentabilidadePage from './pages/RentabilidadePage'
+import EmissaoNfsePage from './pages/EmissaoNfsePage'
 import { useRecurringEngine } from './hooks/useRecurringEngine'
 import { useOnlineStatus } from './hooks/useOnlineStatus'
 export default function App() {
@@ -61,6 +62,7 @@ export default function App() {
           <Route path="/diagnostico" element={<DiagnosticoPage />} />
           <Route path="/bi-concorrencia" element={<BIConcorrenciaPage />} />
           <Route path="/rentabilidade" element={<RentabilidadePage />} />
+          <Route path="/emissao-nfse" element={<EmissaoNfsePage />} />
           <Route path="/extrato" element={<ExtratoOFXPage />} />
           <Route path="/usuarios" element={<UsuariosPage />} />
           <Route path="/minha-conta" element={<MinhaContaPage />} />
