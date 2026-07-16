@@ -89,6 +89,7 @@ export interface Bidding {
   representante: string | null
   observacaoEtapa: string | null
   diasValidadeProposta: string | null
+  modeloCustomizadoPath: string | null
   isActive: boolean
   createdAt: string
   updatedAt: string
@@ -307,38 +308,3 @@ export const CERT_CONFIG: Record<Exclude<DocumentTipo, 'manual'>, {
   },
   cnd_federal: {
     label: 'CND Federal — Receita Federal + PGFN',
-    validadeDias: 180,
-    alertaDias: 15,
-    portal: 'solucoes.receita.fazenda.gov.br',
-  },
-  cnd_estadual_rs: {
-    label: 'CND Estadual RS — SEFAZ-RS',
-    validadeDias: 90,
-    alertaDias: 15,
-    portal: 'sefaz.rs.gov.br',
-  },
-  fgts: {
-    label: 'CRF — Certificado de Regularidade do FGTS (Caixa)',
-    validadeDias: 30,
-    alertaDias: 15,
-    portal: 'caixa.gov.br',
-  },
-  cnd_municipal: {
-    label: 'CND Municipal — Prefeitura de Vacaria/RS',
-    validadeDias: 90,
-    alertaDias: 15,
-    portal: 'webapp1-vacaria.cidade360.cloud',
-  },
-  certidao_falencia_rs: {
-    label: 'Certidão Negativa de Falência — TJRS',
-    validadeDias: 90,
-    alertaDias: 15,
-    portal: 'tjrs.jus.br',
-  },
-  cnpj_cartao: {
-    label: 'Cartão CNPJ — Comprovante de Inscrição e Situação Cadastral',
-    validadeDias: 60,
-    alertaDias: 15,
-    portal: 'solucoes.receita.fazenda.gov.br',
-  },
-}
