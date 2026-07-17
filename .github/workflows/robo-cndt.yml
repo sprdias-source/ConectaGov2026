@@ -29,4 +29,4 @@ jobs:
           CLIENT_ID: ${{ github.event.client_payload.clientId }}
           CNPJ: ${{ github.event.client_payload.cnpj }}
           USER_ID: ${{ github.event.client_payload.userId }}
-        run: node scripts/robos/buscar-cndt.js
+        run: node scripts/robos/buscar-cndt.cjs
