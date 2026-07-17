@@ -11,6 +11,7 @@ import { useTransactions } from '../../hooks/useTransactions'
 import { useAccountBalances, formatBRL } from '../../hooks/useAccountBalances'
 import { useBackup } from '../../hooks/useBackup'
 import { useAllClientDocuments } from '../../hooks/useClientDocuments'
+import ResolverCaptchaModal from '../robos/ResolverCaptchaModal'
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth()
@@ -269,6 +270,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
           {children}
         </div>
       </main>
+
+      <ResolverCaptchaModal />
     </div>
   )
 }
