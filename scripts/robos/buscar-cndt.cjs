@@ -114,14 +114,35 @@ async function main() {
     console.log('--- Texto da página após o envio (primeiros 800 caracteres) ---')
     console.log(pageText.slice(0, 800))
     console.log('--- fim do texto ---')
-    const isPositiva = pageText.toLowerCase().includes('positiva')
-    const voltouVazio = pageText.includes('Informe o número do CNPJ')
 
-    if (voltouVazio) {
+    // O texto "Informe o número do CNPJ" é um rótulo FIXO do formulário —
+    // ele sempre existe na página, esteja mostrando sucesso ou erro. O
+    // sinal confiável é a VISIBILIDADE da mensagem de sucesso (o site
+    // alterna qual bloco de mensagem fica visível via CSS, mas todos os
+    // blocos continuam presentes no HTML o tempo todo).
+    const emitidoComSucesso = await page.locator('text=Certidão EMITIDA com sucesso').first().isVisible().catch(() => false)
+    const emitidoEEnviado = await page.locator('text=Certidão EMITIDA e ENVIADA por e-mail com sucesso').first().isVisible().catch(() => false)
+    const erroEmissao = await page.locator('text=Ocorreu um erro na emissão da certidão').first().isVisible().catch(() => false)
+
+    console.log('Mensagens visíveis — sucesso simples:', emitidoComSucesso, '| sucesso c/ email:', emitidoEEnviado, '| erro:', erroEmissao)
+
+    if (erroEmissao) {
       await supabase.from('captcha_sessions').update({ status: 'usada' }).eq('id', sessaoId)
-      throw new Error('O portal voltou ao formulário vazio — captcha incorreto ou sessão expirada no site do TST')
+      throw new Error('O portal do TST reportou um erro na emissão — provavelmente captcha incorreto. Tente novamente.')
     }
 
+    if (!emitidoComSucesso && !emitidoEEnviado) {
+      // Nenhuma mensagem de sucesso OU erro ficou visível — situação
+      // inesperada, tira um print pra diagnóstico antes de desistir.
+      const screenshotBuffer = await page.screenshot({ fullPage: true })
+      await supabase.storage.from('documents').upload(
+        `debug/cndt_${Date.now()}.png`, screenshotBuffer, { contentType: 'image/png', upsert: true }
+      )
+      await supabase.from('captcha_sessions').update({ status: 'usada' }).eq('id', sessaoId)
+      throw new Error('Não consegui confirmar se a certidão foi emitida (nem sucesso nem erro ficaram visíveis) — print de diagnóstico salvo em documents/debug/')
+    }
+
+    const isPositiva = pageText.toLowerCase().includes('débito') && pageText.toLowerCase().includes('consta')
     if (isPositiva) {
       await supabase.from('captcha_sessions').update({ status: 'usada' }).eq('id', sessaoId)
       await registrarLog('erro', 'CNDT positiva (débitos trabalhistas)', inicio)
