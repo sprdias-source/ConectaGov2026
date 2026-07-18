@@ -60,6 +60,7 @@ async function main() {
 
     const imgSrc = await page.getAttribute('img#idImgBase64', 'src')
     if (!imgSrc) throw new Error('Não encontrei a imagem do captcha na página (o site pode ter mudado a estrutura)')
+    console.log('Tipo da imagem do captcha (início do src):', imgSrc.slice(0, 40))
 
     const expiraEm = new Date(Date.now() + POLL_TIMEOUT_MS + 5000).toISOString()
     const { data: sessao, error: erroSessao } = await supabase
@@ -105,10 +106,14 @@ async function main() {
     }
 
     await page.fill('input#idCampoResposta', resposta)
+    console.log('Resposta digitada no campo do captcha (tamanho):', resposta.length)
     await page.click("input[value='Emitir Certidão']")
     await page.waitForTimeout(3000)
 
     const pageText = (await page.textContent('body')) || ''
+    console.log('--- Texto da página após o envio (primeiros 800 caracteres) ---')
+    console.log(pageText.slice(0, 800))
+    console.log('--- fim do texto ---')
     const isPositiva = pageText.toLowerCase().includes('positiva')
     const voltouVazio = pageText.includes('Informe o número do CNPJ')
 
