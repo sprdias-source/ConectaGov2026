@@ -105,7 +105,7 @@ async function main() {
     }
 
     await page.fill('input#idCampoResposta', resposta)
-    await page.click("input[value='Emitir Certidão'], input[type='submit']")
+    await page.click("input[value='Emitir Certidão']")
     await page.waitForTimeout(3000)
 
     const pageText = (await page.textContent('body')) || ''
