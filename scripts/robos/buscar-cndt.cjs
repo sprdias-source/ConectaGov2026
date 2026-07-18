@@ -51,7 +51,7 @@ async function main() {
   try {
     await page.goto('https://cndt-certidao.tst.jus.br/gerarCertidao.faces', {
       waitUntil: 'domcontentloaded',
-      timeout: 15000,
+      timeout: 30000,
     })
     await page.waitForTimeout(2000)
 
