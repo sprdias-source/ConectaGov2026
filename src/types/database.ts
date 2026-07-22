@@ -53,6 +53,59 @@ export type Database = {
         }
         Relationships: []
       }
+      atestados_tecnicos: {
+        Row: {
+          client_id: string
+          created_at: string
+          data_emissao: string | null
+          id: string
+          nome: string
+          objeto: string
+          observacoes: string | null
+          orgao_emissor: string | null
+          storage_path: string | null
+          updated_at: string
+          user_id: string
+          valor: number | null
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          data_emissao?: string | null
+          id?: string
+          nome: string
+          objeto: string
+          observacoes?: string | null
+          orgao_emissor?: string | null
+          storage_path?: string | null
+          updated_at?: string
+          user_id: string
+          valor?: number | null
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          data_emissao?: string | null
+          id?: string
+          nome?: string
+          objeto?: string
+          observacoes?: string | null
+          orgao_emissor?: string | null
+          storage_path?: string | null
+          updated_at?: string
+          user_id?: string
+          valor?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "atestados_tecnicos_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string
@@ -76,6 +129,75 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      bidding_checklist_items: {
+        Row: {
+          atendido: boolean
+          attached_file_id: string | null
+          bidding_id: string
+          categoria: string | null
+          client_document_tipo: string | null
+          created_at: string
+          descricao: string
+          id: string
+          observacoes: string | null
+          obrigatorio: boolean
+          origem: string
+          prazo: string | null
+          responsavel_nome: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          atendido?: boolean
+          attached_file_id?: string | null
+          bidding_id: string
+          categoria?: string | null
+          client_document_tipo?: string | null
+          created_at?: string
+          descricao: string
+          id?: string
+          observacoes?: string | null
+          obrigatorio?: boolean
+          origem?: string
+          prazo?: string | null
+          responsavel_nome?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          atendido?: boolean
+          attached_file_id?: string | null
+          bidding_id?: string
+          categoria?: string | null
+          client_document_tipo?: string | null
+          created_at?: string
+          descricao?: string
+          id?: string
+          observacoes?: string | null
+          obrigatorio?: boolean
+          origem?: string
+          prazo?: string | null
+          responsavel_nome?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bidding_checklist_items_bidding_id_fkey"
+            columns: ["bidding_id"]
+            isOneToOne: false
+            referencedRelation: "biddings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bidding_checklist_items_attached_file_id_fkey"
+            columns: ["attached_file_id"]
+            isOneToOne: false
+            referencedRelation: "attached_files"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       bidding_items: {
         Row: {
@@ -126,6 +248,47 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "bidding_items_bidding_id_fkey"
+            columns: ["bidding_id"]
+            isOneToOne: false
+            referencedRelation: "biddings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bidding_items_versions: {
+        Row: {
+          alterado_por_email: string | null
+          bidding_id: string
+          created_at: string
+          id: string
+          itens_snapshot: Json
+          observacao: string | null
+          user_id: string
+          versao: number
+        }
+        Insert: {
+          alterado_por_email?: string | null
+          bidding_id: string
+          created_at?: string
+          id?: string
+          itens_snapshot: Json
+          observacao?: string | null
+          user_id: string
+          versao: number
+        }
+        Update: {
+          alterado_por_email?: string | null
+          bidding_id?: string
+          created_at?: string
+          id?: string
+          itens_snapshot?: Json
+          observacao?: string | null
+          user_id?: string
+          versao?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bidding_items_versions_bidding_id_fkey"
             columns: ["bidding_id"]
             isOneToOne: false
             referencedRelation: "biddings"
@@ -364,6 +527,7 @@ export type Database = {
           id: string
           nome: string
           observacoes: string | null
+          pasta: string | null
           status: string
           storage_path: string | null
           tipo: string
@@ -379,6 +543,7 @@ export type Database = {
           id?: string
           nome: string
           observacoes?: string | null
+          pasta?: string | null
           status?: string
           storage_path?: string | null
           tipo: string
@@ -394,6 +559,7 @@ export type Database = {
           id?: string
           nome?: string
           observacoes?: string | null
+          pasta?: string | null
           status?: string
           storage_path?: string | null
           tipo?: string
@@ -551,6 +717,56 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contract_marcos: {
+        Row: {
+          contract_id: string
+          created_at: string
+          data_prevista: string | null
+          data_realizada: string | null
+          descricao: string
+          id: string
+          observacoes: string | null
+          status: string
+          updated_at: string
+          user_id: string
+          valor: number | null
+        }
+        Insert: {
+          contract_id: string
+          created_at?: string
+          data_prevista?: string | null
+          data_realizada?: string | null
+          descricao: string
+          id?: string
+          observacoes?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+          valor?: number | null
+        }
+        Update: {
+          contract_id?: string
+          created_at?: string
+          data_prevista?: string | null
+          data_realizada?: string | null
+          descricao?: string
+          id?: string
+          observacoes?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+          valor?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_marcos_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
             referencedColumns: ["id"]
           },
         ]
@@ -877,6 +1093,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      modelos_documentos: {
+        Row: {
+          categoria: string
+          conteudo: string | null
+          created_at: string
+          id: string
+          nome: string
+          observacoes: string | null
+          storage_path: string | null
+          tags: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          categoria: string
+          conteudo?: string | null
+          created_at?: string
+          id?: string
+          nome: string
+          observacoes?: string | null
+          storage_path?: string | null
+          tags?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          categoria?: string
+          conteudo?: string | null
+          created_at?: string
+          id?: string
+          nome?: string
+          observacoes?: string | null
+          storage_path?: string | null
+          tags?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       member_permissions: {
         Row: {

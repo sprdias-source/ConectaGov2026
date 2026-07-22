@@ -20,6 +20,12 @@ import MinhaContaPage from './pages/MinhaContaPage'
 import CentralPrazosPage from './pages/CentralPrazosPage'
 import RentabilidadePage from './pages/RentabilidadePage'
 import EmissaoNfsePage from './pages/EmissaoNfsePage'
+import PendenciasPage from './pages/PendenciasPage'
+import ModelosPage from './pages/ModelosPage'
+import CalculadoraPrecoPage from './pages/CalculadoraPrecoPage'
+import ExecucaoContratosPage from './pages/ExecucaoContratosPage'
+import AgendaPage from './pages/AgendaPage'
+import KanbanLicitacoesPage from './pages/KanbanLicitacoesPage'
 import { useRecurringEngine } from './hooks/useRecurringEngine'
 import { useOnlineStatus } from './hooks/useOnlineStatus'
 export default function App() {
@@ -50,7 +56,13 @@ export default function App() {
         )}
         <Routes>
           <Route path="/" element={<DashboardPage />} />
+          <Route path="/agenda" element={<AgendaPage />} />
+          <Route path="/kanban" element={<KanbanLicitacoesPage />} />
           <Route path="/central-prazos" element={<CentralPrazosPage />} />
+          <Route path="/pendencias" element={<PendenciasPage />} />
+          <Route path="/modelos" element={<ModelosPage />} />
+          <Route path="/calculadora-preco" element={<CalculadoraPrecoPage />} />
+          <Route path="/execucao-contratos" element={<ExecucaoContratosPage />} />
           <Route path="/cadastros" element={<CadastrosPage />} />
           <Route path="/contas" element={<ContasPage />} />
           <Route path="/fluxo" element={<FluxoCaixaPage />} />

@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, FolderKanban, Wallet, CalendarRange, FileBarChart,
   Receipt, FileSignature, Users, Calculator, ShieldCheck, Target, FileText, UserCog, UserCircle,
-  AlarmClock, DollarSign, ScrollText, type LucideIcon,
+  AlarmClock, DollarSign, ScrollText, ClipboardList, BookOpen, ClipboardCheck, Percent, Trello, CalendarDays, type LucideIcon,
 } from 'lucide-react'
 export interface NavItem {
   key: string
@@ -22,7 +22,11 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Operação',
     items: [
       { key: 'dashboard', label: 'Dashboard', path: '/', icon: LayoutDashboard },
+      { key: 'agenda', label: 'Agenda', path: '/agenda', icon: CalendarDays },
+      { key: 'kanban', label: 'Kanban', path: '/kanban', icon: Trello },
       { key: 'central-prazos', label: 'Central de Prazos', path: '/central-prazos', icon: AlarmClock },
+      { key: 'pendencias', label: 'Pendências', path: '/pendencias', icon: ClipboardList },
+      { key: 'calculadora-preco', label: 'Calculadora de Preço', path: '/calculadora-preco', icon: Percent },
       { key: 'cadastros', label: 'Cadastros', path: '/cadastros', icon: FolderKanban },
       { key: 'contas', label: 'Transações', path: '/contas', icon: Wallet },
       { key: 'extrato', label: 'Extrato OFX', path: '/extrato', icon: FileText },
@@ -33,6 +37,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Documentos',
     items: [
       { key: 'emissao-nfse', label: 'Emissão de NFS-e', path: '/emissao-nfse', icon: ScrollText },
+      { key: 'modelos', label: 'Banco de Modelos', path: '/modelos', icon: BookOpen },
       { key: 'recibos', label: 'Recibos/Orç', path: '/recibos', icon: Receipt },
       { key: 'contratos', label: 'Contratos', path: '/contratos', icon: FileSignature },
     ],
@@ -42,6 +47,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: 'bi-concorrencia', label: 'BI Concorrência', path: '/bi-concorrencia', icon: Target },
       { key: 'rentabilidade', label: 'Rentabilidade', path: '/rentabilidade', icon: DollarSign },
+      { key: 'execucao-contratos', label: 'Execução de Contratos', path: '/execucao-contratos', icon: ClipboardCheck },
       { key: 'relatorios', label: 'Relatórios', path: '/relatorios', icon: FileBarChart },
       { key: 'funcionarios', label: 'Funcionários', path: '/funcionarios', icon: Users },
       { key: 'contabilidade', label: 'Contabilidade', path: '/contabilidade', icon: Calculator },

@@ -1,16 +1,18 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
   CheckCircle2, AlertTriangle, XCircle, Clock, Upload,
   Download, RefreshCw, Trash2, Plus, FileText, ChevronDown, ChevronUp, AlertCircle, X, Info,
+  FolderOpen, Folder, FolderPlus, ChevronLeft, Award,
 } from 'lucide-react'
-import { Button } from '../ui/FormControls'
+import { Button, Input } from '../ui/FormControls'
 import ErrorAlert from '../ui/ErrorAlert'
 import { supabase } from '../../lib/supabase'
 import { useClientDocuments, calcDocStatus, diasRestantes } from '../../hooks/useClientDocuments'
+import { useAtestados } from '../../hooks/useAtestados'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import AcoesDocumentoManual from './AcoesDocumentoManual'
 import { CERT_CONFIG } from '../../types/domain'
-import type { ClientDocument, DocumentTipo, DocumentStatus } from '../../types/domain'
+import type { ClientDocument, DocumentTipo, DocumentStatus, AtestadoTecnico } from '../../types/domain'
 
 const CERT_TIPOS = Object.keys(CERT_CONFIG) as Exclude<DocumentTipo, 'manual'>[]
 
@@ -66,6 +68,330 @@ const TIPOS_VIA_GITHUB_ACTIONS: Partial<Record<DocumentTipo, boolean>> = {
   cndt: true,
 }
 
+// Visão de "pasta" — cada tipo de certidão automática vira sua própria
+// subpasta (uma certidão cada); documentos manuais agrupam pelo campo
+// `pasta` (texto livre) que o usuário escolhe ao enviar — digitar um nome
+// novo já "cria" a pasta, sem precisar de nenhum cadastro à parte.
+function PastaDocumentos({
+  documents, getDownloadUrl, uploadAndSave,
+}: {
+  documents: ClientDocument[]
+  getDownloadUrl: (path: string) => Promise<string>
+  uploadAndSave: (doc: {
+    file: File
+    tipo: DocumentTipo
+    nome: string
+    dataEmissao?: string | null
+    dataValidade?: string | null
+    observacoes?: string | null
+    pasta?: string | null
+  }) => Promise<unknown>
+}) {
+  const [pastaAberta, setPastaAberta] = useState<string | null>(null)
+  const [abrindo, setAbrindo] = useState<string | null>(null)
+  const [mostrarNovaPasta, setMostrarNovaPasta] = useState(false)
+  const [novaPastaNome, setNovaPastaNome] = useState('')
+  const [arquivoNovaPasta, setArquivoNovaPasta] = useState<File | null>(null)
+  const [enviandoNovaPasta, setEnviandoNovaPasta] = useState(false)
+  const [erroNovaPasta, setErroNovaPasta] = useState<string | null>(null)
+
+  const arquivos = documents.filter((d) => d.storagePath)
+
+  const pastas = useMemo(() => {
+    const mapa = new Map<string, ClientDocument[]>()
+    for (const doc of arquivos) {
+      const nomePasta = doc.tipo === 'manual'
+        ? (doc.pasta?.trim() || 'Documentos Gerais')
+        : (CERT_CONFIG[doc.tipo]?.label.split(' — ')[0]?.trim() ?? doc.tipo)
+      const lista = mapa.get(nomePasta) ?? []
+      lista.push(doc)
+      mapa.set(nomePasta, lista)
+    }
+    return Array.from(mapa.entries())
+      .map(([nome, docs]) => ({ nome, docs }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+  }, [arquivos])
+
+  const nomesPastasExistentes = useMemo(
+    () => Array.from(new Set(documents.filter((d) => d.tipo === 'manual' && d.pasta).map((d) => d.pasta as string))),
+    [documents]
+  )
+
+  const handleAbrir = async (doc: ClientDocument) => {
+    if (!doc.storagePath) return
+    setAbrindo(doc.id)
+    try {
+      const url = await getDownloadUrl(doc.storagePath)
+      window.open(url, '_blank')
+    } catch {
+      alert('Não foi possível abrir esse documento.')
+    } finally {
+      setAbrindo(null)
+    }
+  }
+
+  const handleCriarPastaEEnviar = async () => {
+    if (!arquivoNovaPasta || !novaPastaNome.trim()) return
+    setEnviandoNovaPasta(true)
+    setErroNovaPasta(null)
+    try {
+      await uploadAndSave({
+        file: arquivoNovaPasta,
+        tipo: 'manual',
+        nome: arquivoNovaPasta.name,
+        pasta: novaPastaNome.trim(),
+      })
+      setMostrarNovaPasta(false)
+      setNovaPastaNome('')
+      setArquivoNovaPasta(null)
+      setPastaAberta(novaPastaNome.trim())
+    } catch (err) {
+      setErroNovaPasta(String(err))
+    } finally {
+      setEnviandoNovaPasta(false)
+    }
+  }
+
+  const formNovaPasta = (
+    <div className="bg-base-900/40 border border-accent-500/20 rounded-xl p-3 flex flex-col gap-2">
+      <p className="text-[11px] text-accent-300 font-semibold">Nova pasta + enviar documento</p>
+      <input
+        type="text"
+        list="nomes-pastas-existentes"
+        placeholder="Nome da pasta (nova ou existente)"
+        value={novaPastaNome}
+        onChange={(e) => setNovaPastaNome(e.target.value)}
+        className="w-full bg-base-850 border border-base-700 rounded-lg px-3 py-2 text-sm text-base-100 placeholder:text-base-500 focus:border-accent-400 outline-none"
+      />
+      <datalist id="nomes-pastas-existentes">
+        {nomesPastasExistentes.map((p) => <option key={p} value={p} />)}
+      </datalist>
+      <input
+        type="file"
+        accept=".pdf,.png,.jpg,.jpeg"
+        onChange={(e) => setArquivoNovaPasta(e.target.files?.[0] ?? null)}
+        className="w-full text-[12px] text-base-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-accent-500 file:text-base-950 file:font-semibold file:text-[11px] hover:file:bg-accent-400 file:cursor-pointer"
+      />
+      {erroNovaPasta && <p className="text-[11px] text-negative-400">{erroNovaPasta}</p>}
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" onClick={() => { setMostrarNovaPasta(false); setNovaPastaNome(''); setArquivoNovaPasta(null) }}>Cancelar</Button>
+        <Button onClick={handleCriarPastaEEnviar} disabled={!arquivoNovaPasta || !novaPastaNome.trim() || enviandoNovaPasta}>
+          {enviandoNovaPasta ? 'Enviando...' : 'Criar Pasta e Enviar'}
+        </Button>
+      </div>
+    </div>
+  )
+
+  if (arquivos.length === 0) {
+    return (
+      <div className="flex flex-col gap-3">
+        <p className="text-[12px] text-base-500 italic">
+          Nenhum documento salvo ainda — assim que uma certidão for buscada ou um documento enviado, ele aparece aqui.
+        </p>
+        {mostrarNovaPasta ? formNovaPasta : (
+          <button
+            onClick={() => setMostrarNovaPasta(true)}
+            className="flex items-center gap-1.5 text-[12px] font-semibold text-accent-300 hover:text-accent-200 self-start"
+          >
+            <FolderPlus className="w-3.5 h-3.5" /> Criar pasta e enviar documento
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  // Nível 2 — dentro de uma pasta específica
+  if (pastaAberta) {
+    const pasta = pastas.find((p) => p.nome === pastaAberta)
+    return (
+      <div className="flex flex-col gap-3">
+        <button
+          onClick={() => setPastaAberta(null)}
+          className="flex items-center gap-1.5 text-[12px] font-semibold text-accent-300 hover:text-accent-200 self-start"
+        >
+          <ChevronLeft className="w-3.5 h-3.5" /> Voltar pras pastas
+        </button>
+        <p className="text-[12px] font-bold text-base-200 flex items-center gap-1.5">
+          <FolderOpen className="w-3.5 h-3.5 text-warning-400" /> {pastaAberta}
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {(pasta?.docs ?? []).map((doc) => (
+            <button
+              key={doc.id}
+              onClick={() => handleAbrir(doc)}
+              disabled={abrindo === doc.id}
+              title={doc.nome}
+              className="flex flex-col items-center gap-2 p-3 bg-base-850/60 border border-base-800 rounded-xl hover:border-accent-500/40 hover:bg-base-850 transition text-center disabled:opacity-50 disabled:cursor-wait"
+            >
+              <FileText className="w-7 h-7 text-accent-400 shrink-0" />
+              <span className="text-[11px] font-medium text-base-200 truncate max-w-full w-full">{doc.nome}</span>
+              {doc.dataValidade && (
+                <span className="text-[10px] text-base-500">até {new Date(doc.dataValidade + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // Nível 1 — lista de pastas
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        {pastas.map((pasta) => (
+          <button
+            key={pasta.nome}
+            onClick={() => setPastaAberta(pasta.nome)}
+            title={pasta.nome}
+            className="flex flex-col items-center gap-2 p-3 bg-base-850/60 border border-base-800 rounded-xl hover:border-accent-500/40 hover:bg-base-850 transition text-center"
+          >
+            <Folder className="w-8 h-8 text-warning-400 shrink-0" />
+            <span className="text-[11px] font-medium text-base-200 truncate max-w-full w-full">{pasta.nome}</span>
+            <span className="text-[10px] text-base-500">{pasta.docs.length} arquivo(s)</span>
+          </button>
+        ))}
+        <button
+          onClick={() => setMostrarNovaPasta((v) => !v)}
+          className="flex flex-col items-center justify-center gap-2 p-3 bg-base-900/30 border border-dashed border-base-700 rounded-xl hover:border-accent-500/40 hover:bg-base-850/40 transition text-center"
+        >
+          <FolderPlus className="w-8 h-8 text-accent-400 shrink-0" />
+          <span className="text-[11px] font-medium text-accent-300">Nova Pasta</span>
+        </button>
+      </div>
+      {mostrarNovaPasta && formNovaPasta}
+    </div>
+  )
+}
+
+// Cadastro de Atestados de Capacidade Técnica do cliente — reutilizável em
+// qualquer licitação futura. O campo "Objeto do Atestado" é o que
+// alimenta o ranking de compatibilidade na tela da licitação.
+function AtestadosTecnicosSection({ clientId, podeEditar }: { clientId: string; podeEditar: boolean }) {
+  const { atestados, addAtestado, deleteAtestado, getDownloadUrl } = useAtestados(clientId)
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ nome: '', objeto: '', orgaoEmissor: '', valor: '', dataEmissao: '' })
+  const [arquivo, setArquivo] = useState<File | null>(null)
+  const [abrindo, setAbrindo] = useState<string | null>(null)
+
+  const handleAbrir = async (a: AtestadoTecnico) => {
+    if (!a.storagePath) return
+    setAbrindo(a.id)
+    try {
+      const url = await getDownloadUrl(a.storagePath)
+      window.open(url, '_blank')
+    } catch {
+      alert('Não foi possível abrir o atestado.')
+    } finally {
+      setAbrindo(null)
+    }
+  }
+
+  const handleSalvar = async () => {
+    if (!form.nome.trim() || !form.objeto.trim()) return
+    await addAtestado.mutateAsync({
+      nome: form.nome.trim(),
+      objeto: form.objeto.trim(),
+      orgaoEmissor: form.orgaoEmissor.trim() || null,
+      valor: form.valor ? parseFloat(form.valor) : null,
+      dataEmissao: form.dataEmissao || null,
+      file: arquivo,
+    })
+    setShowForm(false)
+    setForm({ nome: '', objeto: '', orgaoEmissor: '', valor: '', dataEmissao: '' })
+    setArquivo(null)
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold flex items-center gap-1.5">
+          <Award className="w-3.5 h-3.5" /> Atestados de Capacidade Técnica
+        </p>
+        {podeEditar && (
+          <button onClick={() => setShowForm((v) => !v)} className="flex items-center gap-1 text-[11px] text-accent-300 hover:text-accent-200 transition">
+            <Plus className="w-3 h-3" /> {showForm ? 'Cancelar' : 'Adicionar atestado'}
+          </button>
+        )}
+      </div>
+
+      {showForm && (
+        <div className="bg-base-850/60 border border-accent-500/20 rounded-xl px-4 py-3 flex flex-col gap-3">
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Nome / Identificação do Atestado *</label>
+            <Input placeholder="Ex: Atestado nº 12/2023 — Prefeitura de X" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Objeto do Atestado * (usado pra comparar com o edital)</label>
+            <textarea
+              value={form.objeto}
+              onChange={(e) => setForm({ ...form, objeto: e.target.value })}
+              rows={2}
+              placeholder="Ex: Coleta de resíduos sólidos domiciliares em área urbana"
+              className="w-full bg-base-850 border border-base-700 rounded-lg px-3 py-2 text-[13px] text-base-100 placeholder:text-base-500 focus:border-accent-400 outline-none"
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Órgão Emissor</label>
+              <Input value={form.orgaoEmissor} onChange={(e) => setForm({ ...form, orgaoEmissor: e.target.value })} />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Valor (R$)</label>
+              <Input type="number" step="0.01" value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Data de Emissão</label>
+              <Input type="date" value={form.dataEmissao} onChange={(e) => setForm({ ...form, dataEmissao: e.target.value })} />
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Arquivo (opcional)</label>
+            <input
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg"
+              onChange={(e) => setArquivo(e.target.files?.[0] ?? null)}
+              className="w-full text-[12px] text-base-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-accent-500 file:text-base-950 file:font-semibold file:text-[11px] hover:file:bg-accent-400 file:cursor-pointer"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setShowForm(false)}>Cancelar</Button>
+            <Button onClick={handleSalvar} disabled={!form.nome.trim() || !form.objeto.trim() || addAtestado.isPending}>
+              {addAtestado.isPending ? 'Salvando...' : 'Salvar Atestado'}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {atestados.length === 0 ? (
+        <p className="text-[12px] text-base-500 italic py-2">Nenhum atestado técnico cadastrado ainda.</p>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {atestados.map((a) => (
+            <div key={a.id} className="flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-lg px-3 py-2.5">
+              <Award className="w-4 h-4 text-warning-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-medium text-base-200 truncate">{a.nome}</p>
+                <p className="text-[11px] text-base-500 truncate">{a.objeto}</p>
+              </div>
+              {a.storagePath && (
+                <button onClick={() => handleAbrir(a)} disabled={abrindo === a.id} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                  <Download className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {podeEditar && (
+                <button onClick={() => deleteAtestado.mutate(a)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Props) {
   const { documents, uploadAndSave, deleteDocument, getDownloadUrl } = useClientDocuments(clientId)
   const { nivel: nivelCadastros } = usePermissaoFerramenta('cadastros')
@@ -73,6 +399,7 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
   const [buscando, setBuscando] = useState<DocumentTipo | null>(null)
   const [errosBusca, setErrosBusca] = useState<Partial<Record<DocumentTipo, string>>>({})
   const [avisosBusca, setAvisosBusca] = useState<Partial<Record<DocumentTipo, string>>>({})
+  const [showPasta, setShowPasta] = useState(true)
 
   const handleBuscarAutomatico = async (tipo: Exclude<DocumentTipo, 'manual'>) => {
     if (!cnpj || !podeEditar) return
@@ -111,8 +438,8 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
   const [uploadingTipo, setUploadingTipo] = useState<DocumentTipo | null>(null)
   const [uploadForm, setUploadForm] = useState<{ dataEmissao: string; dataValidade: string; observacoes: string }>({ dataEmissao: '', dataValidade: '', observacoes: '' })
   const [manualForm, setManualForm] = useState<{
-    nome: string; dataEmissao: string; dataValidade: string; observacoes: string
-  }>({ nome: '', dataEmissao: '', dataValidade: '', observacoes: '' })
+    nome: string; dataEmissao: string; dataValidade: string; observacoes: string; pasta: string
+  }>({ nome: '', dataEmissao: '', dataValidade: '', observacoes: '', pasta: '' })
   const [showManual, setShowManual] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
 
@@ -187,6 +514,29 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
       </div>
 
       <ErrorAlert error={uploadAndSave.error || deleteDocument.error} />
+
+      {/* Pasta de Documentos — visão de arquivos, pra abrir qualquer
+          documento salvo a qualquer momento, sem depender do checklist */}
+      <div className="flex flex-col gap-2">
+        <button
+          onClick={() => setShowPasta((v) => !v)}
+          className="flex items-center justify-between w-full text-left"
+        >
+          <span className="text-[10px] uppercase tracking-wider text-base-500 font-bold flex items-center gap-1.5">
+            <FolderOpen className="w-3.5 h-3.5" /> Pasta de Documentos
+          </span>
+          {showPasta ? <ChevronUp className="w-3.5 h-3.5 text-base-500" /> : <ChevronDown className="w-3.5 h-3.5 text-base-500" />}
+        </button>
+        {showPasta && (
+          <div className="bg-base-850/30 border border-base-800 rounded-xl p-4">
+            <PastaDocumentos documents={documents} getDownloadUrl={getDownloadUrl} uploadAndSave={uploadAndSave.mutateAsync} />
+          </div>
+        )}
+      </div>
+
+      {/* Atestados de Capacidade Técnica — cadastro do cliente, reutilizado
+          no ranking de compatibilidade de cada licitação */}
+      <AtestadosTecnicosSection clientId={clientId} podeEditar={podeEditar} />
 
       {/* Certidões automáticas */}
       <div className="flex flex-col gap-2">
@@ -418,6 +768,22 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
                 <input type="date" value={manualForm.dataValidade} onChange={(e) => setManualForm({ ...manualForm, dataValidade: e.target.value })} className="w-full bg-base-850 border border-base-700 rounded-lg px-3 py-2 text-sm text-base-100 focus:border-accent-400 outline-none" />
               </div>
               <div className="col-span-2">
+                <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Pasta (opcional — digite uma existente ou um nome novo)</label>
+                <input
+                  type="text"
+                  list="pastas-manuais-existentes"
+                  placeholder="Ex: Documentação Societária, Atestados..."
+                  value={manualForm.pasta}
+                  onChange={(e) => setManualForm({ ...manualForm, pasta: e.target.value })}
+                  className="w-full bg-base-850 border border-base-700 rounded-lg px-3 py-2 text-sm text-base-100 placeholder:text-base-500 focus:border-accent-400 outline-none"
+                />
+                <datalist id="pastas-manuais-existentes">
+                  {Array.from(new Set(documents.filter((d) => d.tipo === 'manual' && d.pasta).map((d) => d.pasta as string))).map((p) => (
+                    <option key={p} value={p} />
+                  ))}
+                </datalist>
+              </div>
+              <div className="col-span-2">
                 <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Arquivo *</label>
                 <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)} className="w-full text-[12px] text-base-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-accent-500 file:text-base-950 file:font-semibold file:text-[11px] hover:file:bg-accent-400 file:cursor-pointer" />
               </div>
@@ -430,9 +796,10 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
                   await uploadAndSave.mutateAsync({
                     file: selectedFile, tipo: 'manual', nome: manualForm.nome,
                     dataEmissao: manualForm.dataEmissao || null, dataValidade: manualForm.dataValidade || null,
+                    pasta: manualForm.pasta.trim() || null,
                   })
                   setShowManual(false); setSelectedFile(null)
-                  setManualForm({ nome: '', dataEmissao: '', dataValidade: '', observacoes: '' })
+                  setManualForm({ nome: '', dataEmissao: '', dataValidade: '', observacoes: '', pasta: '' })
                 }}
                 disabled={!selectedFile || !manualForm.nome || uploadAndSave.isPending}
               >
@@ -441,6 +808,7 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
             </div>
           </div>
         )}
+
 
         {/* Lista de documentos manuais */}
         {documents.filter((d) => d.tipo === 'manual').map((doc) => {

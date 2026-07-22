@@ -18,6 +18,38 @@ export default function ResolverCaptchaModal() {
     setResposta('')
   }, [sessao?.id])
 
+  // Beep gerado direto no navegador (sem depender de arquivo de áudio) —
+  // toca 2 vezes, pra chamar atenção mesmo se o usuário estiver longe da
+  // tela. Alguns navegadores bloqueiam áudio sem interação prévia do
+  // usuário nessa aba — nesse caso, falha silenciosamente (o alerta
+  // visual do modal continua funcionando normalmente).
+  useEffect(() => {
+    if (!sessao) return
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+      const ctx = new AudioContextClass()
+      const tocarBeep = (delayMs: number) => {
+        setTimeout(() => {
+          const oscillator = ctx.createOscillator()
+          const gain = ctx.createGain()
+          oscillator.connect(gain)
+          gain.connect(ctx.destination)
+          oscillator.type = 'sine'
+          oscillator.frequency.value = 880
+          gain.gain.setValueAtTime(0.3, ctx.currentTime)
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4)
+          oscillator.start()
+          oscillator.stop(ctx.currentTime + 0.4)
+        }, delayMs)
+      }
+      tocarBeep(0)
+      tocarBeep(500)
+    } catch {
+      // navegador bloqueou áudio — sem problema, o alerta visual continua
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessao?.id])
+
   if (!sessao) return null
 
   const clientName = clients.find((c) => c.id === sessao.clientId)?.name ?? 'Cliente'

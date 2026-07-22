@@ -17,6 +17,36 @@ async function saveItems(userId: string, biddingId: string, items: Partial<Biddi
   if (error) throw error
 }
 
+// Guarda uma "foto" dos itens ANTES de sobrescrever (saveItems apaga tudo
+// e reinsere) — histórico de versões estilo Git, pra nunca perder o
+// preço/margem anterior mesmo que a edição atual tenha erro. Só grava se
+// já havia algo salvo (edição de verdade, não a primeira criação).
+async function snapshotItemsBeforeOverwrite(userId: string, biddingId: string, userEmail: string | null | undefined) {
+  const { data: itensAtuais } = await supabase
+    .from('bidding_items')
+    .select('*')
+    .eq('bidding_id', biddingId)
+  if (!itensAtuais || itensAtuais.length === 0) return
+
+  const { data: ultimaVersao } = await supabase
+    .from('bidding_items_versions')
+    .select('versao')
+    .eq('bidding_id', biddingId)
+    .order('versao', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const proximaVersao = (ultimaVersao?.versao ?? 0) + 1
+
+  await supabase.from('bidding_items_versions').insert({
+    user_id: userId,
+    bidding_id: biddingId,
+    versao: proximaVersao,
+    itens_snapshot: itensAtuais,
+    alterado_por_email: userEmail ?? null,
+  })
+}
+
 // Se a licitação tem uma taxa de participação definida e ainda não foi
 // lançada no financeiro, cria a transação "a receber" correspondente e
 // marca a flag para nunca duplicar esse lançamento.
@@ -64,11 +94,14 @@ export function useBiddings() {
     },
   })
 
-  const invalidate = () => {
+  const invalidate = (biddingId?: string) => {
     queryClient.invalidateQueries({ queryKey: QUERY_KEY })
     queryClient.invalidateQueries({ queryKey: ['transactions'] })
     queryClient.invalidateQueries({ queryKey: ['empenhos'] })
     queryClient.invalidateQueries({ queryKey: ['bidding_items'] })
+    if (biddingId) {
+      queryClient.invalidateQueries({ queryKey: ['bidding_items_versions', biddingId] })
+    }
   }
 
   const addBidding = useMutation({
@@ -108,13 +141,22 @@ export function useBiddings() {
       if (error) throw error
       const updated = fromBiddingRow(data)
 
+      // Melhor esforço: se o snapshot de versão falhar por qualquer motivo
+      // (ex: duas edições simultâneas gerando a mesma versão), o histórico
+      // fica incompleto, mas a edição real do usuário NUNCA pode ser
+      // bloqueada por causa disso.
+      try {
+        await snapshotItemsBeforeOverwrite(user.id, updated.id, user.email)
+      } catch (err) {
+        console.warn('Não foi possível salvar o histórico de versão dos itens:', err)
+      }
       await saveItems(user.id, updated.id, items)
       const feeLaunched = await maybeLaunchParticipationFee(user.id, updated)
 
       return { updated, feeLaunched }
     },
     onSuccess: ({ updated, feeLaunched }) => {
-      invalidate()
+      invalidate(updated.id)
       logEvent('Editou Licitação', `Atualizou licitação "${updated.objeto}" (Órgão: ${updated.orgao}) — status: ${updated.status}`)
       if (feeLaunched) {
         logEvent('Lançou Taxa de Participação', `Gerou automaticamente a taxa de participação de R$ ${updated.taxaParticipacao?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} para "${updated.objeto}"`)
@@ -178,6 +220,26 @@ export function useBiddings() {
     },
   })
 
+  // Atualiza só a etapa do funil — separada do updateBidding pra não
+  // arriscar mexer nos itens da licitação (updateBidding sempre reescreve
+  // bidding_items a partir do array `items` recebido).
+  const updateEtapa = useMutation({
+    mutationFn: async ({ biddingId, etapa }: { biddingId: string; etapa: Bidding['etapa'] }) => {
+      const { data, error } = await supabase
+        .from('biddings')
+        .update({ etapa })
+        .eq('id', biddingId)
+        .select()
+        .single()
+      if (error) throw error
+      return fromBiddingRow(data)
+    },
+    onSuccess: (updated) => {
+      invalidate()
+      logEvent('Atualizou Etapa da Licitação', `Licitação "${updated.objeto}" — nova etapa: ${updated.etapa}`)
+    },
+  })
+
   const checkBiddingHasFinancialHistory = async (biddingId: string): Promise<boolean> => {
     const { count: txCount } = await supabase
       .from('transactions')
@@ -203,6 +265,7 @@ export function useBiddings() {
     deleteBidding,
     toggleBiddingActive,
     setModeloCustomizado,
+    updateEtapa,
     checkBiddingHasFinancialHistory,
   }
 }

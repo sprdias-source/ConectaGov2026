@@ -6,7 +6,7 @@
 import type { Database } from '../types/database'
 import type {
   Client, Bidding, BiddingItem, FinancialAccount, Empenho, Transaction,
-  Employee, Contract, Receipt, AttachedFile, AuditLog, Category, PaymentMethod, ClientDocument,
+  Employee, Contract, Receipt, AttachedFile, AuditLog, Category, PaymentMethod, ClientDocument, BiddingChecklistItem, AtestadoTecnico, ModeloDocumento, ContractMarco,
 } from '../types/domain'
 import { todayLocalISO } from './dateUtils'
 
@@ -369,6 +369,52 @@ export const fromFileRow = (r: Row<'attached_files'>): AttachedFile => ({
   createdAt: r.created_at,
 })
 
+export const toFileInsert = (f: Partial<AttachedFile>, userId: string): Database['public']['Tables']['attached_files']['Insert'] => ({
+  user_id: userId,
+  name: f.name ?? '',
+  size_bytes: f.sizeBytes ?? null,
+  mime_type: f.mimeType ?? null,
+  storage_path: f.storagePath ?? '',
+  category: f.category ?? 'Outro',
+  entity_type: f.entityType ?? null,
+  entity_id: f.entityId ?? null,
+})
+
+export const fromBiddingChecklistItemRow = (r: Row<'bidding_checklist_items'>): BiddingChecklistItem => ({
+  id: r.id,
+  userId: r.user_id,
+  biddingId: r.bidding_id,
+  descricao: r.descricao,
+  categoria: r.categoria,
+  obrigatorio: r.obrigatorio,
+  atendido: r.atendido,
+  clientDocumentTipo: r.client_document_tipo as BiddingChecklistItem['clientDocumentTipo'],
+  attachedFileId: r.attached_file_id,
+  origem: r.origem as BiddingChecklistItem['origem'],
+  observacoes: r.observacoes,
+  prazo: r.prazo,
+  responsavelNome: r.responsavel_nome,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+})
+
+export const toBiddingChecklistItemInsert = (
+  i: Partial<BiddingChecklistItem>, userId: string
+): Database['public']['Tables']['bidding_checklist_items']['Insert'] => ({
+  user_id: userId,
+  bidding_id: i.biddingId ?? '',
+  descricao: i.descricao ?? '',
+  categoria: i.categoria ?? null,
+  obrigatorio: i.obrigatorio ?? true,
+  atendido: i.atendido ?? false,
+  client_document_tipo: i.clientDocumentTipo ?? null,
+  attached_file_id: i.attachedFileId ?? null,
+  origem: i.origem ?? 'manual',
+  observacoes: i.observacoes ?? null,
+  prazo: i.prazo ?? null,
+  responsavel_nome: i.responsavelNome ?? null,
+})
+
 export const fromAuditLogRow = (r: Row<'audit_logs'>): AuditLog => ({
   id: r.id,
   userId: r.user_id,
@@ -404,6 +450,88 @@ export const fromClientDocumentRow = (r: Row<'client_documents'>): ClientDocumen
   status: r.status as ClientDocument['status'],
   autoRenovavel: r.auto_renovavel,
   observacoes: r.observacoes,
+  pasta: r.pasta,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
+})
+
+export const fromAtestadoRow = (r: Row<'atestados_tecnicos'>): AtestadoTecnico => ({
+  id: r.id,
+  userId: r.user_id,
+  clientId: r.client_id,
+  nome: r.nome,
+  objeto: r.objeto,
+  orgaoEmissor: r.orgao_emissor,
+  valor: r.valor !== null ? Number(r.valor) : null,
+  dataEmissao: r.data_emissao,
+  storagePath: r.storage_path,
+  observacoes: r.observacoes,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+})
+
+export const toAtestadoInsert = (
+  a: Partial<AtestadoTecnico>, userId: string
+): Database['public']['Tables']['atestados_tecnicos']['Insert'] => ({
+  user_id: userId,
+  client_id: a.clientId ?? '',
+  nome: a.nome ?? '',
+  objeto: a.objeto ?? '',
+  orgao_emissor: a.orgaoEmissor ?? null,
+  valor: a.valor ?? null,
+  data_emissao: a.dataEmissao ?? null,
+  storage_path: a.storagePath ?? null,
+  observacoes: a.observacoes ?? null,
+})
+
+export const fromModeloDocumentoRow = (r: Row<'modelos_documentos'>): ModeloDocumento => ({
+  id: r.id,
+  userId: r.user_id,
+  nome: r.nome,
+  categoria: r.categoria as ModeloDocumento['categoria'],
+  tags: r.tags,
+  conteudo: r.conteudo,
+  storagePath: r.storage_path,
+  observacoes: r.observacoes,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+})
+
+export const toModeloDocumentoInsert = (
+  m: Partial<ModeloDocumento>, userId: string
+): Database['public']['Tables']['modelos_documentos']['Insert'] => ({
+  user_id: userId,
+  nome: m.nome ?? '',
+  categoria: m.categoria ?? 'Outro',
+  tags: m.tags ?? null,
+  conteudo: m.conteudo ?? null,
+  storage_path: m.storagePath ?? null,
+  observacoes: m.observacoes ?? null,
+})
+
+export const fromContractMarcoRow = (r: Row<'contract_marcos'>): ContractMarco => ({
+  id: r.id,
+  userId: r.user_id,
+  contractId: r.contract_id,
+  descricao: r.descricao,
+  dataPrevista: r.data_prevista,
+  dataRealizada: r.data_realizada,
+  valor: r.valor !== null ? Number(r.valor) : null,
+  status: r.status as ContractMarco['status'],
+  observacoes: r.observacoes,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+})
+
+export const toContractMarcoInsert = (
+  m: Partial<ContractMarco>, userId: string
+): Database['public']['Tables']['contract_marcos']['Insert'] => ({
+  user_id: userId,
+  contract_id: m.contractId ?? '',
+  descricao: m.descricao ?? '',
+  data_prevista: m.dataPrevista ?? null,
+  data_realizada: m.dataRealizada ?? null,
+  valor: m.valor ?? null,
+  status: m.status ?? 'Pendente',
+  observacoes: m.observacoes ?? null,
 })

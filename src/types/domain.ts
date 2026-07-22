@@ -242,6 +242,92 @@ export interface AttachedFile {
   createdAt: string
 }
 
+// Checklist de documentação exigida por uma licitação específica —
+// diferente do checklist de Habilitação (que é por cliente). Cada item
+// pode ser satisfeito por uma certidão já existente do cliente
+// (clientDocumentTipo aponta pro DocumentTipo correspondente) ou por um
+// arquivo específico anexado a esta licitação (attachedFileId).
+export type ChecklistItemOrigem = 'manual' | 'ia'
+
+export interface BiddingChecklistItem {
+  id: string
+  userId: string
+  biddingId: string
+  descricao: string
+  categoria: string | null
+  obrigatorio: boolean
+  atendido: boolean
+  clientDocumentTipo: DocumentTipo | null
+  attachedFileId: string | null
+  origem: ChecklistItemOrigem
+  observacoes: string | null
+  prazo: string | null
+  responsavelNome: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+// Atestado de Capacidade Técnica — cadastro do CLIENTE (não da licitação),
+// reutilizável em qualquer edital futuro. O campo `objeto` é comparado
+// contra o objeto de cada licitação pra gerar o ranking de compatibilidade.
+export interface AtestadoTecnico {
+  id: string
+  userId: string
+  clientId: string
+  nome: string
+  objeto: string
+  orgaoEmissor: string | null
+  valor: number | null
+  dataEmissao: string | null
+  storagePath: string | null
+  observacoes: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type CategoriaModeloDocumento =
+  | 'Impugnação'
+  | 'Recurso'
+  | 'Contrarrazão'
+  | 'Declaração'
+  | 'Proposta'
+  | 'Memorial'
+  | 'Planilha'
+  | 'Outro'
+
+// Biblioteca de modelos reutilizáveis — pode ter texto colado direto
+// (pra copiar rápido) e/ou um arquivo anexado.
+export interface ModeloDocumento {
+  id: string
+  userId: string
+  nome: string
+  categoria: CategoriaModeloDocumento
+  tags: string | null
+  conteudo: string | null
+  storagePath: string | null
+  observacoes: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type ContractMarcoStatus = 'Pendente' | 'Concluído' | 'Atrasado'
+
+// Marco de execução de um contrato (entrega, medição, etapa do
+// cronograma) — cobre o "controla contrato/execução" do fluxo.
+export interface ContractMarco {
+  id: string
+  userId: string
+  contractId: string
+  descricao: string
+  dataPrevista: string | null
+  dataRealizada: string | null
+  valor: number | null
+  status: ContractMarcoStatus
+  observacoes: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export interface AuditLog {
   id: string
   userId: string
@@ -289,6 +375,7 @@ export interface ClientDocument {
   status: DocumentStatus
   autoRenovavel: boolean
   observacoes: string | null
+  pasta: string | null
   createdAt: string
   updatedAt: string
 }

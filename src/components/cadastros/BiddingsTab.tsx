@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Plus, Pencil, Trash2, Gavel, Power, Eye, EyeOff, Lock, FileText, FileCheck2, FileUp, Loader2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Gavel, Power, Eye, EyeOff, Lock, FileText, FileCheck2, FileUp, Loader2, FolderCheck } from 'lucide-react'
 import { Button } from '../ui/FormControls'
 import { EmptyState, StatusBadge } from '../ui/Primitives'
 import { formatBRL } from '../../hooks/useAccountBalances'
 import { supabase } from '../../lib/supabase'
 import BiddingFormModal from './BiddingFormModal'
+import LicitacaoDocumentacaoModal from './LicitacaoDocumentacaoModal'
 import DeleteWithPasswordDialog from '../ui/DeleteWithPasswordDialog'
 import ErrorAlert from '../ui/ErrorAlert'
 import { usePagination, PaginationControls } from '../../hooks/usePagination'
@@ -40,6 +41,7 @@ export default function BiddingsTab() {
   const [erroGeracao, setErroGeracao] = useState<string | null>(null)
   const [enviandoModeloId, setEnviandoModeloId] = useState<string | null>(null)
   const [erroModelo, setErroModelo] = useState<string | null>(null)
+  const [licitacaoDocumentacao, setLicitacaoDocumentacao] = useState<Bidding | null>(null)
 
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? 'Cliente removido'
   const isMensalista = (id: string) => clients.find((c) => c.id === id)?.isMensalista ?? false
@@ -75,6 +77,41 @@ export default function BiddingsTab() {
       updateBidding.mutate({ bidding: { ...editing, ...data } as Bidding, items }, { onSuccess: () => { setModalOpen(false); setEditing(null) } })
     } else {
       addBidding.mutate({ bidding: data, items }, { onSuccess: () => setModalOpen(false) })
+    }
+  }
+
+  const handleGerarDeclaracoes = async (b: Bidding) => {
+    const key = `${b.id}:declaracoes`
+    setGerandoPropostaKey(key)
+    setErroGeracao(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/gerar-declaracoes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ clientId: b.clientId, biddingId: b.id }),
+      })
+      const resultado = await res.json()
+      if (!res.ok || resultado.error) {
+        throw new Error(resultado.error || 'Erro desconhecido ao gerar as declarações')
+      }
+
+      const bytes = Uint8Array.from(atob(resultado.fileBase64), (c) => c.charCodeAt(0))
+      const blob = new Blob([bytes], { type: resultado.mimeType })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = resultado.fileName || 'declaracoes.docx'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setErroGeracao(`Licitação "${b.objeto.slice(0, 40)}": ${String(err)}`)
+    } finally {
+      setGerandoPropostaKey(null)
     }
   }
 
@@ -259,6 +296,21 @@ export default function BiddingsTab() {
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button
+                          onClick={() => setLicitacaoDocumentacao(b)}
+                          title="Documentação da Licitação (checklist e edital)"
+                          className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition"
+                        >
+                          <FolderCheck className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleGerarDeclaracoes(b)}
+                          disabled={gerandoPropostaKey === `${b.id}:declaracoes`}
+                          title="Gerar Declarações Padrão (.docx)"
+                          className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition disabled:opacity-50 disabled:cursor-wait"
+                        >
+                          {gerandoPropostaKey === `${b.id}:declaracoes` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileCheck2 className="w-3.5 h-3.5 opacity-70" />}
+                        </button>
+                        <button
                           onClick={() => handleGerarProposta(b, 'normal')}
                           disabled={gerandoPropostaKey === `${b.id}:normal`}
                           title="Gerar Proposta de Preços (.docx)"
@@ -359,6 +411,14 @@ export default function BiddingsTab() {
             error={deleteBidding.error}
           />
         </>
+      )}
+
+      {licitacaoDocumentacao && (
+        <LicitacaoDocumentacaoModal
+          bidding={licitacaoDocumentacao}
+          clientName={clientName(licitacaoDocumentacao.clientId)}
+          onClose={() => setLicitacaoDocumentacao(null)}
+        />
       )}
     </div>
   )

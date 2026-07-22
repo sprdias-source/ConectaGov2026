@@ -1,91 +1,82 @@
-import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
-import { fromFileRow } from '../lib/mappers'
-import type { AttachedFile, FileCategory, FileEntityType } from '../types/domain'
+import { fromFileRow, toFileInsert } from '../lib/mappers'
 import { useAuth } from './useAuth'
+import type { AttachedFile, FileCategory, FileEntityType } from '../types/domain'
 
 const QUERY_KEY = ['attached_files']
-const BUCKET = 'documents'
-const EMPTY_FILES: AttachedFile[] = []
 
-export function useAttachedFiles(entityType?: FileEntityType, entityId?: string | null) {
+// Anexos genéricos ligados a qualquer entidade do sistema (por enquanto,
+// usado pra documentos de uma licitação específica — o edital, atestados
+// específicos daquele certame, etc.). Reaproveita a tabela `attached_files`
+// que já existia no schema, mas nunca tinha RLS nem hook nenhum construído
+// em cima.
+export function useAttachedFiles(entityType: FileEntityType, entityId?: string) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
 
   const query = useQuery({
     queryKey: [...QUERY_KEY, entityType, entityId],
-    enabled: !!user && (!entityType || !!entityId),
+    enabled: !!user && !!entityId,
     queryFn: async () => {
-      let q = supabase.from('attached_files').select('*').order('created_at', { ascending: false })
-      if (entityType) q = q.eq('entity_type', entityType)
-      if (entityId) q = q.eq('entity_id', entityId)
-      const { data, error } = await q
+      const { data, error } = await supabase
+        .from('attached_files')
+        .select('*')
+        .eq('entity_type', entityType)
+        .eq('entity_id', entityId!)
+        .order('created_at', { ascending: false })
       if (error) throw error
       return data.map(fromFileRow)
     },
   })
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: QUERY_KEY })
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: [...QUERY_KEY, entityType, entityId] })
 
   const uploadFile = useMutation({
-    mutationFn: async ({
-      file, category, entityType: et, entityId: eid,
-    }: { file: File; category: FileCategory; entityType?: FileEntityType; entityId?: string }) => {
-      if (!user) throw new Error('Usuário não autenticado')
-
-      const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')
-      const storagePath = `${user.id}/${Date.now()}-${safeName}`
-
-      const { error: uploadError } = await supabase.storage.from(BUCKET).upload(storagePath, file, {
-        contentType: file.type,
-        upsert: false,
-      })
+    mutationFn: async ({ file, category }: { file: File; category: FileCategory }) => {
+      if (!user || !entityId) throw new Error('Não autenticado')
+      const path = `${user.id}/${entityType}/${entityId}/${Date.now()}_${file.name}`
+      const { error: uploadError } = await supabase.storage
+        .from('client-documents')
+        .upload(path, file, { upsert: true })
       if (uploadError) throw uploadError
 
-      const { data, error } = await supabase
-        .from('attached_files')
-        .insert({
-          user_id: user.id,
+      const { error } = await supabase.from('attached_files').insert(
+        toFileInsert({
           name: file.name,
-          size_bytes: file.size,
-          mime_type: file.type,
-          storage_path: storagePath,
+          sizeBytes: file.size,
+          mimeType: file.type || null,
+          storagePath: path,
           category,
-          entity_type: et ?? null,
-          entity_id: eid ?? null,
-        })
-        .select()
-        .single()
-
-      if (error) {
-        await supabase.storage.from(BUCKET).remove([storagePath])
-        throw error
-      }
-      return fromFileRow(data)
+          entityType,
+          entityId,
+        }, user.id)
+      )
+      if (error) throw error
+      return path
     },
     onSuccess: invalidate,
   })
 
   const deleteFile = useMutation({
     mutationFn: async (file: AttachedFile) => {
-      await supabase.storage.from(BUCKET).remove([file.storagePath])
+      await supabase.storage.from('client-documents').remove([file.storagePath])
       const { error } = await supabase.from('attached_files').delete().eq('id', file.id)
       if (error) throw error
     },
     onSuccess: invalidate,
   })
 
-  const getDownloadUrl = async (file: AttachedFile): Promise<string | null> => {
-    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(file.storagePath, 60 * 5)
-    if (error) return null
+  const getDownloadUrl = async (storagePath: string) => {
+    const { data, error } = await supabase.storage
+      .from('client-documents')
+      .createSignedUrl(storagePath, 60 * 10)
+    if (error) throw error
     return data.signedUrl
   }
 
-  const files = useMemo(() => query.data ?? EMPTY_FILES, [query.data])
-
   return {
-    files,
+    files: query.data ?? [],
     isLoading: query.isLoading,
     uploadFile,
     deleteFile,
