@@ -2,14 +2,12 @@ import { useRef, useState } from 'react'
 import { Upload, FileText, Download, Trash2, Loader2 } from 'lucide-react'
 import { useAttachedFiles } from '../../hooks/useAttachedFiles'
 import type { FileCategory, FileEntityType } from '../../types/domain'
-
 function formatSize(bytes: number | null): string {
   if (!bytes) return ''
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
-
 export default function DocumentUploader({
   entityType, entityId, category, label = 'Anexar Documento',
 }: {
@@ -21,22 +19,26 @@ export default function DocumentUploader({
   const { files, uploadFile, deleteFile, getDownloadUrl } = useAttachedFiles(entityType, entityId)
   const inputRef = useRef<HTMLInputElement>(null)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
-
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    uploadFile.mutate({ file, category, entityType, entityId })
+    // entityType/entityId já foram passados na chamada do hook acima —
+    // o hook já sabe pra qual entidade este upload pertence, não precisa
+    // (nem pode) mandar de novo aqui.
+    uploadFile.mutate({ file, category })
     e.target.value = ''
   }
-
   const handleDownload = async (file: (typeof files)[number]) => {
     setDownloadingId(file.id)
-    const url = await getDownloadUrl(file)
-    setDownloadingId(null)
-    if (url) window.open(url, '_blank')
-    else alert('Não foi possível gerar o link de download. Tente novamente.')
+    try {
+      const url = await getDownloadUrl(file.storagePath)
+      window.open(url, '_blank')
+    } catch {
+      alert('Não foi possível gerar o link de download. Tente novamente.')
+    } finally {
+      setDownloadingId(null)
+    }
   }
-
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
@@ -52,11 +54,9 @@ export default function DocumentUploader({
         </button>
         <input ref={inputRef} type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={handleFileChange} />
       </div>
-
       {uploadFile.isError && (
         <p className="text-[11px] text-negative-400">Falha ao enviar o arquivo. Tente novamente.</p>
       )}
-
       {files.length === 0 ? (
         <p className="text-[12px] text-base-500 italic">Nenhum documento anexado ainda.</p>
       ) : (

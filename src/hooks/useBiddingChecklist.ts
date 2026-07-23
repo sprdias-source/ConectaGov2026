@@ -23,7 +23,7 @@ const PALAVRAS_CHAVE_TIPO: Record<Exclude<DocumentTipo, 'manual'>, string[]> = {
 
 // Tenta casar a descrição de um item do checklist com um dos tipos de
 // certidão automática conhecidos, só por palavra-chave simples.
-export function sugerirTipoDocumento(descricao: string): DocumentTipo | null {
+export function sugerirTipoDocumento(descricao: string): Exclude<DocumentTipo, 'manual'> | null {
   const texto = descricao.toLowerCase()
   for (const [tipo, palavras] of Object.entries(PALAVRAS_CHAVE_TIPO)) {
     if (palavras.some((p) => texto.includes(p))) return tipo as DocumentTipo

@@ -56,6 +56,7 @@ export function useClientDocuments(clientId?: string) {
       dataValidade?: string | null
       autoRenovavel?: boolean
       observacoes?: string | null
+      pasta?: string | null
     }) => {
       if (!user || !clientId) throw new Error('Não autenticado')
       const status = calcDocStatus(doc.dataValidade ?? null)
@@ -70,6 +71,7 @@ export function useClientDocuments(clientId?: string) {
         status,
         auto_renovavel: doc.autoRenovavel ?? false,
         observacoes: doc.observacoes ?? null,
+        pasta: doc.pasta ?? null,
       }, { onConflict: 'user_id,client_id,tipo' })
       if (error) throw error
     },
@@ -78,7 +80,7 @@ export function useClientDocuments(clientId?: string) {
 
   const uploadAndSave = useMutation({
     mutationFn: async ({
-      file, tipo, nome, dataEmissao, dataValidade, observacoes,
+      file, tipo, nome, dataEmissao, dataValidade, observacoes, pasta,
     }: {
       file: File
       tipo: DocumentTipo
@@ -86,17 +88,26 @@ export function useClientDocuments(clientId?: string) {
       dataEmissao?: string | null
       dataValidade?: string | null
       observacoes?: string | null
+      pasta?: string | null
     }) => {
       if (!user || !clientId) throw new Error('Não autenticado')
       const ext = file.name.split('.').pop() ?? 'pdf'
-      const path = `${user.id}/${clientId}/${tipo}/${Date.now()}.${ext}`
+      // Tipos de certidão automática (cndt, cnd_federal, etc.) só têm UM
+      // documento por cliente — nome estável, sobrescreve o antigo
+      // automaticamente ao renovar. Documentos 'manual' podem ter vários
+      // por cliente (Contrato Social, Atestado Técnico...) — precisam de
+      // nome único cada, senão um novo envio apagaria um documento
+      // diferente sem querer.
+      const path = tipo === 'manual'
+        ? `${user.id}/${clientId}/${tipo}/${Date.now()}.${ext}`
+        : `${user.id}/${clientId}/${tipo}.${ext}`
       const { error: uploadError } = await supabase.storage
         .from('client-documents')
         .upload(path, file, { upsert: true })
       if (uploadError) throw uploadError
       await upsertDocument.mutateAsync({
         tipo, nome, storagePath: path, dataEmissao, dataValidade,
-        autoRenovavel: false, observacoes,
+        autoRenovavel: false, observacoes, pasta,
       })
       return path
     },

@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, FolderKanban, Wallet, CalendarRange, FileBarChart,
   Receipt, FileSignature, Users, Calculator, ShieldCheck, Target, FileText, UserCog, UserCircle,
-  AlarmClock, DollarSign, ScrollText, ClipboardList, BookOpen, ClipboardCheck, Percent, Trello, CalendarDays, type LucideIcon,
+  AlarmClock, DollarSign, ScrollText, ClipboardList, BookOpen, ClipboardCheck, Percent, LayoutGrid, CalendarDays, type LucideIcon,
 } from 'lucide-react'
 export interface NavItem {
   key: string
@@ -23,7 +23,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: 'dashboard', label: 'Dashboard', path: '/', icon: LayoutDashboard },
       { key: 'agenda', label: 'Agenda', path: '/agenda', icon: CalendarDays },
-      { key: 'kanban', label: 'Kanban', path: '/kanban', icon: Trello },
+      { key: 'kanban', label: 'Kanban', path: '/kanban', icon: LayoutGrid },
       { key: 'central-prazos', label: 'Central de Prazos', path: '/central-prazos', icon: AlarmClock },
       { key: 'pendencias', label: 'Pendências', path: '/pendencias', icon: ClipboardList },
       { key: 'calculadora-preco', label: 'Calculadora de Preço', path: '/calculadora-preco', icon: Percent },

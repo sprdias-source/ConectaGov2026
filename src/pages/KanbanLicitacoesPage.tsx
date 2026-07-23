@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Trello, ChevronLeft, ChevronRight } from 'lucide-react'
+import { LayoutGrid, ChevronLeft, ChevronRight } from 'lucide-react'
 import { PageHeader } from '../components/ui/Primitives'
 import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
@@ -95,7 +95,7 @@ export default function KanbanLicitacoesPage() {
       <PageHeader
         title="Kanban de Licitações"
         subtitle="Suas licitações em andamento, organizadas por etapa do funil"
-        icon={Trello}
+        icon={LayoutGrid}
       />
 
       <div className="px-6 mt-4 overflow-x-auto">

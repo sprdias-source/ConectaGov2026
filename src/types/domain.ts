@@ -257,7 +257,7 @@ export interface BiddingChecklistItem {
   categoria: string | null
   obrigatorio: boolean
   atendido: boolean
-  clientDocumentTipo: DocumentTipo | null
+  clientDocumentTipo: Exclude<DocumentTipo, 'manual'> | null
   attachedFileId: string | null
   origem: ChecklistItemOrigem
   observacoes: string | null
