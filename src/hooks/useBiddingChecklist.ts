@@ -26,7 +26,7 @@ const PALAVRAS_CHAVE_TIPO: Record<Exclude<DocumentTipo, 'manual'>, string[]> = {
 export function sugerirTipoDocumento(descricao: string): Exclude<DocumentTipo, 'manual'> | null {
   const texto = descricao.toLowerCase()
   for (const [tipo, palavras] of Object.entries(PALAVRAS_CHAVE_TIPO)) {
-    if (palavras.some((p) => texto.includes(p))) return tipo as DocumentTipo
+    if (palavras.some((p) => texto.includes(p))) return tipo as Exclude<DocumentTipo, 'manual'>
   }
   return null
 }
