@@ -52,41 +52,43 @@
    text-base-200, border-accent-500 etc.) em vez de cor fixa, nenhuma tela
    precisa mudar — só o valor por trás de cada nome muda.
 
-   Reformulado (v2) com bem mais contraste que a 1ª versão: bordas mais
-   presentes, texto/ícone "apagado" (500/400) bem mais escuro (a versão
-   anterior ficava ilegível/sem destaque em botões só-ícone), e cores de
-   destaque (accent/positive/warning/negative) mais escuras e saturadas
-   pra funcionar como texto sólido em cima de fundo claro. */
+   Reformulado (v3 "esfumaçado") a pedido do usuário: base neutra deixa de
+   ser cinza-azulado neutro e ganha uma leve nuance esverdeada (o mesmo
+   verde do "Gov" na logo), o teal de destaque fica um pouco mais fechado/
+   suave em vez do vívido puro, e o verde da marca aparece discretamente
+   (ponto de "sessão ativa", texto "Gov"). Mantém o mesmo contraste forte
+   da v2 em texto/ícone/borda — só a temperatura da cor mudou, não a
+   legibilidade. */
 [data-theme='light'] {
-  --color-base-950: #eef1f6;
-  --color-base-925: #f2f5f9;
-  --color-base-900: #f8fafc;
-  --color-base-850: #fdfdfe;
+  --color-base-950: #eef2f0;
+  --color-base-925: #f1f5f3;
+  --color-base-900: #f8faf9;
+  --color-base-850: #fbfdfc;
   --color-base-800: #ffffff;
-  --color-base-700: #c5ccd9;
-  --color-base-600: #9aa4b7;
-  --color-base-500: #667089;
-  --color-base-400: #4b5468;
-  --color-base-300: #343c4d;
-  --color-base-200: #212734;
-  --color-base-100: #10141c;
+  --color-base-700: #c7d3ce;
+  --color-base-600: #9caba4;
+  --color-base-500: #647570;
+  --color-base-400: #495a54;
+  --color-base-300: #34423c;
+  --color-base-200: #212c27;
+  --color-base-100: #0f1815;
 
-  --color-accent-500: #0e828d;
-  --color-accent-400: #0a626b;
-  --color-accent-300: #073f46;
+  --color-accent-500: #146e75;
+  --color-accent-400: #0f565c;
+  --color-accent-300: #0a3f43;
 
-  --color-positive-500: #17845f;
-  --color-positive-400: #0f6449;
+  --color-positive-500: #1c7a58;
+  --color-positive-400: #135f45;
 
-  --color-warning-500: #ad7412;
-  --color-warning-400: #855a06;
+  --color-warning-500: #a06f1a;
+  --color-warning-400: #7d5308;
 
-  --color-negative-500: #c23a4c;
-  --color-negative-400: #9c2d3c;
-  --color-negative-300: #73202b;
+  --color-negative-500: #b8465a;
+  --color-negative-400: #94374a;
+  --color-negative-300: #6f2938;
 
-  --nav-active-bg: rgba(14, 130, 141, 0.16);
-  --nav-active-border: rgba(14, 130, 141, 0.34);
+  --nav-active-bg: rgba(20, 110, 117, 0.16);
+  --nav-active-border: rgba(20, 110, 117, 0.34);
 }
 
 @keyframes fade-in {
