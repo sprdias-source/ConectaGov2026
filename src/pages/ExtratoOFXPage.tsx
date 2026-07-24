@@ -3,6 +3,7 @@ import { Upload, FileText, X, TrendingUp, TrendingDown, AlertCircle } from 'luci
 import { PageHeader, Card } from '../components/ui/Primitives'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useTransactions } from '../hooks/useTransactions'
+import { useFinancialAccounts } from '../hooks/useFinancialAccounts'
 import { todayLocalISO } from '../lib/dateUtils'
 
 interface OFXEntry {
@@ -12,6 +13,13 @@ interface OFXEntry {
   value: number
   type: 'CREDIT' | 'DEBIT'
 }
+
+interface SaldoFinalOFX {
+  valor: number
+  data: string
+}
+
+type Transaction = ReturnType<typeof useTransactions>['transactions'][number]
 
 function parseOFX(content: string): OFXEntry[] {
   const entries: OFXEntry[] = []
@@ -43,10 +51,32 @@ function parseOFX(content: string): OFXEntry[] {
   return entries.sort((a, b) => a.date.localeCompare(b.date))
 }
 
-function suggestMatch(
-  entry: OFXEntry,
-  transactions: Array<{ type: string; value: number; paymentDate?: string | null; dueDate: string; description: string }>
-) {
+// Lê o saldo final que o próprio banco informa no arquivo (tag padrão OFX
+// LEDGERBAL/BALAMT/DTASOF) — não depende do usuário digitar nada. Alguns
+// bancos não incluem essa tag no export; nesse caso devolve null e a tela
+// avisa que só dá pra conferir lançamento por lançamento, não o saldo.
+function parseSaldoFinal(content: string): SaldoFinalOFX | null {
+  const block = content.match(/<LEDGERBAL>[\s\S]*?(?:<\/LEDGERBAL>|<AVAILBAL>|$)/i)?.[0]
+  if (!block) return null
+
+  const get = (tag: string) => {
+    const m = block.match(new RegExp('<' + tag + '>([^<\\n]+)', 'i'))
+    return m ? m[1].trim() : ''
+  }
+
+  const raw = get('BALAMT').replace(',', '.')
+  const valor = parseFloat(raw)
+  if (isNaN(valor)) return null
+
+  const rawDate = get('DTASOF')
+  const data = rawDate.length >= 8
+    ? rawDate.slice(0, 4) + '-' + rawDate.slice(4, 6) + '-' + rawDate.slice(6, 8)
+    : todayLocalISO()
+
+  return { valor, data }
+}
+
+function suggestMatch(entry: OFXEntry, transactions: Transaction[]) {
   const targetType = entry.type === 'CREDIT' ? 'Receber' : 'Pagar'
   const entryDate = new Date(entry.date + 'T12:00:00').getTime()
   const THREE_DAYS = 3 * 24 * 60 * 60 * 1000
@@ -63,10 +93,17 @@ function suggestMatch(
 
 export default function ExtratoOFXPage() {
   const { transactions } = useTransactions()
+  const { accounts } = useFinancialAccounts()
   const [entries, setEntries] = useState<OFXEntry[]>([])
+  const [saldoFinal, setSaldoFinal] = useState<SaldoFinalOFX | null>(null)
+  const [accountId, setAccountId] = useState<string>('')
   const [fileName, setFileName] = useState<string | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+
+  // Caixa Interno é fictício (controle pessoal, sem banco de verdade por
+  // trás) — não faz sentido oferecer pra conciliar com um extrato real.
+  const contasBancarias = accounts.filter((a) => a.type !== 'INTERNO')
 
   const handleFile = (file: File) => {
     const name = file.name.toLowerCase()
@@ -84,6 +121,7 @@ export default function ExtratoOFXPage() {
           return
         }
         setEntries(parsed)
+        setSaldoFinal(parseSaldoFinal(content))
         setFileName(file.name)
         setParseError(null)
       } catch {
@@ -93,12 +131,42 @@ export default function ExtratoOFXPage() {
     reader.readAsText(file, 'latin1')
   }
 
+  // Quando uma conta é escolhida, a conferência (linha a linha e o saldo)
+  // passa a olhar só os lançamentos daquela conta — evita "achar"
+  // correspondência num lançamento de outra conta por coincidência de
+  // valor e data.
+  const transacoesDaConta = useMemo(
+    () => (accountId ? transactions.filter((t) => t.accountId === accountId) : transactions),
+    [transactions, accountId]
+  )
+
   const summary = useMemo(() => ({
     totalEntradas: entries.filter((e) => e.type === 'CREDIT').reduce((s, e) => s + e.value, 0),
     totalSaidas: entries.filter((e) => e.type === 'DEBIT').reduce((s, e) => s + e.value, 0),
     total: entries.length,
-    comCorrespondencia: entries.filter((e) => !!suggestMatch(e, transactions)).length,
-  }), [entries, transactions])
+    comCorrespondencia: entries.filter((e) => !!suggestMatch(e, transacoesDaConta)).length,
+  }), [entries, transacoesDaConta])
+
+  // Saldo do sistema pra aquela conta, calculado até a data do saldo do
+  // banco (saldo inicial + lançamentos pagos até aquele dia) — mesmo
+  // princípio já usado no saldo do Caixa Interno na sidebar, só que aqui
+  // limitado por data em vez de somar tudo até hoje.
+  const conciliacao = useMemo(() => {
+    if (!accountId || !saldoFinal) return null
+    const conta = accounts.find((a) => a.id === accountId)
+    if (!conta) return null
+
+    const dataLimite = new Date(saldoFinal.data + 'T23:59:59').getTime()
+    const saldoSistema = transacoesDaConta
+      .filter((t) => t.status === 'Pago')
+      .filter((t) => {
+        const dataLanc = new Date((t.paymentDate ?? t.dueDate) + 'T12:00:00').getTime()
+        return dataLanc <= dataLimite
+      })
+      .reduce((s, t) => s + (t.type === 'Receber' ? t.value : -t.value), conta.startingBalance)
+
+    return { conta, saldoSistema, diferenca: saldoFinal.valor - saldoSistema }
+  }, [accountId, saldoFinal, accounts, transacoesDaConta])
 
   return (
     <div className="pb-10">
@@ -152,7 +220,7 @@ export default function ExtratoOFXPage() {
             <Card className="p-4">
               <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Arquivo</p>
               <p className="text-[13px] font-semibold text-base-200 truncate">{fileName}</p>
-              <button onClick={() => { setEntries([]); setFileName(null) }} className="text-[11px] text-base-500 hover:text-negative-400 mt-1 flex items-center gap-1 transition">
+              <button onClick={() => { setEntries([]); setFileName(null); setSaldoFinal(null); setAccountId('') }} className="text-[11px] text-base-500 hover:text-negative-400 mt-1 flex items-center gap-1 transition">
                 <X className="w-3 h-3" /> Remover extrato
               </button>
             </Card>
@@ -172,6 +240,54 @@ export default function ExtratoOFXPage() {
           </div>
 
           <div className="px-6 mt-4">
+            <Card className="p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                <div className="sm:w-64 shrink-0">
+                  <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Conciliar com a conta</p>
+                  <select
+                    value={accountId}
+                    onChange={(e) => setAccountId(e.target.value)}
+                    className="w-full bg-base-900 border border-base-700 rounded-lg px-3 py-2 text-[13px] text-base-100 focus:outline-none focus:border-accent-400"
+                  >
+                    <option value="">Selecione a conta...</option>
+                    {contasBancarias.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {accountId && saldoFinal && conciliacao && (
+                  <div className="flex flex-wrap gap-x-6 gap-y-2">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-0.5">
+                        Saldo do banco em {new Date(saldoFinal.data + 'T12:00:00').toLocaleDateString('pt-BR')}
+                      </p>
+                      <p className="text-lg font-extrabold font-mono text-base-100">{formatBRL(saldoFinal.valor)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-0.5">Saldo no ConectaGov</p>
+                      <p className="text-lg font-extrabold font-mono text-base-100">{formatBRL(conciliacao.saldoSistema)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-0.5">Diferenca</p>
+                      <p className={'text-lg font-extrabold font-mono ' + (Math.abs(conciliacao.diferenca) < 0.01 ? 'text-positive-400' : 'text-negative-300')}>
+                        {Math.abs(conciliacao.diferenca) < 0.01 ? 'Bateu' : formatBRL(conciliacao.diferenca)}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {accountId && !saldoFinal && (
+                  <div className="flex items-start gap-2 text-[12px] text-warning-400">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <p>Este arquivo OFX nao trouxe o saldo final (tag LEDGERBAL) — so da pra conferir lancamento por lancamento, nao o saldo.</p>
+                  </div>
+                )}
+              </div>
+            </Card>
+          </div>
+
+          <div className="px-6 mt-4">
             <Card className="overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -185,7 +301,7 @@ export default function ExtratoOFXPage() {
                   </thead>
                   <tbody>
                     {entries.map((entry) => {
-                      const match = suggestMatch(entry, transactions)
+                      const match = suggestMatch(entry, transacoesDaConta)
                       return (
                         <tr key={entry.id} className="border-b border-base-800/60 hover:bg-base-850/40 transition">
                           <td className="px-4 py-3 text-base-300 text-[12px] whitespace-nowrap">
