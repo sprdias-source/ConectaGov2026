@@ -130,6 +130,56 @@ export type Database = {
         }
         Relationships: []
       }
+      bank_reconciliations: {
+        Row: {
+          account_id: string
+          created_at: string
+          data_saldo: string
+          diferenca: number
+          id: string
+          lancamentos_encontrados: number
+          nome_arquivo: string | null
+          saldo_banco: number
+          saldo_sistema: number
+          total_lancamentos: number
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          data_saldo: string
+          diferenca: number
+          id?: string
+          lancamentos_encontrados?: number
+          nome_arquivo?: string | null
+          saldo_banco: number
+          saldo_sistema: number
+          total_lancamentos?: number
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          data_saldo?: string
+          diferenca?: number
+          id?: string
+          lancamentos_encontrados?: number
+          nome_arquivo?: string | null
+          saldo_banco?: number
+          saldo_sistema?: number
+          total_lancamentos?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bank_reconciliations_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "financial_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bidding_checklist_items: {
         Row: {
           atendido: boolean
