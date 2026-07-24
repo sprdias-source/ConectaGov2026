@@ -52,10 +52,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
       {/* Mobile header */}
       <div className="lg:hidden bg-base-900 border-b border-base-700/60 px-4 py-3 flex justify-between items-center z-50 sticky top-0">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-accent-500 to-accent-400 flex items-center justify-center">
-            <ShieldCheck className="w-4 h-4 text-base-950" strokeWidth={2.5} />
-          </div>
-          <span className="font-display font-bold text-sm">ConectaGov</span>
+          <img src="/logo-icon.png" alt="ConectaGov" className="w-7 h-7 rounded-lg object-cover" />
+          <span className="font-display font-bold text-sm">Conecta<span className="text-positive-400">Gov</span></span>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -89,9 +87,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         {collapsed ? (
           <div className="flex flex-col gap-5 items-center flex-1 py-1 overflow-y-auto">
             <div className="pb-4 border-b border-base-800 w-full flex flex-col items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-500 to-accent-400 flex items-center justify-center">
-                <ShieldCheck className="w-4.5 h-4.5 text-base-950" strokeWidth={2.5} />
-              </div>
+              <img src="/logo-icon.png" alt="ConectaGov" className="w-8 h-8 rounded-lg object-cover" />
               <button
                 onClick={toggleCollapsed}
                 className="p-1 rounded bg-base-850 hover:bg-base-800 text-base-400 hover:text-base-100 border border-base-700 transition"
@@ -121,10 +117,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
           <div className="flex flex-col gap-5 flex-1 overflow-y-auto">
             <div className="pb-3 border-b border-base-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-500 to-accent-400 flex items-center justify-center">
-                  <ShieldCheck className="w-4.5 h-4.5 text-base-950" strokeWidth={2.5} />
-                </div>
-                <span className="font-display font-bold text-sm tracking-tight">ConectaGov</span>
+                <img src="/logo-icon.png" alt="ConectaGov" className="w-8 h-8 rounded-lg object-cover" />
+                <span className="font-display font-bold text-sm tracking-tight">Conecta<span className="text-positive-400">Gov</span></span>
               </div>
               <div className="flex items-center gap-1">
                 <button
