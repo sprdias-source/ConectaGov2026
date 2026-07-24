@@ -2,10 +2,11 @@ import { type ReactNode, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   Eye, EyeOff, Menu, X, ChevronLeft, ChevronRight, Wallet,
-  CreditCard, ShieldCheck, LogOut, Download,
+  CreditCard, ShieldCheck, LogOut, Download, Sun, Moon,
 } from 'lucide-react'
 import { NAV_GROUPS } from './navConfig'
 import { useAuth } from '../../hooks/useAuth'
+import { useTheme } from '../../hooks/useTheme'
 import { useFinancialAccounts } from '../../hooks/useFinancialAccounts'
 import { useTransactions } from '../../hooks/useTransactions'
 import { useAccountBalances, formatBRL } from '../../hooks/useAccountBalances'
@@ -15,6 +16,7 @@ import ResolverCaptchaModal from '../robos/ResolverCaptchaModal'
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth()
+  const { theme, toggleTheme } = useTheme()
   const navigate = useNavigate()
   const { accounts } = useFinancialAccounts()
   const { transactions } = useTransactions()
@@ -57,6 +59,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Modo claro' : 'Modo escuro'}
+            className="p-1.5 text-base-400 hover:text-base-100 rounded"
+          >
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
+          <button
             onClick={() => setPatrimonioVisible((v) => !v)}
             className="p-1.5 text-base-400 hover:text-base-100 rounded"
           >
@@ -89,6 +98,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
               >
                 <ChevronRight className="w-3.5 h-3.5" />
               </button>
+              <button
+                onClick={toggleTheme}
+                title={theme === 'dark' ? 'Modo claro' : 'Modo escuro'}
+                className="p-1 rounded bg-base-850 hover:bg-base-800 text-base-400 hover:text-base-100 border border-base-700 transition"
+              >
+                {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              </button>
             </div>
             <div
               onClick={() => setPatrimonioVisible((v) => !v)}
@@ -110,12 +126,21 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 </div>
                 <span className="font-display font-bold text-sm tracking-tight">ConectaGov</span>
               </div>
-              <button
-                onClick={toggleCollapsed}
-                className="p-1 rounded bg-base-850 hover:bg-base-800 text-base-400 hover:text-base-100 border border-base-700 transition"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={toggleTheme}
+                  title={theme === 'dark' ? 'Modo claro' : 'Modo escuro'}
+                  className="p-1 rounded bg-base-850 hover:bg-base-800 text-base-400 hover:text-base-100 border border-base-700 transition"
+                >
+                  {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  onClick={toggleCollapsed}
+                  className="p-1 rounded bg-base-850 hover:bg-base-800 text-base-400 hover:text-base-100 border border-base-700 transition"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
 
             <div className="bg-base-900/60 border border-base-700/50 rounded-xl p-3">
