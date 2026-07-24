@@ -35,6 +35,12 @@
   --color-negative-400: #e07688;
   --color-negative-300: #f0a3b0;
 
+  /* Intensidade do "pill" do item de menu ativo — em variável separada
+     porque o modo claro precisa de uma opacidade maior que o escuro pro
+     mesmo destaque ficar visível (ver [data-theme='light'] abaixo). */
+  --nav-active-bg: rgba(20, 163, 176, 0.10);
+  --nav-active-border: rgba(20, 163, 176, 0.22);
+
   --animate-fade-in: fade-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   --animate-slide-up: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   --animate-rise: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -46,37 +52,41 @@
    text-base-200, border-accent-500 etc.) em vez de cor fixa, nenhuma tela
    precisa mudar — só o valor por trás de cada nome muda.
 
-   Mantém a mesma filosofia da paleta escura (nunca preto/branco puros,
-   leve viés azulado) e preserva o papel de cada variável: 950→800 é a
-   "camada de fundo" (fica mais clara/branca conforme mais "elevada"), 700→600
-   são bordas, 500→100 é texto (fica mais escuro conforme mais em destaque). */
+   Reformulado (v2) com bem mais contraste que a 1ª versão: bordas mais
+   presentes, texto/ícone "apagado" (500/400) bem mais escuro (a versão
+   anterior ficava ilegível/sem destaque em botões só-ícone), e cores de
+   destaque (accent/positive/warning/negative) mais escuras e saturadas
+   pra funcionar como texto sólido em cima de fundo claro. */
 [data-theme='light'] {
   --color-base-950: #eef1f6;
-  --color-base-925: #f1f4f8;
-  --color-base-900: #f7f9fb;
-  --color-base-850: #fbfcfd;
+  --color-base-925: #f2f5f9;
+  --color-base-900: #f8fafc;
+  --color-base-850: #fdfdfe;
   --color-base-800: #ffffff;
-  --color-base-700: #d7dce4;
-  --color-base-600: #b9c0cd;
-  --color-base-500: #838da0;
-  --color-base-400: #626c80;
-  --color-base-300: #475063;
-  --color-base-200: #2e3648;
-  --color-base-100: #161b26;
+  --color-base-700: #c5ccd9;
+  --color-base-600: #9aa4b7;
+  --color-base-500: #667089;
+  --color-base-400: #4b5468;
+  --color-base-300: #343c4d;
+  --color-base-200: #212734;
+  --color-base-100: #10141c;
 
-  --color-accent-500: #0f8792;
-  --color-accent-400: #0c6b74;
-  --color-accent-300: #095059;
+  --color-accent-500: #0e828d;
+  --color-accent-400: #0a626b;
+  --color-accent-300: #073f46;
 
-  --color-positive-500: #1a8760;
-  --color-positive-400: #146b4c;
+  --color-positive-500: #17845f;
+  --color-positive-400: #0f6449;
 
-  --color-warning-500: #b97a1f;
-  --color-warning-400: #92610a;
+  --color-warning-500: #ad7412;
+  --color-warning-400: #855a06;
 
-  --color-negative-500: #c23f52;
-  --color-negative-400: #a52e40;
-  --color-negative-300: #7d1f2d;
+  --color-negative-500: #c23a4c;
+  --color-negative-400: #9c2d3c;
+  --color-negative-300: #73202b;
+
+  --nav-active-bg: rgba(14, 130, 141, 0.16);
+  --nav-active-border: rgba(14, 130, 141, 0.34);
 }
 
 @keyframes fade-in {
