@@ -108,7 +108,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             </div>
             <div
               onClick={() => setPatrimonioVisible((v) => !v)}
-              className="bg-base-900/60 border border-base-700/50 rounded-xl p-2.5 text-center cursor-pointer hover:bg-base-900 transition w-full flex flex-col items-center gap-1"
+              className="bg-base-900/60 border border-base-700/50 rounded-xl p-2.5 text-center cursor-pointer hover:bg-base-900 transition w-full flex flex-col items-center gap-1 shadow-sm"
               title={`Patrimônio: ${patrimonioVisible ? formatBRL(patrimonioTotal) : '••••'}`}
             >
               <Wallet className="w-4 h-4 text-accent-400" />
@@ -143,7 +143,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
               </div>
             </div>
 
-            <div className="bg-base-900/60 border border-base-700/50 rounded-xl p-3">
+            <div className="bg-base-900/60 border border-base-700/50 rounded-xl p-3 shadow-sm">
               <div className="flex justify-between items-center text-base-400">
                 <span className="text-[9px] font-bold tracking-widest uppercase">Patrimônio Total</span>
                 <button onClick={() => setPatrimonioVisible((v) => !v)} className="text-base-500 hover:text-base-200 transition">
@@ -223,7 +223,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                       className={({ isActive }) =>
                         `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium transition ${
                           isActive
-                            ? 'bg-accent-500/10 text-accent-300 border border-accent-500/20'
+                            ? 'bg-[var(--nav-active-bg)] text-accent-300 border border-[var(--nav-active-border)]'
                             : 'text-base-400 hover:text-base-100 hover:bg-base-850 border border-transparent'
                         }`
                       }
@@ -318,7 +318,7 @@ function NavSection({
         {icon}
         <span className="text-[9px] font-extrabold text-base-500 uppercase tracking-widest">{label}</span>
       </div>
-      <div className="flex flex-col gap-1 bg-base-900/40 border border-base-800/60 rounded-lg p-2">
+      <div className="flex flex-col gap-1 bg-base-900/40 border border-base-800/60 rounded-lg p-2 shadow-sm">
         {items.length === 0 ? (
           <div className="text-[10px] text-base-500 italic px-1 py-0.5">{empty}</div>
         ) : (
