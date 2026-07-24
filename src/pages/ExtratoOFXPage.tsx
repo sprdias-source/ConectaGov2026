@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react'
-import { Upload, FileText, X, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react'
+import { Upload, FileText, X, TrendingUp, TrendingDown, AlertCircle, Save, History, Trash2 } from 'lucide-react'
 import { PageHeader, Card } from '../components/ui/Primitives'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useTransactions } from '../hooks/useTransactions'
 import { useFinancialAccounts } from '../hooks/useFinancialAccounts'
+import { useBankReconciliations } from '../hooks/useBankReconciliations'
 import { todayLocalISO } from '../lib/dateUtils'
 
 interface OFXEntry {
@@ -91,19 +92,35 @@ function suggestMatch(entry: OFXEntry, transactions: Transaction[]) {
   })
 }
 
+function formatMesAno(dataISO: string) {
+  const d = new Date(dataISO + 'T12:00:00')
+  const texto = d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+  return texto.charAt(0).toUpperCase() + texto.slice(1)
+}
+
 export default function ExtratoOFXPage() {
   const { transactions } = useTransactions()
   const { accounts } = useFinancialAccounts()
+  const { reconciliations, salvar, remover } = useBankReconciliations()
   const [entries, setEntries] = useState<OFXEntry[]>([])
   const [saldoFinal, setSaldoFinal] = useState<SaldoFinalOFX | null>(null)
   const [accountId, setAccountId] = useState<string>('')
   const [fileName, setFileName] = useState<string | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [salvo, setSalvo] = useState(false)
 
   // Caixa Interno é fictício (controle pessoal, sem banco de verdade por
   // trás) — não faz sentido oferecer pra conciliar com um extrato real.
   const contasBancarias = accounts.filter((a) => a.type !== 'INTERNO')
+
+  const limparExtrato = () => {
+    setEntries([])
+    setFileName(null)
+    setSaldoFinal(null)
+    setAccountId('')
+    setSalvo(false)
+  }
 
   const handleFile = (file: File) => {
     const name = file.name.toLowerCase()
@@ -124,6 +141,7 @@ export default function ExtratoOFXPage() {
         setSaldoFinal(parseSaldoFinal(content))
         setFileName(file.name)
         setParseError(null)
+        setSalvo(false)
       } catch {
         setParseError('Erro ao ler o arquivo. Verifique se o arquivo OFX esta integro.')
       }
@@ -168,11 +186,48 @@ export default function ExtratoOFXPage() {
     return { conta, saldoSistema, diferenca: saldoFinal.valor - saldoSistema }
   }, [accountId, saldoFinal, accounts, transacoesDaConta])
 
+  // Período coberto pelo extrato importado — usado só pra achar, do lado
+  // do sistema, lançamentos pagos que caíram nessa janela e que o extrato
+  // não trouxe (ida contrária da conferência: sistema → banco).
+  const periodoExtrato = useMemo(() => {
+    if (!entries.length) return null
+    const datas = entries.map((e) => e.date)
+    return { min: datas.reduce((a, b) => (a < b ? a : b)), max: datas.reduce((a, b) => (a > b ? a : b)) }
+  }, [entries])
+
+  const lancamentosSemCorrespondencia = useMemo(() => {
+    if (!accountId || !periodoExtrato) return []
+    const idsEncontrados = new Set(
+      entries.map((e) => suggestMatch(e, transacoesDaConta)?.id).filter((id): id is string => !!id)
+    )
+    return transacoesDaConta.filter((t) => {
+      if (t.status !== 'Pago') return false
+      if (idsEncontrados.has(t.id)) return false
+      const dataLanc = t.paymentDate ?? t.dueDate
+      return dataLanc >= periodoExtrato.min && dataLanc <= periodoExtrato.max
+    })
+  }, [accountId, periodoExtrato, entries, transacoesDaConta])
+
+  const handleSalvar = async () => {
+    if (!accountId || !saldoFinal || !conciliacao) return
+    await salvar.mutateAsync({
+      accountId,
+      dataSaldo: saldoFinal.data,
+      saldoBanco: saldoFinal.valor,
+      saldoSistema: conciliacao.saldoSistema,
+      diferenca: conciliacao.diferenca,
+      nomeArquivo: fileName,
+      totalLancamentos: summary.total,
+      lancamentosEncontrados: summary.comCorrespondencia,
+    })
+    setSalvo(true)
+  }
+
   return (
     <div className="pb-10">
       <PageHeader
         title="Extrato Bancario (OFX)"
-        subtitle="Importe o extrato do banco para conferencia — nenhum dado e gravado ou alterado no sistema"
+        subtitle="Importe o extrato do banco para conferencia — nenhum lancamento e criado ou alterado no sistema"
         icon={FileText}
       />
 
@@ -220,7 +275,7 @@ export default function ExtratoOFXPage() {
             <Card className="p-4">
               <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Arquivo</p>
               <p className="text-[13px] font-semibold text-base-200 truncate">{fileName}</p>
-              <button onClick={() => { setEntries([]); setFileName(null); setSaldoFinal(null); setAccountId('') }} className="text-[11px] text-base-500 hover:text-negative-400 mt-1 flex items-center gap-1 transition">
+              <button onClick={limparExtrato} className="text-[11px] text-base-500 hover:text-negative-400 mt-1 flex items-center gap-1 transition">
                 <X className="w-3 h-3" /> Remover extrato
               </button>
             </Card>
@@ -246,7 +301,7 @@ export default function ExtratoOFXPage() {
                   <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Conciliar com a conta</p>
                   <select
                     value={accountId}
-                    onChange={(e) => setAccountId(e.target.value)}
+                    onChange={(e) => { setAccountId(e.target.value); setSalvo(false) }}
                     className="w-full bg-base-900 border border-base-700 rounded-lg px-3 py-2 text-[13px] text-base-100 focus:outline-none focus:border-accent-400"
                   >
                     <option value="">Selecione a conta...</option>
@@ -257,7 +312,7 @@ export default function ExtratoOFXPage() {
                 </div>
 
                 {accountId && saldoFinal && conciliacao && (
-                  <div className="flex flex-wrap gap-x-6 gap-y-2">
+                  <div className="flex flex-1 flex-wrap items-center gap-x-6 gap-y-2">
                     <div>
                       <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-0.5">
                         Saldo do banco em {new Date(saldoFinal.data + 'T12:00:00').toLocaleDateString('pt-BR')}
@@ -274,13 +329,21 @@ export default function ExtratoOFXPage() {
                         {Math.abs(conciliacao.diferenca) < 0.01 ? 'Bateu' : formatBRL(conciliacao.diferenca)}
                       </p>
                     </div>
+                    <button
+                      onClick={handleSalvar}
+                      disabled={salvar.isPending}
+                      className="ml-auto inline-flex items-center gap-1.5 bg-accent-500 hover:bg-accent-400 text-base-950 font-bold text-[12px] px-3.5 py-2 rounded-lg transition disabled:opacity-50 shrink-0"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      {salvar.isPending ? 'Salvando...' : salvo ? 'Salvo' : 'Salvar conciliacao deste mes'}
+                    </button>
                   </div>
                 )}
 
                 {accountId && !saldoFinal && (
                   <div className="flex items-start gap-2 text-[12px] text-warning-400">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                    <p>Este arquivo OFX nao trouxe o saldo final (tag LEDGERBAL) — so da pra conferir lancamento por lancamento, nao o saldo.</p>
+                    <p>Este arquivo OFX nao trouxe o saldo final (tag LEDGERBAL) — so da pra conferir lancamento por lancamento, nao o saldo (e por isso nao da pra salvar a conciliacao).</p>
                   </div>
                 )}
               </div>
@@ -289,25 +352,32 @@ export default function ExtratoOFXPage() {
 
           <div className="px-6 mt-4">
             <Card className="overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-base-800 flex items-center gap-6 text-[10px] font-bold uppercase tracking-wider text-base-500">
+                <span>Extrato do Banco</span>
+                <span className="border-l border-base-800 pl-6">Lancamento no ConectaGov</span>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-base-800 text-left">
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Data</th>
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Descricao do Banco</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Descricao</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right bg-base-850/40">Valor</th>
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Correspondencia no Sistema</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 border-l border-base-800">Data</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Descricao</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right bg-base-850/40">Valor</th>
                     </tr>
                   </thead>
                   <tbody>
                     {entries.map((entry) => {
                       const match = suggestMatch(entry, transacoesDaConta)
+                      const dataMatch = match ? (match.paymentDate ?? match.dueDate) : null
                       return (
                         <tr key={entry.id} className="border-b border-base-800/60 hover:bg-base-850/40 transition">
                           <td className="px-4 py-3 text-base-300 text-[12px] whitespace-nowrap">
                             {new Date(entry.date + 'T12:00:00').toLocaleDateString('pt-BR')}
                           </td>
-                          <td className="px-4 py-3 text-base-200 text-[12px] max-w-[300px] truncate">
+                          <td className="px-4 py-3 text-base-200 text-[12px] max-w-[240px] truncate">
                             <span className="flex items-center gap-2">
                               {entry.type === 'CREDIT' ? <TrendingUp className="w-3.5 h-3.5 text-positive-400 shrink-0" /> : <TrendingDown className="w-3.5 h-3.5 text-negative-300 shrink-0" />}
                               {entry.description}
@@ -316,16 +386,21 @@ export default function ExtratoOFXPage() {
                           <td className={'px-4 py-3 text-right font-mono font-bold text-[13px] bg-base-850/25 ' + (entry.type === 'CREDIT' ? 'text-positive-400' : 'text-negative-300')}>
                             {entry.type === 'CREDIT' ? '+' : '-'}{formatBRL(entry.value)}
                           </td>
-                          <td className="px-4 py-3 text-[12px]">
-                            {match ? (
-                              <div>
-                                <span className="text-positive-400 font-semibold">Encontrado</span>
-                                <p className="text-base-500 text-[11px] truncate max-w-[220px]">{match.description}</p>
-                              </div>
-                            ) : (
-                              <span className="text-base-600 italic">Nao encontrado</span>
-                            )}
-                          </td>
+                          {match ? (
+                            <>
+                              <td className="px-4 py-3 text-base-300 text-[12px] whitespace-nowrap border-l border-base-800">
+                                {dataMatch ? new Date(dataMatch + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
+                              </td>
+                              <td className="px-4 py-3 text-base-200 text-[12px] max-w-[240px] truncate">{match.description}</td>
+                              <td className={'px-4 py-3 text-right font-mono font-bold text-[13px] bg-base-850/25 ' + (match.type === 'Receber' ? 'text-positive-400' : 'text-negative-300')}>
+                                {match.type === 'Receber' ? '+' : '-'}{formatBRL(match.value)}
+                              </td>
+                            </>
+                          ) : (
+                            <td colSpan={3} className="px-4 py-3 text-[12px] border-l border-base-800">
+                              <span className="text-base-600 italic">Nao encontrado no sistema</span>
+                            </td>
+                          )}
                         </tr>
                       )
                     })}
@@ -334,8 +409,91 @@ export default function ExtratoOFXPage() {
               </div>
             </Card>
           </div>
+
+          {lancamentosSemCorrespondencia.length > 0 && (
+            <div className="px-6 mt-4">
+              <Card className="overflow-hidden">
+                <div className="px-4 py-3 border-b border-base-800">
+                  <p className="text-[12px] font-bold text-base-200">Lancamentos do sistema sem correspondencia no extrato</p>
+                  <p className="text-[11px] text-base-500 mt-0.5">Pagos no ConectaGov dentro do periodo desse extrato, mas que nao apareceram no arquivo do banco — vale conferir se a conta ou a data estao certas.</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {lancamentosSemCorrespondencia.map((t) => (
+                        <tr key={t.id} className="border-b border-base-800/60 hover:bg-base-850/40 transition">
+                          <td className="px-4 py-2.5 text-base-300 text-[12px] whitespace-nowrap">
+                            {new Date((t.paymentDate ?? t.dueDate) + 'T12:00:00').toLocaleDateString('pt-BR')}
+                          </td>
+                          <td className="px-4 py-2.5 text-base-200 text-[12px] max-w-[300px] truncate">{t.description}</td>
+                          <td className={'px-4 py-2.5 text-right font-mono font-bold text-[13px] ' + (t.type === 'Receber' ? 'text-positive-400' : 'text-negative-300')}>
+                            {t.type === 'Receber' ? '+' : '-'}{formatBRL(t.value)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </div>
+          )}
         </>
       )}
+
+      <div className="px-6 mt-6">
+        <Card className="overflow-hidden">
+          <div className="px-4 py-3 border-b border-base-800 flex items-center gap-2">
+            <History className="w-4 h-4 text-base-500" />
+            <p className="text-[12px] font-bold text-base-200">Historico de conciliacoes salvas</p>
+          </div>
+          {reconciliations.length === 0 ? (
+            <p className="px-4 py-6 text-[12px] text-base-500 italic text-center">Nenhuma conciliacao salva ainda.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-base-800 text-left">
+                    <th className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-base-500">Mes</th>
+                    <th className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-base-500">Conta</th>
+                    <th className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Saldo Banco</th>
+                    <th className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Saldo Sistema</th>
+                    <th className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Diferenca</th>
+                    <th className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-base-500">Lancamentos</th>
+                    <th className="px-4 py-2.5"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reconciliations.map((rec) => {
+                    const conta = accounts.find((a) => a.id === rec.accountId)
+                    const bateu = Math.abs(rec.diferenca) < 0.01
+                    return (
+                      <tr key={rec.id} className="border-b border-base-800/60 hover:bg-base-850/40 transition">
+                        <td className="px-4 py-2.5 text-base-200 text-[12px] font-semibold whitespace-nowrap">{formatMesAno(rec.dataSaldo)}</td>
+                        <td className="px-4 py-2.5 text-base-300 text-[12px]">{conta?.name ?? '—'}</td>
+                        <td className="px-4 py-2.5 text-right font-mono text-[12px] text-base-200">{formatBRL(rec.saldoBanco)}</td>
+                        <td className="px-4 py-2.5 text-right font-mono text-[12px] text-base-200">{formatBRL(rec.saldoSistema)}</td>
+                        <td className={'px-4 py-2.5 text-right font-mono font-bold text-[12px] ' + (bateu ? 'text-positive-400' : 'text-negative-300')}>
+                          {bateu ? 'Bateu' : formatBRL(rec.diferenca)}
+                        </td>
+                        <td className="px-4 py-2.5 text-base-500 text-[11px]">{rec.lancamentosEncontrados} / {rec.totalLancamentos}</td>
+                        <td className="px-4 py-2.5 text-right">
+                          <button
+                            onClick={() => remover.mutate(rec.id)}
+                            title="Excluir registro"
+                            className="text-base-600 hover:text-negative-400 transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      </div>
     </div>
   )
 }
