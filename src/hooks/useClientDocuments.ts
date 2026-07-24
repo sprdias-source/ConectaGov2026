@@ -60,7 +60,7 @@ export function useClientDocuments(clientId?: string) {
     }) => {
       if (!user || !clientId) throw new Error('Não autenticado')
       const status = calcDocStatus(doc.dataValidade ?? null)
-      const { error } = await supabase.from('client_documents').upsert({
+      const payload = {
         user_id: user.id,
         client_id: clientId,
         tipo: doc.tipo,
@@ -72,7 +72,18 @@ export function useClientDocuments(clientId?: string) {
         auto_renovavel: doc.autoRenovavel ?? false,
         observacoes: doc.observacoes ?? null,
         pasta: doc.pasta ?? null,
-      }, { onConflict: 'user_id,client_id,tipo' })
+      }
+      // Documentos 'manual' podem ter vários por cliente (Contrato Social,
+      // Atestado Técnico, CREA/CAU...) e todos compartilham tipo='manual' —
+      // usar upsert com onConflict em (user_id, client_id, tipo) faria um
+      // novo documento manual sobrescrever o registro do anterior no banco
+      // (o arquivo no Storage não some, mas a referência dele sim). Por
+      // isso, 'manual' sempre gera uma linha nova (insert simples); só as 7
+      // certidões automáticas (uma por tipo por cliente, de verdade) usam o
+      // upsert, pra sobrescrever a certidão anterior ao renovar.
+      const { error } = doc.tipo === 'manual'
+        ? await supabase.from('client_documents').insert(payload)
+        : await supabase.from('client_documents').upsert(payload, { onConflict: 'user_id,client_id,tipo' })
       if (error) throw error
     },
     onSuccess: invalidate,
