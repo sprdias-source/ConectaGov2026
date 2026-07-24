@@ -40,16 +40,53 @@
   --animate-rise: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* Modo claro: redefine as MESMAS variáveis de cor dentro do escopo
+   [data-theme="light"] (aplicado na tag <html> pelo hook useTheme). Como
+   toda a interface já usa essas variáveis via classe Tailwind (bg-base-900,
+   text-base-200, border-accent-500 etc.) em vez de cor fixa, nenhuma tela
+   precisa mudar — só o valor por trás de cada nome muda.
+
+   Mantém a mesma filosofia da paleta escura (nunca preto/branco puros,
+   leve viés azulado) e preserva o papel de cada variável: 950→800 é a
+   "camada de fundo" (fica mais clara/branca conforme mais "elevada"), 700→600
+   são bordas, 500→100 é texto (fica mais escuro conforme mais em destaque). */
+[data-theme='light'] {
+  --color-base-950: #eef1f6;
+  --color-base-925: #f1f4f8;
+  --color-base-900: #f7f9fb;
+  --color-base-850: #fbfcfd;
+  --color-base-800: #ffffff;
+  --color-base-700: #d7dce4;
+  --color-base-600: #b9c0cd;
+  --color-base-500: #838da0;
+  --color-base-400: #626c80;
+  --color-base-300: #475063;
+  --color-base-200: #2e3648;
+  --color-base-100: #161b26;
+
+  --color-accent-500: #0f8792;
+  --color-accent-400: #0c6b74;
+  --color-accent-300: #095059;
+
+  --color-positive-500: #1a8760;
+  --color-positive-400: #146b4c;
+
+  --color-warning-500: #b97a1f;
+  --color-warning-400: #92610a;
+
+  --color-negative-500: #c23f52;
+  --color-negative-400: #a52e40;
+  --color-negative-300: #7d1f2d;
+}
+
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-
 @keyframes slide-up {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes rise {
   from { opacity: 0; transform: translateY(16px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -58,11 +95,9 @@
 * {
   box-sizing: border-box;
 }
-
 html, body, #root {
   height: 100%;
 }
-
 body {
   margin: 0;
   font-family: var(--font-sans);
@@ -72,6 +107,7 @@ body {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 ::-webkit-scrollbar {
