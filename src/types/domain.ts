@@ -226,7 +226,7 @@ export interface Receipt {
   createdAt: string
 }
 
-export type FileCategory = 'Edital' | 'Contrato' | 'Recibo' | 'Certidão' | 'Outro'
+export type FileCategory = 'Edital' | 'Termo de Referência' | 'Contrato' | 'Recibo' | 'Certidão' | 'Outro'
 export type FileEntityType = 'licitacao' | 'contrato' | 'recibo' | 'cliente' | 'funcionario' | 'empenho'
 
 export interface AttachedFile {

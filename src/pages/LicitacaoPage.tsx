@@ -1,0 +1,852 @@
+import { useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import {
+  ArrowLeft, FileText, Upload, Plus, Trash2, CheckCircle2, Circle, Download,
+  AlertCircle, Loader2, Sparkles, Award, Check, History, ChevronDown, ChevronUp,
+  ClipboardList, Gavel, Wallet, Send, CircleDot,
+} from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { supabase } from '../lib/supabase'
+import { fromBiddingItemRow } from '../lib/mappers'
+import { useAuth } from '../hooks/useAuth'
+import { Button, Input, Select } from '../components/ui/FormControls'
+import { PageHeader, Card } from '../components/ui/Primitives'
+import { formatBRL } from '../hooks/useAccountBalances'
+import { useAttachedFiles } from '../hooks/useAttachedFiles'
+import { useBiddingChecklist } from '../hooks/useBiddingChecklist'
+import { useBiddingItemVersions } from '../hooks/useBiddingItemVersions'
+import { useClientDocuments, calcDocStatus } from '../hooks/useClientDocuments'
+import { useAtestados, calcularSimilaridade } from '../hooks/useAtestados'
+import { useBiddings } from '../hooks/useBiddings'
+import { useClients } from '../hooks/useClients'
+import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
+import { CERT_CONFIG } from '../types/domain'
+import type { Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingStatus } from '../types/domain'
+
+const ETAPAS_TRILHA: BiddingEtapa[] = [
+  'Análise de Edital',
+  'Montagem de Documentação',
+  'Proposta Enviada',
+  'Disputa de Lances',
+  'Fase Recursal',
+  'Adjudicada e Homologada',
+]
+
+const CATEGORIAS_CHECKLIST = [
+  'Habilitação Jurídica',
+  'Regularidade Fiscal e Trabalhista',
+  'Qualificação Econômico-Financeira',
+  'Qualificação Técnica',
+  'Proposta',
+  'Outro',
+]
+
+const ABAS = [
+  { key: 'visao', label: 'Visão Geral', icon: Gavel },
+  { key: 'edital', label: 'Edital & Análise', icon: FileText },
+  { key: 'checklist', label: 'Checklist & Habilitação', icon: ClipboardList },
+  { key: 'proposta', label: 'Proposta & Itens', icon: Wallet },
+] as const
+type AbaKey = typeof ABAS[number]['key']
+
+// Busca os itens da licitação direto (não existia hook próprio pra isso —
+// os itens só eram lidos como parte do formulário de edição). Fica local
+// aqui porque é uso específico desta página (rateio da proposta).
+function useBiddingItemsDaLicitacao(biddingId?: string) {
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+
+  const query = useQuery({
+    queryKey: ['bidding_items', biddingId],
+    enabled: !!user && !!biddingId,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('bidding_items').select('*').eq('bidding_id', biddingId!).order('numero_item')
+      if (error) throw error
+      return data.map(fromBiddingItemRow)
+    },
+  })
+
+  // Salva o resultado de um rateio: tira uma "foto" dos itens como estavam
+  // (mesmo padrão do snapshot automático em useBiddings.ts), aplica os
+  // valores novos, e opcionalmente já marca essa versão como a enviada.
+  const salvarRateio = useMutation({
+    mutationFn: async ({ novosValoresTotais, observacao, marcarEnviada }: { novosValoresTotais: Record<string, number>; observacao: string; marcarEnviada: boolean }) => {
+      if (!user || !biddingId) throw new Error('Dados insuficientes')
+
+      const { data: itensAtuais, error: itensError } = await supabase.from('bidding_items').select('*').eq('bidding_id', biddingId)
+      if (itensError) throw itensError
+
+      const { data: ultimaVersao } = await supabase
+        .from('bidding_items_versions')
+        .select('versao')
+        .eq('bidding_id', biddingId)
+        .order('versao', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const proximaVersao = (ultimaVersao?.versao ?? 0) + 1
+
+      const { data: novaVersaoRow, error: snapError } = await supabase
+        .from('bidding_items_versions')
+        .insert({
+          user_id: user.id,
+          bidding_id: biddingId,
+          versao: proximaVersao,
+          itens_snapshot: itensAtuais ?? [],
+          alterado_por_email: user.email ?? null,
+          observacao: observacao || 'Rateio da proposta readequada',
+          enviada: marcarEnviada,
+        })
+        .select()
+        .single()
+      if (snapError) throw snapError
+
+      if (marcarEnviada) {
+        await supabase
+          .from('bidding_items_versions')
+          .update({ enviada: false })
+          .eq('bidding_id', biddingId)
+          .eq('enviada', true)
+          .neq('id', novaVersaoRow.id)
+      }
+
+      for (const [itemId, valorTotal] of Object.entries(novosValoresTotais)) {
+        const item = (itensAtuais ?? []).find((i: { id: string }) => i.id === itemId)
+        if (!item) continue
+        const valorUnitario = item.quantidade > 0 ? valorTotal / item.quantidade : 0
+        await supabase.from('bidding_items').update({ valor_unitario_ofertado: valorUnitario }).eq('id', itemId)
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bidding_items', biddingId] })
+      queryClient.invalidateQueries({ queryKey: ['bidding_items_versions', biddingId] })
+      queryClient.invalidateQueries({ queryKey: ['biddings'] })
+    },
+  })
+
+  return { items: query.data ?? [], isLoading: query.isLoading, salvarRateio }
+}
+
+// Rateio pelo método do "maior resto": distribui o valor final proporcional
+// ao peso de cada item, e joga a diferença de arredondamento (sempre
+// existe, trabalhando em centavos) nos itens com maior parte fracionária —
+// garante que a soma bate EXATO com o valor informado, nunca sobra 1
+// centavo perdido.
+function calcularRateio(items: BiddingItem[], valorFinal: number, pesos: Record<string, number>): Record<string, number> {
+  const totalCentavosFinal = Math.round(valorFinal * 100)
+  const exatos = items.map((i) => ({ id: i.id, exato: (pesos[i.id] ?? 0) * totalCentavosFinal }))
+  const base = exatos.map((v) => ({ id: v.id, centavos: Math.floor(v.exato), resto: v.exato - Math.floor(v.exato) }))
+  const totalBase = base.reduce((s, b) => s + b.centavos, 0)
+  let sobra = totalCentavosFinal - totalBase
+
+  const ordenado = [...base].sort((a, b) => b.resto - a.resto)
+  for (let i = 0; i < ordenado.length && sobra > 0; i++) {
+    ordenado[i].centavos += 1
+    sobra--
+  }
+
+  const porId: Record<string, number> = {}
+  ordenado.forEach((o) => { porId[o.id] = o.centavos / 100 })
+  return porId
+}
+
+function EtapaTrilha({ etapaAtual, onMudar, atualizando, podeEditar }: {
+  etapaAtual: BiddingEtapa | null
+  onMudar: (etapa: BiddingEtapa) => void
+  atualizando: boolean
+  podeEditar: boolean
+}) {
+  const indiceAtual = etapaAtual ? ETAPAS_TRILHA.indexOf(etapaAtual) : -1
+  return (
+    <div className="flex items-center gap-1 overflow-x-auto pb-1">
+      {ETAPAS_TRILHA.map((etapa, idx) => {
+        const concluida = idx < indiceAtual
+        const atual = idx === indiceAtual
+        return (
+          <div key={etapa} className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={() => onMudar(etapa)}
+              disabled={atualizando || !podeEditar}
+              title={etapa}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-semibold transition border whitespace-nowrap disabled:opacity-50 ${podeEditar ? '' : 'cursor-default'} ${
+                atual
+                  ? 'bg-accent-500 text-base-950 border-accent-500'
+                  : concluida
+                  ? 'bg-positive-500/15 text-positive-400 border-positive-500/30 hover:bg-positive-500/25'
+                  : 'bg-base-850/60 text-base-500 border-base-700 hover:text-base-300'
+              }`}
+            >
+              {concluida && <Check className="w-3 h-3" />}
+              {etapa}
+            </button>
+            {idx < ETAPAS_TRILHA.length - 1 && (
+              <div className={`w-3 h-px shrink-0 ${concluida ? 'bg-positive-500/40' : 'bg-base-700'}`} />
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ResultadoLicitacao({ bidding }: { bidding: Bidding }) {
+  const { marcarResultado } = useBiddings()
+  const { nivel } = usePermissaoFerramenta('licitacoes')
+  const podeEditar = nivel === 'edicao'
+  const [status, setStatus] = useState<BiddingStatus>(bidding.status)
+  const [motivo, setMotivo] = useState(bidding.motivoPerda ?? '')
+
+  const mudou = status !== bidding.status || (status === 'Perdeu' && motivo !== (bidding.motivoPerda ?? ''))
+
+  if (!podeEditar) {
+    return (
+      <div className="text-[12px] text-base-500">
+        Resultado: <span className="font-semibold text-base-300">{bidding.status}</span>
+        {bidding.motivoPerda && <span> — {bidding.motivoPerda}</span>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-base-850/60 border border-base-800 rounded-xl p-4 flex flex-col gap-3">
+      <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Resultado da Licitação</p>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="w-48">
+          <Select value={status} onChange={(e) => setStatus(e.target.value as BiddingStatus)}>
+            <option value="Em Andamento">Em Andamento</option>
+            <option value="Ganhou">Ganhou</option>
+            <option value="Perdeu">Perdeu</option>
+            <option value="Cancelada">Cancelada</option>
+          </Select>
+        </div>
+        {status === 'Perdeu' && (
+          <div className="flex-1 min-w-[220px]">
+            <Input
+              placeholder="Motivo da perda (preço, documentação, desclassificação técnica...)"
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+            />
+          </div>
+        )}
+        <Button
+          onClick={() => marcarResultado.mutate({ biddingId: bidding.id, status, motivoPerda: motivo })}
+          disabled={!mudou || marcarResultado.isPending}
+        >
+          {marcarResultado.isPending ? 'Salvando...' : 'Salvar Resultado'}
+        </Button>
+      </div>
+      <p className="text-[11px] text-base-500">
+        Registrar o motivo quando perde é o que alimenta o relatório mensal pro cliente depois — sem isso, o "porquê" se perde.
+      </p>
+    </div>
+  )
+}
+
+function HistoricoVersoes({ biddingId }: { biddingId: string }) {
+  const { versoes, isLoading, marcarComoEnviada } = useBiddingItemVersions(biddingId)
+  const { nivel } = usePermissaoFerramenta('licitacoes')
+  const podeEditar = nivel === 'edicao'
+  const [aberto, setAberto] = useState(true)
+  const [versaoExpandida, setVersaoExpandida] = useState<string | null>(null)
+
+  if (isLoading || versoes.length === 0) return null
+
+  return (
+    <div className="flex flex-col gap-2">
+      <button onClick={() => setAberto((v) => !v)} className="flex items-center justify-between w-full text-left">
+        <span className="text-[10px] uppercase tracking-wider text-base-500 font-bold flex items-center gap-1.5">
+          <History className="w-3.5 h-3.5" /> Histórico de Versões dos Itens ({versoes.length})
+        </span>
+        {aberto ? <ChevronUp className="w-3.5 h-3.5 text-base-500" /> : <ChevronDown className="w-3.5 h-3.5 text-base-500" />}
+      </button>
+      {aberto && (
+        <div className="flex flex-col gap-1.5">
+          {versoes.map((v) => (
+            <div key={v.id} className={`bg-base-850/60 border rounded-lg overflow-hidden ${v.enviada ? 'border-positive-500/40' : 'border-base-800'}`}>
+              <div className="w-full flex items-center gap-3 px-3 py-2">
+                <button onClick={() => setVersaoExpandida(versaoExpandida === v.id ? null : v.id)} className="flex items-center gap-3 flex-1 text-left min-w-0">
+                  <span className="text-[11px] font-bold text-accent-300 shrink-0">V{v.versao}</span>
+                  <span className="text-[11px] text-base-400 flex-1 truncate">
+                    {new Date(v.createdAt).toLocaleString('pt-BR')}
+                    {v.alteradoPorEmail && <span className="text-base-500"> — {v.alteradoPorEmail}</span>}
+                  </span>
+                  <span className="text-[10px] text-base-500 shrink-0">{v.itensSnapshot.length} item(ns)</span>
+                </button>
+                {v.enviada ? (
+                  <span className="text-[10px] font-bold text-positive-400 flex items-center gap-1 shrink-0">
+                    <Send className="w-3 h-3" /> Enviada
+                  </span>
+                ) : podeEditar ? (
+                  <button
+                    onClick={() => marcarComoEnviada.mutate(v.id)}
+                    disabled={marcarComoEnviada.isPending}
+                    title="Marcar esta como a versão que foi enviada"
+                    className="text-[10px] text-base-500 hover:text-accent-300 flex items-center gap-1 shrink-0 transition"
+                  >
+                    <CircleDot className="w-3 h-3" /> Marcar como enviada
+                  </button>
+                ) : null}
+              </div>
+              {versaoExpandida === v.id && (
+                <div className="border-t border-base-800 px-3 py-2 overflow-x-auto">
+                  <table className="w-full text-[11px]">
+                    <thead>
+                      <tr className="text-base-500">
+                        <th className="text-left font-semibold pr-2">Item</th>
+                        <th className="text-left font-semibold pr-2">Descrição</th>
+                        <th className="text-right font-semibold pr-2">Qtd.</th>
+                        <th className="text-right font-semibold pr-2">Vl. Licitado</th>
+                        <th className="text-right font-semibold">Vl. Ofertado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {v.itensSnapshot.map((item: any, idx: number) => (
+                        <tr key={idx} className="border-t border-base-800/60">
+                          <td className="py-1 pr-2 text-base-300">{item.numero_item}</td>
+                          <td className="py-1 pr-2 text-base-300 max-w-[200px] truncate">{item.descricao}</td>
+                          <td className="py-1 pr-2 text-right text-base-400">{item.quantidade}</td>
+                          <td className="py-1 pr-2 text-right font-mono text-base-400">{Number(item.valor_unitario_licitado).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                          <td className="py-1 text-right font-mono text-base-400">{item.valor_unitario_ofertado ? Number(item.valor_unitario_ofertado).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AbaProposta({ bidding }: { bidding: Bidding }) {
+  const { items, isLoading, salvarRateio } = useBiddingItemsDaLicitacao(bidding.id)
+  const { nivel } = usePermissaoFerramenta('licitacoes')
+  const podeEditar = nivel === 'edicao'
+
+  const [valorFinal, setValorFinal] = useState('')
+  const [metodo, setMetodo] = useState<'proporcional' | 'percentual'>('proporcional')
+  const [percentuais, setPercentuais] = useState<Record<string, string>>({})
+  const [marcarEnviadaAoSalvar, setMarcarEnviadaAoSalvar] = useState(true)
+
+  const somaOriginal = items.reduce((s, i) => s + i.quantidade * i.valorUnitarioLicitado, 0)
+
+  const pesos: Record<string, number> = {}
+  if (metodo === 'proporcional') {
+    items.forEach((i) => {
+      const total = i.quantidade * i.valorUnitarioLicitado
+      pesos[i.id] = somaOriginal > 0 ? total / somaOriginal : 1 / (items.length || 1)
+    })
+  } else {
+    const somaPercentuais = Object.values(percentuais).reduce((s, p) => s + (parseFloat(p.replace(',', '.')) || 0), 0)
+    items.forEach((i) => {
+      const p = parseFloat((percentuais[i.id] ?? '').replace(',', '.')) || 0
+      pesos[i.id] = somaPercentuais > 0 ? p / somaPercentuais : 0
+    })
+  }
+
+  const valorFinalNum = parseFloat(valorFinal.replace(',', '.')) || 0
+  const rateio = valorFinalNum > 0 && items.length > 0 ? calcularRateio(items, valorFinalNum, pesos) : null
+
+  const handleSalvar = () => {
+    if (!rateio) return
+    salvarRateio.mutate(
+      { novosValoresTotais: rateio, observacao: `Rateio — proposta readequada (${metodo})`, marcarEnviada: marcarEnviadaAoSalvar },
+      { onSuccess: () => { setValorFinal(''); setPercentuais({}) } }
+    )
+  }
+
+  if (isLoading) return <p className="text-[13px] text-base-500 py-4">Carregando itens...</p>
+
+  if (items.length === 0) {
+    return <p className="text-[13px] text-base-500 italic py-4">Nenhum item cadastrado nesta licitação ainda — os itens entram pela tela de edição da licitação.</p>
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div>
+        <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">Itens da Licitação</p>
+        <div className="overflow-x-auto bg-base-850/60 border border-base-800 rounded-xl">
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr className="text-base-500 border-b border-base-800">
+                <th className="text-left font-semibold px-3 py-2">Item</th>
+                <th className="text-left font-semibold px-3 py-2">Descrição</th>
+                <th className="text-right font-semibold px-3 py-2">Qtd.</th>
+                <th className="text-right font-semibold px-3 py-2">Vl. Unit. Licitado</th>
+                <th className="text-right font-semibold px-3 py-2">Vl. Unit. Ofertado</th>
+                {metodo === 'percentual' && <th className="text-right font-semibold px-3 py-2">% do Rateio</th>}
+                {rateio && <th className="text-right font-semibold px-3 py-2 bg-base-800/40">Novo Vl. Unit.</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((i) => (
+                <tr key={i.id} className="border-t border-base-800/60">
+                  <td className="px-3 py-2 text-base-300">{i.numeroItem}</td>
+                  <td className="px-3 py-2 text-base-300 max-w-[220px] truncate">{i.descricao}</td>
+                  <td className="px-3 py-2 text-right text-base-400">{i.quantidade}</td>
+                  <td className="px-3 py-2 text-right font-mono text-base-400">{formatBRL(i.valorUnitarioLicitado)}</td>
+                  <td className="px-3 py-2 text-right font-mono text-base-400">{i.valorUnitarioOfertado ? formatBRL(i.valorUnitarioOfertado) : '—'}</td>
+                  {metodo === 'percentual' && (
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0"
+                        value={percentuais[i.id] ?? ''}
+                        onChange={(e) => setPercentuais({ ...percentuais, [i.id]: e.target.value })}
+                        className="w-16 bg-base-900 border border-base-700 rounded px-1.5 py-1 text-right text-[12px] text-base-100"
+                      />
+                    </td>
+                  )}
+                  {rateio && (
+                    <td className="px-3 py-2 text-right font-mono font-semibold text-accent-300 bg-base-800/20">
+                      {formatBRL((rateio[i.id] ?? 0) / (i.quantidade || 1))}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+            {rateio && (
+              <tfoot>
+                <tr className="border-t border-base-700">
+                  <td colSpan={metodo === 'percentual' ? 6 : 5} className="px-3 py-2 text-right text-[11px] text-base-500">Soma do rateio</td>
+                  <td className="px-3 py-2 text-right font-mono font-bold text-positive-400 bg-base-800/40">
+                    {formatBRL(Object.values(rateio).reduce((s, v) => s + v, 0))}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+
+      {podeEditar && (
+        <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-4 flex flex-col gap-3">
+          <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Rateio da Proposta Readequada</p>
+          <p className="text-[12px] text-base-400">
+            Informe o valor total final (dos lances) e escolha como dividir entre os itens. O sistema ajusta os centavos pra soma fechar exatamente com o valor informado.
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-44">
+              <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Valor Total Final</label>
+              <Input placeholder="0,00" value={valorFinal} onChange={(e) => setValorFinal(e.target.value)} />
+            </div>
+            <div className="w-56">
+              <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Método</label>
+              <Select value={metodo} onChange={(e) => setMetodo(e.target.value as 'proporcional' | 'percentual')}>
+                <option value="proporcional">Proporcional ao valor original</option>
+                <option value="percentual">Percentual manual por item</option>
+              </Select>
+            </div>
+            <label className="flex items-center gap-1.5 text-[12px] text-base-400 pb-2">
+              <input type="checkbox" checked={marcarEnviadaAoSalvar} onChange={(e) => setMarcarEnviadaAoSalvar(e.target.checked)} />
+              Já marcar como a versão enviada
+            </label>
+            <Button onClick={handleSalvar} disabled={!rateio || salvarRateio.isPending}>
+              {salvarRateio.isPending ? 'Salvando...' : 'Salvar como Nova Versão'}
+            </Button>
+          </div>
+          {metodo === 'percentual' && (
+            <p className="text-[11px] text-base-500">Os percentuais não precisam somar 100 — o sistema normaliza entre os itens preenchidos.</p>
+          )}
+        </div>
+      )}
+
+      <HistoricoVersoes biddingId={bidding.id} />
+    </div>
+  )
+}
+
+export default function LicitacaoPage() {
+  const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+  const { biddings, updateEtapa } = useBiddings()
+  const { clients } = useClients()
+  const { nivel: nivelLicitacoes } = usePermissaoFerramenta('licitacoes')
+  const podeEditar = nivelLicitacoes === 'edicao'
+  const [aba, setAba] = useState<AbaKey>('visao')
+
+  const bidding = biddings.find((b) => b.id === id)
+  const clientName = bidding ? (clients.find((c) => c.id === bidding.clientId)?.name ?? 'Cliente removido') : ''
+
+  const { files: anexos, uploadFile: uploadAnexo, deleteFile: deleteAnexo, getDownloadUrl: getAnexoUrl } = useAttachedFiles('licitacao', bidding?.id)
+  const { items, addItem, updateItem, deleteItem } = useBiddingChecklist(bidding?.id)
+  const { documents: clientDocs } = useClientDocuments(bidding?.clientId)
+  const { atestados } = useAtestados(bidding?.clientId)
+
+  const [enviando, setEnviando] = useState<string | null>(null)
+  const [showNovoItem, setShowNovoItem] = useState(false)
+  const [novoItem, setNovoItem] = useState({ descricao: '', categoria: CATEGORIAS_CHECKLIST[0], obrigatorio: true, prazo: '', responsavelNome: '' })
+  const [abrindo, setAbrindo] = useState<string | null>(null)
+
+  if (!bidding) {
+    return (
+      <div className="pb-10">
+        <PageHeader title="Licitação" subtitle="Carregando..." icon={Gavel} />
+      </div>
+    )
+  }
+
+  const edital = anexos.find((f) => f.category === 'Edital')
+  const termoReferencia = anexos.find((f) => f.category === 'Termo de Referência')
+
+  const handleUploadAnexo = async (file: File, category: 'Edital' | 'Termo de Referência') => {
+    setEnviando(category)
+    try {
+      await uploadAnexo.mutateAsync({ file, category })
+    } catch (err) {
+      alert(`Erro ao enviar: ${String(err)}`)
+    } finally {
+      setEnviando(null)
+    }
+  }
+
+  const handleAbrirAnexo = async (anexo: { id: string; storagePath: string }) => {
+    setAbrindo(anexo.id)
+    try {
+      const url = await getAnexoUrl(anexo.storagePath)
+      window.open(url, '_blank')
+    } catch {
+      alert('Não foi possível abrir o arquivo.')
+    } finally {
+      setAbrindo(null)
+    }
+  }
+
+  const handleAdicionarItem = () => {
+    if (!novoItem.descricao.trim()) return
+    addItem.mutate(
+      {
+        descricao: novoItem.descricao.trim(),
+        categoria: novoItem.categoria,
+        obrigatorio: novoItem.obrigatorio,
+        prazo: novoItem.prazo || null,
+        responsavelNome: novoItem.responsavelNome.trim() || null,
+      },
+      { onSuccess: () => { setShowNovoItem(false); setNovoItem({ descricao: '', categoria: CATEGORIAS_CHECKLIST[0], obrigatorio: true, prazo: '', responsavelNome: '' }) } }
+    )
+  }
+
+  const statusItem = (item: BiddingChecklistItem): 'atendido' | 'vencendo' | 'faltando' => {
+    if (item.attachedFileId) return 'atendido'
+    if (item.clientDocumentTipo) {
+      const doc = clientDocs.find((d) => d.tipo === item.clientDocumentTipo)
+      if (doc?.storagePath) {
+        const status = calcDocStatus(doc.dataValidade)
+        if (status === 'valido') return 'atendido'
+        if (status === 'vencendo') return 'vencendo'
+      }
+    }
+    return item.atendido ? 'atendido' : 'faltando'
+  }
+
+  const totalObrigatorios = items.filter((i) => i.obrigatorio).length
+  const atendidosObrigatorios = items.filter((i) => i.obrigatorio && statusItem(i) === 'atendido').length
+  const vencendoObrigatorios = items.filter((i) => i.obrigatorio && statusItem(i) === 'vencendo').length
+  const faltandoObrigatorios = items.filter((i) => i.obrigatorio && statusItem(i) === 'faltando').length
+  const percentualAderencia = totalObrigatorios > 0 ? Math.round((atendidosObrigatorios / totalObrigatorios) * 100) : null
+
+  const statusGeral: 'HABILITADO' | 'ATENÇÃO' | 'INABILITADO' | null =
+    totalObrigatorios === 0 ? null
+    : faltandoObrigatorios > 0 ? 'INABILITADO'
+    : vencendoObrigatorios > 0 ? 'ATENÇÃO'
+    : 'HABILITADO'
+
+  const rankingAtestados = [...atestados]
+    .map((a) => ({ atestado: a, similaridade: calcularSimilaridade(bidding.objeto, a.objeto) }))
+    .sort((a, b) => b.similaridade - a.similaridade)
+
+  const PainelStatus = () => statusGeral && (
+    <div className={`rounded-xl border p-4 flex items-center justify-between ${
+      statusGeral === 'HABILITADO' ? 'bg-positive-500/10 border-positive-500/30' :
+      statusGeral === 'ATENÇÃO' ? 'bg-warning-500/10 border-warning-500/30' :
+      'bg-negative-500/10 border-negative-500/30'
+    }`}>
+      <div>
+        <p className={`text-lg font-extrabold ${
+          statusGeral === 'HABILITADO' ? 'text-positive-400' :
+          statusGeral === 'ATENÇÃO' ? 'text-warning-400' : 'text-negative-400'
+        }`}>
+          {statusGeral === 'HABILITADO' && 'HABILITADO'}
+          {statusGeral === 'ATENÇÃO' && 'ATENÇÃO — documento(s) vencendo'}
+          {statusGeral === 'INABILITADO' && 'INABILITADO — documentação incompleta'}
+        </p>
+        <p className="text-[12px] text-base-400 mt-0.5">
+          {atendidosObrigatorios}/{totalObrigatorios} itens obrigatórios atendidos
+          {faltandoObrigatorios > 0 && ` — faltam ${faltandoObrigatorios}`}
+          {vencendoObrigatorios > 0 && ` — ${vencendoObrigatorios} vencendo`}
+        </p>
+      </div>
+      {percentualAderencia !== null && (
+        <div className="text-right shrink-0">
+          <p className={`text-2xl font-extrabold font-mono ${
+            statusGeral === 'HABILITADO' ? 'text-positive-400' :
+            statusGeral === 'ATENÇÃO' ? 'text-warning-400' : 'text-negative-400'
+          }`}>
+            {percentualAderencia}%
+          </p>
+          <p className="text-[10px] text-base-500 uppercase tracking-wider">aderência</p>
+        </div>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="pb-10">
+      <div className="px-6 pt-5">
+        <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-[12px] text-base-500 hover:text-base-300 transition mb-3">
+          <ArrowLeft className="w-3.5 h-3.5" /> Voltar
+        </button>
+        <h1 className="font-display font-bold text-xl text-base-100">{bidding.objeto}</h1>
+        <p className="text-base-400 text-[13px] mt-0.5">{clientName} — {bidding.orgao} {bidding.municipio ? `(${bidding.municipio}${bidding.uf ? '/' + bidding.uf : ''})` : ''}</p>
+
+        <div className="mt-4">
+          <EtapaTrilha
+            etapaAtual={bidding.etapa}
+            atualizando={updateEtapa.isPending}
+            onMudar={(etapa) => updateEtapa.mutate({ biddingId: bidding.id, etapa })}
+            podeEditar={podeEditar}
+          />
+        </div>
+
+        <div className="flex items-center gap-1 mt-4 border-b border-base-800 overflow-x-auto">
+          {ABAS.map((a) => (
+            <button
+              key={a.key}
+              onClick={() => setAba(a.key)}
+              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-[13px] font-semibold border-b-2 transition whitespace-nowrap ${
+                aba === a.key ? 'border-accent-500 text-accent-300' : 'border-transparent text-base-500 hover:text-base-300'
+              }`}
+            >
+              <a.icon className="w-3.5 h-3.5" /> {a.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="px-6 mt-5 flex flex-col gap-5">
+        {aba === 'visao' && (
+          <>
+            <PainelStatus />
+            <ResultadoLicitacao bidding={bidding} />
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Card className="p-3">
+                <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Modalidade</p>
+                <p className="text-[13px] text-base-200">{bidding.modalidade}</p>
+              </Card>
+              <Card className="p-3">
+                <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Data do Pregão</p>
+                <p className="text-[13px] text-base-200">{new Date(bidding.dataAbertura + 'T12:00:00').toLocaleDateString('pt-BR')}</p>
+              </Card>
+              <Card className="p-3">
+                <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Valor Licitado</p>
+                <p className="text-[13px] font-mono text-base-200">{formatBRL(bidding.valorLicitado)}</p>
+              </Card>
+              <Card className="p-3">
+                <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Disputa</p>
+                <p className="text-[13px] text-base-200">{bidding.tipoDisputa === 'Lote' ? 'Por Lote' : 'Por Item'}</p>
+              </Card>
+            </div>
+          </>
+        )}
+
+        {aba === 'edital' && (
+          <>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">Edital</p>
+              {edital ? (
+                <div className="flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-xl px-4 py-3">
+                  <FileText className="w-5 h-5 text-accent-400 shrink-0" />
+                  <span className="flex-1 text-[13px] text-base-200 truncate">{edital.name}</span>
+                  <button onClick={() => handleAbrirAnexo(edital)} disabled={abrindo === edital.id} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                    <Download className="w-3.5 h-3.5" />
+                  </button>
+                  {podeEditar && (
+                    <button onClick={() => deleteAnexo.mutate(edital)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              ) : podeEditar ? (
+                <label className="flex items-center gap-2 justify-center border border-dashed border-base-700 rounded-xl px-4 py-4 cursor-pointer hover:border-accent-500/40 hover:bg-base-850/40 transition text-base-400">
+                  {enviando === 'Edital' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  <span className="text-[12px] font-medium">{enviando === 'Edital' ? 'Enviando...' : 'Enviar PDF do edital'}</span>
+                  <input type="file" accept=".pdf" className="hidden" disabled={!!enviando} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadAnexo(f, 'Edital'); e.target.value = '' }} />
+                </label>
+              ) : (
+                <p className="text-[12px] text-base-500 italic py-2">Nenhum edital enviado ainda.</p>
+              )}
+            </div>
+
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">Termo de Referência</p>
+              {termoReferencia ? (
+                <div className="flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-xl px-4 py-3">
+                  <FileText className="w-5 h-5 text-accent-400 shrink-0" />
+                  <span className="flex-1 text-[13px] text-base-200 truncate">{termoReferencia.name}</span>
+                  <button onClick={() => handleAbrirAnexo(termoReferencia)} disabled={abrindo === termoReferencia.id} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                    <Download className="w-3.5 h-3.5" />
+                  </button>
+                  {podeEditar && (
+                    <button onClick={() => deleteAnexo.mutate(termoReferencia)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              ) : podeEditar ? (
+                <label className="flex items-center gap-2 justify-center border border-dashed border-base-700 rounded-xl px-4 py-4 cursor-pointer hover:border-accent-500/40 hover:bg-base-850/40 transition text-base-400">
+                  {enviando === 'Termo de Referência' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  <span className="text-[12px] font-medium">{enviando === 'Termo de Referência' ? 'Enviando...' : 'Enviar PDF do TR'}</span>
+                  <input type="file" accept=".pdf" className="hidden" disabled={!!enviando} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadAnexo(f, 'Termo de Referência'); e.target.value = '' }} />
+                </label>
+              ) : (
+                <p className="text-[12px] text-base-500 italic py-2">Nenhum TR enviado ainda.</p>
+              )}
+            </div>
+
+            <div className="bg-accent-500/10 border border-accent-500/25 rounded-lg p-3 text-[12px] text-accent-300 flex items-start gap-2">
+              <Sparkles className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>A análise automática do edital por IA ainda não está configurada — quando estiver, o resumo, o checklist sugerido e os pontos de atenção aparecerão aqui automaticamente.</span>
+            </div>
+
+            {atestados.length > 0 && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2 flex items-center gap-1.5">
+                  <Award className="w-3.5 h-3.5" /> Ranking de Compatibilidade (Atestados Técnicos)
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  {rankingAtestados.map(({ atestado, similaridade }) => (
+                    <div key={atestado.id} className="flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-lg px-3 py-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] text-base-200 truncate">{atestado.nome}</p>
+                        <p className="text-[11px] text-base-500 truncate">{atestado.objeto}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className={`text-[14px] font-extrabold font-mono ${
+                          similaridade >= 60 ? 'text-positive-400' : similaridade >= 30 ? 'text-warning-400' : 'text-base-500'
+                        }`}>
+                          {similaridade}%
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[10px] text-base-600 mt-1.5 italic">
+                  Comparação por palavras-chave em comum — uma aproximação. Confira sempre o texto completo antes de decidir.
+                </p>
+              </div>
+            )}
+          </>
+        )}
+
+        {aba === 'checklist' && (
+          <>
+            <PainelStatus />
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">
+                  Checklist da Licitação
+                  {totalObrigatorios > 0 && (
+                    <span className="ml-2 text-base-400 normal-case font-normal">
+                      {atendidosObrigatorios}/{totalObrigatorios} obrigatórios atendidos
+                    </span>
+                  )}
+                </p>
+                {podeEditar && (
+                  <button onClick={() => setShowNovoItem((v) => !v)} className="flex items-center gap-1 text-[11px] text-accent-300 hover:text-accent-200 transition">
+                    <Plus className="w-3 h-3" /> Adicionar item
+                  </button>
+                )}
+              </div>
+
+              {showNovoItem && (
+                <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-3 flex flex-col gap-2 mb-2">
+                  <Input
+                    placeholder="Ex: Balanço Patrimonial 2025, Atestado de Capacidade Técnica..."
+                    value={novoItem.descricao}
+                    onChange={(e) => setNovoItem({ ...novoItem, descricao: e.target.value })}
+                  />
+                  <div className="flex gap-2">
+                    <Select value={novoItem.categoria} onChange={(e) => setNovoItem({ ...novoItem, categoria: e.target.value })} className="flex-1">
+                      {CATEGORIAS_CHECKLIST.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </Select>
+                    <label className="flex items-center gap-1.5 text-[12px] text-base-400 shrink-0">
+                      <input type="checkbox" checked={novoItem.obrigatorio} onChange={(e) => setNovoItem({ ...novoItem, obrigatorio: e.target.checked })} />
+                      Obrigatório
+                    </label>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Prazo</label>
+                      <Input type="date" value={novoItem.prazo} onChange={(e) => setNovoItem({ ...novoItem, prazo: e.target.value })} />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Responsável</label>
+                      <Input placeholder="Nome de quem vai resolver" value={novoItem.responsavelNome} onChange={(e) => setNovoItem({ ...novoItem, responsavelNome: e.target.value })} />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="secondary" onClick={() => setShowNovoItem(false)}>Cancelar</Button>
+                    <Button onClick={handleAdicionarItem} disabled={!novoItem.descricao.trim() || addItem.isPending}>
+                      {addItem.isPending ? 'Adicionando...' : 'Adicionar'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {items.length === 0 ? (
+                <p className="text-[12px] text-base-500 italic py-2">Nenhum item no checklist ainda.</p>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {items.map((item) => {
+                    const status = statusItem(item)
+                    return (
+                      <div key={item.id} className="flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-lg px-3 py-2.5">
+                        {status === 'atendido' && <CheckCircle2 className="w-4 h-4 text-positive-400 shrink-0" />}
+                        {status === 'vencendo' && <AlertCircle className="w-4 h-4 text-warning-400 shrink-0" />}
+                        {status === 'faltando' && (
+                          podeEditar ? (
+                            <button onClick={() => updateItem.mutate({ ...item, atendido: !item.atendido })} title="Marcar como atendido">
+                              <Circle className="w-4 h-4 text-base-600 hover:text-base-400 shrink-0 transition" />
+                            </button>
+                          ) : (
+                            <Circle className="w-4 h-4 text-base-700 shrink-0" />
+                          )
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] text-base-200 truncate">{item.descricao}</p>
+                          <p className="text-[10px] text-base-500">
+                            {item.categoria}
+                            {item.obrigatorio && <span className="text-warning-400 ml-1.5">· obrigatório</span>}
+                            {item.clientDocumentTipo && status !== 'faltando' && (
+                              <span className="ml-1.5 text-accent-400">· vinculado à {CERT_CONFIG[item.clientDocumentTipo]?.label.split(' — ')[0]}</span>
+                            )}
+                            {item.prazo && (
+                              <span className="ml-1.5">· prazo {new Date(item.prazo + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+                            )}
+                            {item.responsavelNome && (
+                              <span className="ml-1.5">· {item.responsavelNome}</span>
+                            )}
+                          </p>
+                        </div>
+                        {podeEditar && (
+                          <button onClick={() => deleteItem.mutate(item)} className="p-1 text-base-500 hover:text-negative-400 transition shrink-0">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {aba === 'proposta' && <AbaProposta bidding={bidding} />}
+      </div>
+    </div>
+  )
+}
