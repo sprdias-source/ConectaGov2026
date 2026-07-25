@@ -310,6 +310,7 @@ export type Database = {
           alterado_por_email: string | null
           bidding_id: string
           created_at: string
+          enviada: boolean
           id: string
           itens_snapshot: Json
           observacao: string | null
@@ -320,6 +321,7 @@ export type Database = {
           alterado_por_email?: string | null
           bidding_id: string
           created_at?: string
+          enviada?: boolean
           id?: string
           itens_snapshot: Json
           observacao?: string | null
@@ -330,6 +332,7 @@ export type Database = {
           alterado_por_email?: string | null
           bidding_id?: string
           created_at?: string
+          enviada?: boolean
           id?: string
           itens_snapshot?: Json
           observacao?: string | null
@@ -358,6 +361,7 @@ export type Database = {
           is_active: boolean
           modalidade: string
           modelo_customizado_path: string | null
+          motivo_perda: string | null
           municipio: string | null
           numero_edital: string | null
           objeto: string
@@ -390,6 +394,7 @@ export type Database = {
           is_active?: boolean
           modalidade: string
           modelo_customizado_path?: string | null
+          motivo_perda?: string | null
           municipio?: string | null
           numero_edital?: string | null
           objeto: string
@@ -422,6 +427,7 @@ export type Database = {
           is_active?: boolean
           modalidade?: string
           modelo_customizado_path?: string | null
+          motivo_perda?: string | null
           municipio?: string | null
           numero_edital?: string | null
           objeto?: string

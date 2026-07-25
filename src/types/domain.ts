@@ -90,6 +90,7 @@ export interface Bidding {
   observacaoEtapa: string | null
   diasValidadeProposta: string | null
   modeloCustomizadoPath: string | null
+  motivoPerda: string | null
   isActive: boolean
   createdAt: string
   updatedAt: string

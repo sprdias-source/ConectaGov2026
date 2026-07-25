@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { todayLocalISO } from '../lib/dateUtils'
 import { supabase } from '../lib/supabase'
 import { fromBiddingRow, toBiddingInsert, toBiddingItemInsert, toTransactionInsert } from '../lib/mappers'
-import type { Bidding, BiddingItem } from '../types/domain'
+import type { Bidding, BiddingItem, BiddingStatus } from '../types/domain'
 import { useAuth } from './useAuth'
 import { useAuditLog } from './useAuditLog'
 
@@ -240,6 +240,27 @@ export function useBiddings() {
     },
   })
 
+  // Registra o resultado final da disputa — separada do updateBidding pra
+  // não arriscar mexer nos itens da licitação. O motivo da perda só faz
+  // sentido quando o status é 'Perdeu'; qualquer outro status limpa o
+  // campo, pra não deixar um motivo "fantasma" de uma edição anterior.
+  const marcarResultado = useMutation({
+    mutationFn: async ({ biddingId, status, motivoPerda }: { biddingId: string; status: BiddingStatus; motivoPerda: string | null }) => {
+      const { data, error } = await supabase
+        .from('biddings')
+        .update({ status, motivo_perda: status === 'Perdeu' ? motivoPerda : null })
+        .eq('id', biddingId)
+        .select()
+        .single()
+      if (error) throw error
+      return fromBiddingRow(data)
+    },
+    onSuccess: (updated) => {
+      invalidate()
+      logEvent('Registrou Resultado da Licitação', `Licitação "${updated.objeto}" — resultado: ${updated.status}${updated.motivoPerda ? ` (${updated.motivoPerda})` : ''}`)
+    },
+  })
+
   const checkBiddingHasFinancialHistory = async (biddingId: string): Promise<boolean> => {
     const { count: txCount } = await supabase
       .from('transactions')
@@ -266,6 +287,7 @@ export function useBiddings() {
     toggleBiddingActive,
     setModeloCustomizado,
     updateEtapa,
+    marcarResultado,
     checkBiddingHasFinancialHistory,
   }
 }
