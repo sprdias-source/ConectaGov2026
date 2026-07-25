@@ -180,6 +180,47 @@ export type Database = {
           },
         ]
       }
+      bidding_analysis: {
+        Row: {
+          analise: Json | null
+          bidding_id: string
+          created_at: string
+          erro_mensagem: string | null
+          id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          analise?: Json | null
+          bidding_id: string
+          created_at?: string
+          erro_mensagem?: string | null
+          id?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          analise?: Json | null
+          bidding_id?: string
+          created_at?: string
+          erro_mensagem?: string | null
+          id?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bidding_analysis_bidding_id_fkey"
+            columns: ["bidding_id"]
+            isOneToOne: false
+            referencedRelation: "biddings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bidding_checklist_items: {
         Row: {
           atendido: boolean
