@@ -37,10 +37,19 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
       if (!user || !entityId) throw new Error('Não autenticado')
       const ext = file.name.split('.').pop() ?? 'pdf'
       const path = `${user.id}/${entityType}/${entityId}/${Date.now()}.${ext}`
+      console.log('Tentando upload:', { path, tamanhoBytes: file.size, tipo: file.type })
       const { error: uploadError } = await supabase.storage
         .from('client-documents')
         .upload(path, file, { upsert: true })
-      if (uploadError) throw uploadError
+      if (uploadError) {
+        console.error('Erro detalhado no upload:', uploadError)
+        // StorageError sempre tem name/message; status só existe em
+        // StorageApiError (erro com resposta HTTP) — em StorageUnknownError
+        // (falha de rede, sem resposta do servidor) fica undefined, então
+        // só entra na mensagem quando fizer sentido.
+        const status = 'status' in uploadError ? (uploadError as { status?: number }).status : undefined
+        throw new Error(`Falha no upload (${uploadError.name || 'erro'}${status ? ` — HTTP ${status}` : ''}): ${uploadError.message}`)
+      }
 
       const { error } = await supabase.from('attached_files').insert(
         toFileInsert({
