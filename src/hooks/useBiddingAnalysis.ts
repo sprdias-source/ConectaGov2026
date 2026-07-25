@@ -59,7 +59,7 @@ export function useBiddingAnalysis(biddingId?: string) {
   const analisar = useMutation({
     mutationFn: async () => {
       if (!biddingId) throw new Error('Licitação não informada')
-      const { error } = await supabase.functions.invoke('analisar-edital', { body: { biddingId } })
+      const { error } = await supabase.functions.invoke('Analisar-edital', { body: { biddingId } })
       if (error) throw error
     },
     onSuccess: () => {
