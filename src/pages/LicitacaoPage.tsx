@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, FileText, Upload, Plus, Trash2, CheckCircle2, Circle, Download,
   AlertCircle, Loader2, Sparkles, Award, Check, History, ChevronDown, ChevronUp,
-  ClipboardList, Gavel, Wallet, Send, CircleDot,
+  ClipboardList, Gavel, Wallet, Send, CircleDot, FileSignature, Info,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
@@ -46,6 +46,7 @@ const ABAS = [
   { key: 'edital', label: 'Edital & Análise', icon: FileText },
   { key: 'checklist', label: 'Checklist & Habilitação', icon: ClipboardList },
   { key: 'proposta', label: 'Proposta & Itens', icon: Wallet },
+  { key: 'documentos', label: 'Documentos', icon: FileSignature },
 ] as const
 type AbaKey = typeof ABAS[number]['key']
 
@@ -491,8 +492,9 @@ export default function LicitacaoPage() {
 
   const edital = anexos.find((f) => f.category === 'Edital')
   const termoReferencia = anexos.find((f) => f.category === 'Termo de Referência')
+  const contrato = anexos.find((f) => f.category === 'Contrato')
 
-  const handleUploadAnexo = async (file: File, category: 'Edital' | 'Termo de Referência') => {
+  const handleUploadAnexo = async (file: File, category: 'Edital' | 'Termo de Referência' | 'Contrato') => {
     setEnviando(category)
     try {
       await uploadAnexo.mutateAsync({ file, category })
@@ -846,6 +848,44 @@ export default function LicitacaoPage() {
         )}
 
         {aba === 'proposta' && <AbaProposta bidding={bidding} />}
+
+        {aba === 'documentos' && (
+          <>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">Contrato Assinado</p>
+              {contrato ? (
+                <div className="flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-xl px-4 py-3">
+                  <FileSignature className="w-5 h-5 text-accent-400 shrink-0" />
+                  <span className="flex-1 text-[13px] text-base-200 truncate">{contrato.name}</span>
+                  <button onClick={() => handleAbrirAnexo(contrato)} disabled={abrindo === contrato.id} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                    <Download className="w-3.5 h-3.5" />
+                  </button>
+                  {podeEditar && (
+                    <button onClick={() => deleteAnexo.mutate(contrato)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              ) : podeEditar ? (
+                <label className="flex items-center gap-2 justify-center border border-dashed border-base-700 rounded-xl px-4 py-4 cursor-pointer hover:border-accent-500/40 hover:bg-base-850/40 transition text-base-400">
+                  {enviando === 'Contrato' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  <span className="text-[12px] font-medium">{enviando === 'Contrato' ? 'Enviando...' : 'Enviar PDF do contrato assinado'}</span>
+                  <input type="file" accept=".pdf" className="hidden" disabled={!!enviando} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadAnexo(f, 'Contrato'); e.target.value = '' }} />
+                </label>
+              ) : (
+                <p className="text-[12px] text-base-500 italic py-2">Nenhum contrato enviado ainda.</p>
+              )}
+            </div>
+
+            <div className="bg-base-850/60 border border-base-800 rounded-lg p-3 text-[12px] text-base-400 flex items-start gap-2">
+              <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-base-500" />
+              <span>
+                Documentos institucionais do cliente (contrato social, atestados, certidões) não ficam aqui — eles vivem na
+                pasta do próprio cliente, em <strong className="text-base-300">Cadastros → Documentos de Habilitação</strong>.
+              </span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
