@@ -4,7 +4,8 @@ import { PageHeader, Card, EmptyState } from '../components/ui/Primitives'
 import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
 import { useTransactions } from '../hooks/useTransactions'
-import { useAllClientDocuments, diasRestantes } from '../hooks/useClientDocuments'
+import { useAllBiddingChecklistItems } from '../hooks/useBiddingChecklist'
+import { useAllClientDocuments, calcDocStatus, diasRestantes } from '../hooks/useClientDocuments'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { CERT_CONFIG } from '../types/domain'
 import { todayLocalISO } from '../lib/dateUtils'
@@ -28,6 +29,7 @@ export default function CentralPrazosPage() {
   const { clients } = useClients()
   const { transactions, isLoading: loadingTransactions } = useTransactions()
   const { documents, isLoading: loadingDocuments } = useAllClientDocuments()
+  const { items: allChecklistItems, isLoading: loadingChecklist } = useAllBiddingChecklistItems()
 
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? 'Cliente removido'
 
@@ -53,18 +55,50 @@ export default function CentralPrazosPage() {
       })
     }
 
-    // Certidões vencendo ou já vencidas
+    // Certidões vencendo ou já vencidas — mas se a certidão está vinculada
+    // (via checklist) a uma licitação ativa com sessão marcada, o prazo que
+    // importa de verdade é a DATA DA SESSÃO, não o padrão genérico de 15
+    // dias: de nada adianta a certidão "ainda não estar vencendo" se ela
+    // expira antes da disputa acontecer.
     for (const doc of documents) {
-      if (doc.status !== 'vencendo' && doc.status !== 'vencido') continue
-      const dias = diasRestantes(doc.dataValidade) ?? 0
       const label = doc.tipo === 'manual' ? doc.nome : CERT_CONFIG[doc.tipo]?.label ?? doc.nome
+
+      const biddingVinculada = doc.tipo !== 'manual'
+        ? biddings.find((b) =>
+            b.isActive && b.status === 'Em Andamento' && b.clientId === doc.clientId && b.dataAbertura >= hoje &&
+            allChecklistItems.some((i) => i.biddingId === b.id && i.clientDocumentTipo === doc.tipo)
+          )
+        : undefined
+
+      if (biddingVinculada) {
+        const diasAteSessao = Math.floor(
+          (new Date(biddingVinculada.dataAbertura + 'T00:00:00').getTime() - new Date(hoje + 'T00:00:00').getTime())
+          / (1000 * 60 * 60 * 24)
+        )
+        const statusVsSessao = calcDocStatus(doc.dataValidade, diasAteSessao)
+        if (statusVsSessao !== 'vencendo' && statusVsSessao !== 'vencido') continue
+        const venceAntesDaSessao = !!doc.dataValidade && doc.dataValidade < biddingVinculada.dataAbertura
+        lista.push({
+          key: `doc-${doc.id}`,
+          tipo: 'Certidão',
+          titulo: label,
+          subtitulo: venceAntesDaSessao
+            ? `${clientName(doc.clientId)} — vence antes da sessão de "${biddingVinculada.objeto.slice(0, 40)}"`
+            : `${clientName(doc.clientId)} — vinculada à sessão de "${biddingVinculada.objeto.slice(0, 40)}"`,
+          data: doc.dataValidade ?? hoje,
+          dias: diasRestantes(doc.dataValidade) ?? 0,
+        })
+        continue
+      }
+
+      if (doc.status !== 'vencendo' && doc.status !== 'vencido') continue
       lista.push({
         key: `doc-${doc.id}`,
         tipo: 'Certidão',
         titulo: label,
         subtitulo: clientName(doc.clientId),
         data: doc.dataValidade ?? hoje,
-        dias,
+        dias: diasRestantes(doc.dataValidade) ?? 0,
       })
     }
 
@@ -88,9 +122,9 @@ export default function CentralPrazosPage() {
     }
 
     return lista.sort((a, b) => a.dias - b.dias)
-  }, [biddings, documents, transactions, clients])
+  }, [biddings, documents, allChecklistItems, transactions, clients])
 
-  const isLoading = loadingBiddings || loadingTransactions || loadingDocuments
+  const isLoading = loadingBiddings || loadingTransactions || loadingDocuments || loadingChecklist
 
   const iconFor = (tipo: ItemPrazo['tipo']) => {
     if (tipo === 'Pregão') return Gavel

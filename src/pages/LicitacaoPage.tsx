@@ -13,9 +13,9 @@ import { Button, Input, Select } from '../components/ui/FormControls'
 import { PageHeader, Card } from '../components/ui/Primitives'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useAttachedFiles } from '../hooks/useAttachedFiles'
-import { useBiddingChecklist } from '../hooks/useBiddingChecklist'
+import { useBiddingChecklist, calcularHabilitacao, statusItemChecklist } from '../hooks/useBiddingChecklist'
 import { useBiddingItemVersions } from '../hooks/useBiddingItemVersions'
-import { useClientDocuments, calcDocStatus } from '../hooks/useClientDocuments'
+import { useClientDocuments } from '../hooks/useClientDocuments'
 import { useAtestados, calcularSimilaridade } from '../hooks/useAtestados'
 import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
@@ -531,30 +531,16 @@ export default function LicitacaoPage() {
     )
   }
 
-  const statusItem = (item: BiddingChecklistItem): 'atendido' | 'vencendo' | 'faltando' => {
-    if (item.attachedFileId) return 'atendido'
-    if (item.clientDocumentTipo) {
-      const doc = clientDocs.find((d) => d.tipo === item.clientDocumentTipo)
-      if (doc?.storagePath) {
-        const status = calcDocStatus(doc.dataValidade)
-        if (status === 'valido') return 'atendido'
-        if (status === 'vencendo') return 'vencendo'
-      }
-    }
-    return item.atendido ? 'atendido' : 'faltando'
-  }
+  const statusItem = (item: BiddingChecklistItem) => statusItemChecklist(item, clientDocs)
 
-  const totalObrigatorios = items.filter((i) => i.obrigatorio).length
-  const atendidosObrigatorios = items.filter((i) => i.obrigatorio && statusItem(i) === 'atendido').length
-  const vencendoObrigatorios = items.filter((i) => i.obrigatorio && statusItem(i) === 'vencendo').length
-  const faltandoObrigatorios = items.filter((i) => i.obrigatorio && statusItem(i) === 'faltando').length
-  const percentualAderencia = totalObrigatorios > 0 ? Math.round((atendidosObrigatorios / totalObrigatorios) * 100) : null
-
-  const statusGeral: 'HABILITADO' | 'ATENÇÃO' | 'INABILITADO' | null =
-    totalObrigatorios === 0 ? null
-    : faltandoObrigatorios > 0 ? 'INABILITADO'
-    : vencendoObrigatorios > 0 ? 'ATENÇÃO'
-    : 'HABILITADO'
+  const {
+    status: statusGeral,
+    total: totalObrigatorios,
+    atendidos: atendidosObrigatorios,
+    vencendo: vencendoObrigatorios,
+    faltando: faltandoObrigatorios,
+    percentual: percentualAderencia,
+  } = calcularHabilitacao(items, clientDocs)
 
   const rankingAtestados = [...atestados]
     .map((a) => ({ atestado: a, similaridade: calcularSimilaridade(bidding.objeto, a.objeto) }))

@@ -8,6 +8,7 @@ import { supabase } from '../../lib/supabase'
 import BiddingFormModal from './BiddingFormModal'
 import DeleteWithPasswordDialog from '../ui/DeleteWithPasswordDialog'
 import ErrorAlert from '../ui/ErrorAlert'
+import SeloHabilitacao from '../ui/SeloHabilitacao'
 import { usePagination, PaginationControls } from '../../hooks/usePagination'
 import { useBiddings } from '../../hooks/useBiddings'
 import { useClients } from '../../hooks/useClients'
@@ -292,7 +293,10 @@ export default function BiddingsTab() {
                     <td className="px-4 py-3 font-mono font-semibold text-[13px] bg-base-850/25">
                       {b.valorOfertadoReal ? <span className="text-positive-400">{formatBRL(b.valorOfertadoReal)}</span> : <span className="text-base-500">—</span>}
                     </td>
-                    <td className="px-4 py-3"><StatusBadge status={b.status} /></td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={b.status} />
+                      <SeloHabilitacao bidding={b} className="block mt-1" />
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button

@@ -2,9 +2,58 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { fromBiddingChecklistItemRow, toBiddingChecklistItemInsert } from '../lib/mappers'
 import { useAuth } from './useAuth'
-import type { BiddingChecklistItem, DocumentTipo } from '../types/domain'
+import { calcDocStatus } from './useClientDocuments'
+import type { BiddingChecklistItem, ClientDocument, DocumentTipo } from '../types/domain'
 
 const QUERY_KEY = ['bidding_checklist_items']
+
+export type StatusHabilitacao = 'HABILITADO' | 'ATENÇÃO' | 'INABILITADO' | null
+
+export interface HabilitacaoResumo {
+  status: StatusHabilitacao
+  total: number
+  atendidos: number
+  vencendo: number
+  faltando: number
+  percentual: number | null
+}
+
+// Um item do checklist está "atendido" se foi marcado manualmente, OU tem
+// um documento anexado específico, OU aponta pra um tipo de certidão que o
+// cliente já tem válida (ou vencendo — melhor avisar que esconder).
+export function statusItemChecklist(item: BiddingChecklistItem, clientDocs: ClientDocument[]): 'atendido' | 'vencendo' | 'faltando' {
+  if (item.attachedFileId) return 'atendido'
+  if (item.clientDocumentTipo) {
+    const doc = clientDocs.find((d) => d.tipo === item.clientDocumentTipo)
+    if (doc?.storagePath) {
+      const status = calcDocStatus(doc.dataValidade)
+      if (status === 'valido') return 'atendido'
+      if (status === 'vencendo') return 'vencendo'
+    }
+  }
+  return item.atendido ? 'atendido' : 'faltando'
+}
+
+// "Motor de Compliance" — cruza o que o edital exige (itens obrigatórios
+// do checklist) com o que o cliente já tem, pra saber se a licitação está
+// pronta pra disputa. Usado na página de detalhe, no selo compacto
+// (components/ui/SeloHabilitacao.tsx) e no alerta do Dashboard, sem
+// duplicar a lógica em cada lugar.
+export function calcularHabilitacao(items: BiddingChecklistItem[], clientDocs: ClientDocument[]): HabilitacaoResumo {
+  const obrigatorios = items.filter((i) => i.obrigatorio)
+  const total = obrigatorios.length
+  const atendidos = obrigatorios.filter((i) => statusItemChecklist(i, clientDocs) === 'atendido').length
+  const vencendo = obrigatorios.filter((i) => statusItemChecklist(i, clientDocs) === 'vencendo').length
+  const faltando = obrigatorios.filter((i) => statusItemChecklist(i, clientDocs) === 'faltando').length
+
+  const status: StatusHabilitacao =
+    total === 0 ? null
+    : faltando > 0 ? 'INABILITADO'
+    : vencendo > 0 ? 'ATENÇÃO'
+    : 'HABILITADO'
+
+  return { status, total, atendidos, vencendo, faltando, percentual: total > 0 ? Math.round((atendidos / total) * 100) : null }
+}
 
 // Palavras-chave simples pra sugerir automaticamente qual certidão do
 // cliente já atende um item do checklist, sem precisar de IA pra isso —
@@ -139,6 +188,30 @@ export function useBiddingChecklist(biddingId?: string) {
     addItensEmLote,
     updateItem,
     deleteItem,
+  }
+}
+
+// Busca os itens de checklist de TODAS as licitações de uma vez — usado
+// pelo Dashboard (cruza com certidões pra achar sessões de risco) e pela
+// Central de Prazos (pra saber se uma certidão está vinculada a alguma
+// licitação com sessão marcada). Mesmo padrão de useAllClientDocuments em
+// useClientDocuments.ts.
+export function useAllBiddingChecklistItems() {
+  const { user } = useAuth()
+
+  const query = useQuery({
+    queryKey: [...QUERY_KEY, 'all'],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('bidding_checklist_items').select('*')
+      if (error) throw error
+      return data.map(fromBiddingChecklistItemRow)
+    },
+  })
+
+  return {
+    items: query.data ?? [],
+    isLoading: query.isLoading,
   }
 }
 
