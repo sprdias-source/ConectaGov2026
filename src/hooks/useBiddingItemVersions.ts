@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 
@@ -8,6 +8,7 @@ export interface BiddingItemVersion {
   versao: number
   itensSnapshot: any[]
   alteradoPorEmail: string | null
+  enviada: boolean
   createdAt: string
 }
 
@@ -19,6 +20,7 @@ export interface BiddingItemVersion {
 // está em poder CONFERIR o que mudou e quem mudou.
 export function useBiddingItemVersions(biddingId?: string) {
   const { user } = useAuth()
+  const queryClient = useQueryClient()
 
   const query = useQuery({
     queryKey: ['bidding_items_versions', biddingId],
@@ -36,13 +38,39 @@ export function useBiddingItemVersions(biddingId?: string) {
         versao: r.versao,
         itensSnapshot: r.itens_snapshot ?? [],
         alteradoPorEmail: r.alterado_por_email,
+        enviada: r.enviada,
         createdAt: r.created_at,
       })) as BiddingItemVersion[]
+    },
+  })
+
+  // Marca uma versão como "a que foi enviada" — desmarca qualquer outra
+  // versão dessa mesma licitação que estivesse marcada antes, pra nunca
+  // haver duas versões "enviadas" ao mesmo tempo.
+  const marcarComoEnviada = useMutation({
+    mutationFn: async (versionId: string) => {
+      if (!biddingId) throw new Error('Licitação não informada')
+      const { error: clearError } = await supabase
+        .from('bidding_items_versions')
+        .update({ enviada: false })
+        .eq('bidding_id', biddingId)
+        .eq('enviada', true)
+      if (clearError) throw clearError
+
+      const { error } = await supabase
+        .from('bidding_items_versions')
+        .update({ enviada: true })
+        .eq('id', versionId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bidding_items_versions', biddingId] })
     },
   })
 
   return {
     versoes: query.data ?? [],
     isLoading: query.isLoading,
+    marcarComoEnviada,
   }
 }

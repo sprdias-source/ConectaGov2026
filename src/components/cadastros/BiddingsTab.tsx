@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Plus, Pencil, Trash2, Gavel, Power, Eye, EyeOff, Lock, FileText, FileCheck2, FileUp, Loader2, FolderCheck } from 'lucide-react'
 import { Button } from '../ui/FormControls'
 import { EmptyState, StatusBadge } from '../ui/Primitives'
 import { formatBRL } from '../../hooks/useAccountBalances'
 import { supabase } from '../../lib/supabase'
 import BiddingFormModal from './BiddingFormModal'
-import LicitacaoDocumentacaoModal from './LicitacaoDocumentacaoModal'
 import DeleteWithPasswordDialog from '../ui/DeleteWithPasswordDialog'
 import ErrorAlert from '../ui/ErrorAlert'
 import { usePagination, PaginationControls } from '../../hooks/usePagination'
@@ -27,6 +27,7 @@ function fileParaBase64(file: File): Promise<string> {
 }
 
 export default function BiddingsTab() {
+  const navigate = useNavigate()
   const { biddings, isLoading, addBidding, updateBidding, deleteBidding, toggleBiddingActive, setModeloCustomizado, checkBiddingHasFinancialHistory } = useBiddings()
   const { clients } = useClients()
   const { nivel: nivelAcesso } = usePermissaoFerramenta('licitacoes')
@@ -41,7 +42,6 @@ export default function BiddingsTab() {
   const [erroGeracao, setErroGeracao] = useState<string | null>(null)
   const [enviandoModeloId, setEnviandoModeloId] = useState<string | null>(null)
   const [erroModelo, setErroModelo] = useState<string | null>(null)
-  const [licitacaoDocumentacao, setLicitacaoDocumentacao] = useState<Bidding | null>(null)
 
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? 'Cliente removido'
   const isMensalista = (id: string) => clients.find((c) => c.id === id)?.isMensalista ?? false
@@ -296,7 +296,7 @@ export default function BiddingsTab() {
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button
-                          onClick={() => setLicitacaoDocumentacao(b)}
+                          onClick={() => navigate(`/licitacoes/${b.id}`)}
                           title="Documentação da Licitação (checklist e edital)"
                           className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition"
                         >
@@ -411,14 +411,6 @@ export default function BiddingsTab() {
             error={deleteBidding.error}
           />
         </>
-      )}
-
-      {licitacaoDocumentacao && (
-        <LicitacaoDocumentacaoModal
-          bidding={licitacaoDocumentacao}
-          clientName={clientName(licitacaoDocumentacao.clientId)}
-          onClose={() => setLicitacaoDocumentacao(null)}
-        />
       )}
     </div>
   )

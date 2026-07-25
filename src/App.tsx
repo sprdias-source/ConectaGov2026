@@ -26,6 +26,7 @@ import CalculadoraPrecoPage from './pages/CalculadoraPrecoPage'
 import ExecucaoContratosPage from './pages/ExecucaoContratosPage'
 import AgendaPage from './pages/AgendaPage'
 import KanbanLicitacoesPage from './pages/KanbanLicitacoesPage'
+import LicitacaoPage from './pages/LicitacaoPage'
 import { useRecurringEngine } from './hooks/useRecurringEngine'
 import { useOnlineStatus } from './hooks/useOnlineStatus'
 export default function App() {
@@ -58,6 +59,7 @@ export default function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/agenda" element={<AgendaPage />} />
           <Route path="/kanban" element={<KanbanLicitacoesPage />} />
+          <Route path="/licitacoes/:id" element={<LicitacaoPage />} />
           <Route path="/central-prazos" element={<CentralPrazosPage />} />
           <Route path="/pendencias" element={<PendenciasPage />} />
           <Route path="/modelos" element={<ModelosPage />} />

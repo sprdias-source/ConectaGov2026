@@ -90,6 +90,7 @@ export interface Bidding {
   observacaoEtapa: string | null
   diasValidadeProposta: string | null
   modeloCustomizadoPath: string | null
+  motivoPerda: string | null
   isActive: boolean
   createdAt: string
   updatedAt: string
@@ -226,7 +227,7 @@ export interface Receipt {
   createdAt: string
 }
 
-export type FileCategory = 'Edital' | 'Contrato' | 'Recibo' | 'Certidão' | 'Outro'
+export type FileCategory = 'Edital' | 'Termo de Referência' | 'Contrato' | 'Recibo' | 'Certidão' | 'Outro'
 export type FileEntityType = 'licitacao' | 'contrato' | 'recibo' | 'cliente' | 'funcionario' | 'empenho'
 
 export interface AttachedFile {
