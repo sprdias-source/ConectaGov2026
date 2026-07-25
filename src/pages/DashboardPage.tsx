@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import {
   TrendingUp, TrendingDown, Wallet, Gavel, Clock, ArrowUpRight, ArrowDownRight,
-  Target, AlertTriangle, AlertOctagon,
+  Target, AlertTriangle,
 } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -9,26 +9,19 @@ import {
 } from 'recharts'
 import { PageHeader, KpiCard, Card, StatusBadge } from '../components/ui/Primitives'
 import OperationPulse from '../components/dashboard/OperationPulse'
+import AlertaSessaoRisco from '../components/dashboard/AlertaSessaoRisco'
 import { todayLocalISO } from '../lib/dateUtils'
 import { useClients } from '../hooks/useClients'
 import { useBiddings } from '../hooks/useBiddings'
-import { useAllBiddingChecklistItems, calcularHabilitacao } from '../hooks/useBiddingChecklist'
-import { useAllClientDocuments } from '../hooks/useClientDocuments'
 import { useTransactions } from '../hooks/useTransactions'
 import { useFinancialAccounts } from '../hooks/useFinancialAccounts'
 import { useAccountBalances, formatBRL } from '../hooks/useAccountBalances'
-
-// Janela de antecedência pra considerar a sessão de uma licitação "iminente"
-// pra fins do alerta de risco (checklist ATENÇÃO/INABILITADO + sessão perto).
-const JANELA_SESSAO_RISCO_DIAS = 3
 
 const MONTH_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
 export default function DashboardPage() {
   const { clients } = useClients()
   const { biddings } = useBiddings()
-  const { items: allChecklistItems } = useAllBiddingChecklistItems()
-  const { documents: allClientDocs } = useAllClientDocuments()
   const { transactions } = useTransactions()
   const { accounts } = useFinancialAccounts()
   const { patrimonioTotal } = useAccountBalances(accounts, transactions)
@@ -36,30 +29,6 @@ export default function DashboardPage() {
   const now = new Date()
   const currentYear = now.getFullYear()
   const todayStr = todayLocalISO()
-
-  const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? 'Cliente removido'
-
-  // Combinação perigosa: sessão de disputa nos próximos 3 dias E
-  // documentação ainda não pronta (ATENÇÃO = certidão vencendo, INABILITADO
-  // = falta item obrigatório) — vai disputar sem estar pronto.
-  const sessoesDeRisco = useMemo(() => {
-    return biddings
-      .filter((b) => b.isActive && b.status === 'Em Andamento')
-      .map((b) => {
-        const dias = Math.floor(
-          (new Date(b.dataAbertura + 'T00:00:00').getTime() - new Date(todayStr + 'T00:00:00').getTime())
-          / (1000 * 60 * 60 * 24)
-        )
-        if (dias < 0 || dias > JANELA_SESSAO_RISCO_DIAS) return null
-        const itemsDaLicitacao = allChecklistItems.filter((i) => i.biddingId === b.id)
-        const docsDoCliente = allClientDocs.filter((d) => d.clientId === b.clientId)
-        const { status } = calcularHabilitacao(itemsDaLicitacao, docsDoCliente)
-        if (status !== 'ATENÇÃO' && status !== 'INABILITADO') return null
-        return { bidding: b, dias, status }
-      })
-      .filter((x): x is { bidding: typeof biddings[number]; dias: number; status: 'ATENÇÃO' | 'INABILITADO' } => x !== null)
-      .sort((a, b) => a.dias - b.dias)
-  }, [biddings, allChecklistItems, allClientDocs, todayStr])
 
   const kpis = useMemo(() => {
     const aReceberPendente = transactions
@@ -165,37 +134,8 @@ export default function DashboardPage() {
         icon={Target}
       />
 
-      {/* Alerta de maior prioridade da tela: sessão iminente + documentação
-          não pronta é uma combinação perigosa (vai disputar sem estar
-          habilitado), por isso fica mais forte visualmente e acima de
-          qualquer outro card. */}
-      {sessoesDeRisco.length > 0 && (
-        <div className="px-6 mt-4">
-          <Card className="p-4 border-2 border-negative-500/60 bg-negative-500/15 flex items-start gap-3">
-            <AlertOctagon className="w-5 h-5 text-negative-400 shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-extrabold text-negative-300 uppercase tracking-wide">
-                Sessão próxima sem documentação pronta
-              </p>
-              <p className="text-[11px] text-negative-400/80 mt-0.5">
-                Disputa em até {JANELA_SESSAO_RISCO_DIAS} dias com checklist obrigatório incompleto ou com certidão vencendo.
-              </p>
-              <div className="flex flex-col gap-1.5 mt-2.5">
-                {sessoesDeRisco.map(({ bidding: b, dias, status }) => (
-                  <div key={b.id} className="flex items-center justify-between gap-3 text-[12px]">
-                    <span className="text-negative-200 truncate">
-                      {b.objeto} — {clientName(b.clientId)} ({b.orgao})
-                    </span>
-                    <span className="font-bold text-negative-300 shrink-0 whitespace-nowrap">
-                      {status} · {dias === 0 ? 'sessão hoje' : dias === 1 ? 'sessão amanhã' : `sessão em ${dias} dias`}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Card>
-        </div>
-      )}
+      {/* Alerta de maior prioridade da tela — ver AlertaSessaoRisco.tsx */}
+      <AlertaSessaoRisco />
 
       {/* KPIs principais */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-6 mt-4">

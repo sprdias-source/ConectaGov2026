@@ -1,28 +1,14 @@
 import { useState, useMemo } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight, Gavel, ClipboardList, Wallet } from 'lucide-react'
 import { PageHeader, Card } from '../components/ui/Primitives'
-import { useBiddings } from '../hooks/useBiddings'
-import { useClients } from '../hooks/useClients'
-import { usePendenciasChecklist } from '../hooks/useBiddingChecklist'
-import { useTransactions } from '../hooks/useTransactions'
-import { formatBRL } from '../hooks/useAccountBalances'
+import { useAgendaEventos } from '../hooks/useAgendaEventos'
 import { todayLocalISO } from '../lib/dateUtils'
 
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 const DIAS_SEMANA = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB']
 
-type EventoAgenda = {
-  tipo: 'pregao' | 'checklist' | 'financeiro'
-  data: string
-  titulo: string
-  subtitulo: string
-}
-
 export default function AgendaPage() {
-  const { biddings } = useBiddings()
-  const { clients } = useClients()
-  const { pendencias } = usePendenciasChecklist()
-  const { transactions } = useTransactions()
+  const { eventosPorDia } = useAgendaEventos()
 
   const hoje = todayLocalISO()
   const [mesAtual, setMesAtual] = useState(() => {
@@ -30,51 +16,6 @@ export default function AgendaPage() {
     return { ano: d.getFullYear(), mes: d.getMonth() } // mes: 0-11
   })
   const [diaSelecionado, setDiaSelecionado] = useState(hoje)
-
-  const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? '—'
-
-  // Junta os 3 tipos de evento numa lista só, indexada por data (YYYY-MM-DD)
-  const eventosPorDia = useMemo(() => {
-    const mapa = new Map<string, EventoAgenda[]>()
-    const add = (data: string | null, evento: EventoAgenda) => {
-      if (!data) return
-      const lista = mapa.get(data) ?? []
-      lista.push(evento)
-      mapa.set(data, lista)
-    }
-
-    for (const b of biddings) {
-      if (!b.isActive || b.status !== 'Em Andamento') continue
-      add(b.dataAbertura, {
-        tipo: 'pregao',
-        data: b.dataAbertura,
-        titulo: b.objeto,
-        subtitulo: `${clientName(b.clientId)} — ${b.orgao}`,
-      })
-    }
-
-    for (const p of pendencias) {
-      if (!p.prazo) continue
-      add(p.prazo, {
-        tipo: 'checklist',
-        data: p.prazo,
-        titulo: p.descricao,
-        subtitulo: `${p.clientName} — ${p.biddingObjeto.slice(0, 40)}`,
-      })
-    }
-
-    for (const t of transactions) {
-      if (t.status === 'Pago') continue
-      add(t.dueDate, {
-        tipo: 'financeiro',
-        data: t.dueDate,
-        titulo: t.description,
-        subtitulo: `${t.type === 'Pagar' ? 'A pagar' : 'A receber'} — ${formatBRL(t.value)}`,
-      })
-    }
-
-    return mapa
-  }, [biddings, pendencias, transactions, clients])
 
   // Monta a grade do mês: dias do mês anterior/seguinte pra completar
   // semanas, mais os dias do mês atual.

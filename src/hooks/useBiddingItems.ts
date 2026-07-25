@@ -62,3 +62,43 @@ export function useBiddingItems(biddingId: string | null) {
     setItems,
   }
 }
+
+export interface BiddingItemHistorico extends BiddingItem {
+  biddingObjeto: string
+  biddingOrgao: string
+  clientName: string
+}
+
+// Busca itens de licitações ANTERIORES por descrição parecida — usado na
+// Calculadora de Preço, pra saber por qual valor um item já foi cotado
+// antes e pra quem, em vez de estimar do zero toda vez. Mesmo padrão de
+// join usado em usePendenciasChecklist (useBiddingChecklist.ts).
+export function useSearchBiddingItems(termoBusca: string) {
+  const { user } = useAuth()
+  const termo = termoBusca.trim()
+
+  const query = useQuery({
+    queryKey: ['bidding_items_search', termo],
+    enabled: !!user && termo.length >= 3,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('bidding_items')
+        .select('*, biddings(objeto, orgao, client_id, clients(name))')
+        .ilike('descricao', `%${termo}%`)
+        .order('created_at', { ascending: false })
+        .limit(30)
+      if (error) throw error
+      return (data ?? []).map((row: any) => ({
+        ...fromBiddingItemRow(row),
+        biddingObjeto: row.biddings?.objeto ?? '—',
+        biddingOrgao: row.biddings?.orgao ?? '—',
+        clientName: row.biddings?.clients?.name ?? '—',
+      })) as BiddingItemHistorico[]
+    },
+  })
+
+  return {
+    resultados: query.data ?? [],
+    isLoading: query.isFetching,
+  }
+}
