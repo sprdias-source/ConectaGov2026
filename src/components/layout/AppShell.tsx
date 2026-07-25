@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
-  Eye, EyeOff, Menu, X, ChevronLeft, ChevronRight, Wallet,
+  Eye, EyeOff, Menu, X, ChevronLeft, ChevronRight, ChevronDown, Wallet,
   CreditCard, ShieldCheck, LogOut, Download, Sun, Moon,
 } from 'lucide-react'
 import { NAV_GROUPS } from './navConfig'
@@ -28,10 +28,30 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('cg_sidebar_collapsed') === 'true')
 
+  // Ausência de uma chave no objeto salvo = grupo aberto (padrão pra quem
+  // nunca mexeu nisso, e também pra qualquer grupo novo que apareça depois
+  // sem precisar migrar o valor salvo).
+  const [gruposAbertos, setGruposAbertos] = useState<Record<string, boolean>>(() => {
+    try {
+      const raw = localStorage.getItem('cg_grupos_menu_abertos')
+      return raw ? JSON.parse(raw) : {}
+    } catch {
+      return {}
+    }
+  })
+
   const toggleCollapsed = () => {
     const next = !collapsed
     setCollapsed(next)
     localStorage.setItem('cg_sidebar_collapsed', String(next))
+  }
+
+  const toggleGrupo = (label: string) => {
+    setGruposAbertos((atual) => {
+      const proximo = { ...atual, [label]: !(atual[label] ?? true) }
+      localStorage.setItem('cg_grupos_menu_abertos', JSON.stringify(proximo))
+      return proximo
+    })
   }
 
   const handleSignOut = async () => {
@@ -204,35 +224,42 @@ export default function AppShell({ children }: { children: ReactNode }) {
             )}
 
             <nav className="flex flex-col gap-3 mt-1">
-              {NAV_GROUPS.map((group) => (
-                <div key={group.label} className="flex flex-col gap-0.5">
-                  <span className="px-2.5 text-[9px] font-bold uppercase tracking-widest text-base-600 mb-0.5">
-                    {group.label}
-                  </span>
-                  {group.items.map((item) => (
-                    <NavLink
-                      key={item.key}
-                      to={item.path}
-                      onClick={() => setMobileOpen(false)}
-                      className={({ isActive }) =>
-                        `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium transition ${
-                          isActive
-                            ? 'bg-[var(--nav-active-bg)] text-accent-300 border border-[var(--nav-active-border)]'
-                            : 'text-base-400 hover:text-base-100 hover:bg-base-850 border border-transparent'
-                        }`
-                      }
+              {NAV_GROUPS.map((group) => {
+                const aberto = gruposAbertos[group.label] ?? true
+                return (
+                  <div key={group.label} className="flex flex-col gap-0.5">
+                    <button
+                      onClick={() => toggleGrupo(group.label)}
+                      className="flex items-center justify-between px-2.5 mb-0.5 text-[9px] font-bold uppercase tracking-widest text-base-600 hover:text-base-400 transition"
                     >
-                      <item.icon className="w-4 h-4 shrink-0" />
-                      {item.label}
-                      {item.key === 'central-prazos' && alertasUrgentes > 0 && (
-                        <span className="ml-auto text-[10px] font-bold bg-negative-500 text-white rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center shrink-0">
-                          {alertasUrgentes > 9 ? '9+' : alertasUrgentes}
-                        </span>
-                      )}
-                    </NavLink>
-                  ))}
-                </div>
-              ))}
+                      {group.label}
+                      <ChevronDown className={`w-3 h-3 shrink-0 transition-transform ${aberto ? '' : '-rotate-90'}`} />
+                    </button>
+                    {aberto && group.items.map((item) => (
+                      <NavLink
+                        key={item.key}
+                        to={item.path}
+                        onClick={() => setMobileOpen(false)}
+                        className={({ isActive }) =>
+                          `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium transition ${
+                            isActive
+                              ? 'bg-[var(--nav-active-bg)] text-accent-300 border border-[var(--nav-active-border)]'
+                              : 'text-base-400 hover:text-base-100 hover:bg-base-850 border border-transparent'
+                          }`
+                        }
+                      >
+                        <item.icon className="w-4 h-4 shrink-0" />
+                        {item.label}
+                        {item.key === 'central-prazos' && alertasUrgentes > 0 && (
+                          <span className="ml-auto text-[10px] font-bold bg-negative-500 text-white rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center shrink-0">
+                            {alertasUrgentes > 9 ? '9+' : alertasUrgentes}
+                          </span>
+                        )}
+                      </NavLink>
+                    ))}
+                  </div>
+                )
+              })}
             </nav>
           </div>
         )}

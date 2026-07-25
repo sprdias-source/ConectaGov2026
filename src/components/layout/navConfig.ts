@@ -22,16 +22,21 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Operação',
     items: [
       { key: 'dashboard', label: 'Dashboard', path: '/', icon: LayoutDashboard },
-      { key: 'hoje', label: 'Hoje', path: '/hoje', icon: Sun },
-      { key: 'agenda', label: 'Agenda', path: '/agenda', icon: CalendarDays },
-      { key: 'kanban', label: 'Kanban', path: '/kanban', icon: LayoutGrid },
-      { key: 'central-prazos', label: 'Central de Prazos', path: '/central-prazos', icon: AlarmClock },
-      { key: 'pendencias', label: 'Pendências', path: '/pendencias', icon: ClipboardList },
-      { key: 'calculadora-preco', label: 'Calculadora de Preço', path: '/calculadora-preco', icon: Percent },
       { key: 'cadastros', label: 'Cadastros', path: '/cadastros', icon: FolderKanban },
       { key: 'contas', label: 'Transações', path: '/contas', icon: Wallet },
       { key: 'extrato', label: 'Extrato OFX', path: '/extrato', icon: FileText },
       { key: 'fluxo', label: 'Fluxo de Caixa', path: '/fluxo', icon: CalendarRange },
+    ],
+  },
+  {
+    label: 'Licitações',
+    items: [
+      { key: 'licitacoes', label: 'Licitações', path: '/kanban', icon: LayoutGrid },
+      { key: 'hoje', label: 'Hoje', path: '/hoje', icon: Sun },
+      { key: 'agenda', label: 'Agenda', path: '/agenda', icon: CalendarDays },
+      { key: 'central-prazos', label: 'Central de Prazos', path: '/central-prazos', icon: AlarmClock },
+      { key: 'pendencias', label: 'Pendências', path: '/pendencias', icon: ClipboardList },
+      { key: 'calculadora-preco', label: 'Calculadora de Preço', path: '/calculadora-preco', icon: Percent },
     ],
   },
   {
