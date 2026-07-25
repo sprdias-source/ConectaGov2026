@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, FileText, Upload, Plus, Trash2, CheckCircle2, Circle, Download,
   AlertCircle, Loader2, Sparkles, Award, Check, History, ChevronDown, ChevronUp,
-  ClipboardList, Gavel, Wallet, Send, CircleDot, FileSignature, Info, Activity,
+  ClipboardList, Gavel, Wallet, Send, CircleDot, FileSignature, Info, Activity, RefreshCw,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
@@ -14,6 +14,7 @@ import { PageHeader, Card } from '../components/ui/Primitives'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useAttachedFiles } from '../hooks/useAttachedFiles'
 import { useBiddingChecklist, calcularHabilitacao, statusItemChecklist } from '../hooks/useBiddingChecklist'
+import { useBiddingAnalysis } from '../hooks/useBiddingAnalysis'
 import { useBiddingItemVersions } from '../hooks/useBiddingItemVersions'
 import { useClientDocuments } from '../hooks/useClientDocuments'
 import { useAtestados, calcularSimilaridade } from '../hooks/useAtestados'
@@ -490,6 +491,196 @@ function AbaSessaoAoVivo({ bidding }: { bidding: Bidding }) {
   )
 }
 
+// Formato esperado do JSON retornado pela function analisar-edital
+// (tabela/function já existem no banco, criadas por fora deste repo — não
+// temos o código-fonte dela aqui). Os nomes de campo abaixo são os
+// combinados na especificação da tarefa; se a function usar chaves
+// diferentes, as seções correspondentes simplesmente não aparecem (nada
+// quebra), já que cada uma só renderiza quando o campo existe.
+interface AnaliseEdital {
+  municipio?: string
+  orgao?: string
+  modalidade?: string
+  srp?: boolean
+  data?: string
+  horario?: string
+  portal?: string
+  resumoTecnico?: string
+  itens?: { numero?: string | number; descricao: string; unidade?: string; quantidade?: number; valorReferencia?: number }[]
+  validadeProposta?: string
+  catalogo?: string
+  garantias?: string
+  amostras?: string
+  marcasPreAprovadas?: string[] | string
+  habilitacao?: {
+    habilitacaoJuridica?: string
+    regularidadeFiscalTrabalhista?: string
+    qualificacaoEconomicoFinanceira?: string
+    qualificacaoTecnica?: string
+    proposta?: string
+  }
+  prazos?: string
+  formaEntrega?: string
+  localEntrega?: string
+  condicoesPagamento?: string
+  clausulasRestritivas?: string
+  conclusaoTecnica?: string
+  checklistDocumentacao?: { descricao: string; categoria?: string | null; obrigatorio?: boolean }[]
+}
+
+const CAMPOS_HABILITACAO: { chave: keyof NonNullable<AnaliseEdital['habilitacao']>; label: string }[] = [
+  { chave: 'habilitacaoJuridica', label: 'Habilitação Jurídica' },
+  { chave: 'regularidadeFiscalTrabalhista', label: 'Regularidade Fiscal e Trabalhista' },
+  { chave: 'qualificacaoEconomicoFinanceira', label: 'Qualificação Econômico-Financeira' },
+  { chave: 'qualificacaoTecnica', label: 'Qualificação Técnica' },
+  { chave: 'proposta', label: 'Proposta' },
+]
+
+function CampoResumo({ label, valor }: { label: string; valor?: string | null }) {
+  if (!valor) return null
+  return (
+    <div className="bg-base-850/60 border border-base-800 rounded-lg px-3 py-2">
+      <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-0.5">{label}</p>
+      <p className="text-[12px] text-base-200">{valor}</p>
+    </div>
+  )
+}
+
+function SecaoTexto({ label, texto }: { label: string; texto?: string | null }) {
+  if (!texto) return null
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1.5">{label}</p>
+      <p className="text-[12px] text-base-300 whitespace-pre-line">{texto}</p>
+    </div>
+  )
+}
+
+function AnaliseEditalIA({ bidding, temEdital }: { bidding: Bidding; temEdital: boolean }) {
+  const { analysis, analisar } = useBiddingAnalysis(bidding.id)
+  const { addItensEmLote } = useBiddingChecklist(bidding.id)
+
+  const status = analysis?.status
+  const processando = status === 'processando' || analisar.isPending
+  const analise = (analysis?.analise ?? null) as AnaliseEdital | null
+
+  const localOuFormaEntrega = [analise?.formaEntrega, analise?.localEntrega].filter(Boolean).join(' — ')
+  const marcasTexto = Array.isArray(analise?.marcasPreAprovadas) ? analise.marcasPreAprovadas.join(', ') : analise?.marcasPreAprovadas
+  const checklistDocumentacao = analise?.checklistDocumentacao ?? []
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <Button onClick={() => analisar.mutate()} disabled={!temEdital || processando}>
+          {processando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+          {processando ? 'Analisando...' : status === 'concluido' ? 'Analisar Novamente' : 'Analisar com IA'}
+        </Button>
+        {!temEdital && (
+          <span className="text-[11px] text-base-500 italic">Envie o edital acima antes de analisar.</span>
+        )}
+      </div>
+
+      {status === 'erro' && (
+        <div className="bg-negative-500/10 border border-negative-500/25 rounded-lg p-3 flex items-start gap-2">
+          <AlertCircle className="w-3.5 h-3.5 text-negative-400 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-[12px] text-negative-300">{analysis?.erroMensagem || 'Não foi possível analisar o edital.'}</p>
+            <button onClick={() => analisar.mutate()} className="flex items-center gap-1.5 text-[11px] text-accent-300 hover:text-accent-200 transition mt-1.5">
+              <RefreshCw className="w-3 h-3" /> Tentar novamente
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!status && temEdital && (
+        <div className="bg-accent-500/10 border border-accent-500/25 rounded-lg p-3 text-[12px] text-accent-300 flex items-start gap-2">
+          <Sparkles className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>Clique em "Analisar com IA" pra extrair automaticamente o resumo, os itens, a habilitação exigida e o checklist sugerido a partir do edital enviado.</span>
+        </div>
+      )}
+
+      {status === 'concluido' && analise && (
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <CampoResumo label="Município / Órgão" valor={[analise.municipio, analise.orgao].filter(Boolean).join(' — ')} />
+            <CampoResumo label="Modalidade / SRP" valor={[analise.modalidade, analise.srp ? 'SRP' : null].filter(Boolean).join(' — ')} />
+            <CampoResumo label="Data / Horário / Portal" valor={[analise.data, analise.horario, analise.portal].filter(Boolean).join(' — ')} />
+            <CampoResumo label="Validade da Proposta" valor={analise.validadeProposta} />
+            <CampoResumo label="Catálogo" valor={analise.catalogo} />
+            <CampoResumo label="Forma / Local de Entrega" valor={localOuFormaEntrega} />
+          </div>
+
+          <SecaoTexto label="Resumo Técnico" texto={analise.resumoTecnico} />
+
+          {!!analise.itens?.length && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">Itens Identificados</p>
+              <div className="overflow-x-auto bg-base-850/60 border border-base-800 rounded-xl">
+                <table className="w-full text-[12px]">
+                  <thead>
+                    <tr className="text-base-500 border-b border-base-800">
+                      <th className="text-left font-semibold px-3 py-2">Item</th>
+                      <th className="text-left font-semibold px-3 py-2">Descrição</th>
+                      <th className="text-right font-semibold px-3 py-2">Qtd.</th>
+                      <th className="text-right font-semibold px-3 py-2">Vl. Referência</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analise.itens.map((it, idx) => (
+                      <tr key={idx} className="border-t border-base-800/60">
+                        <td className="px-3 py-2 text-base-300">{it.numero ?? idx + 1}</td>
+                        <td className="px-3 py-2 text-base-300">{it.descricao}</td>
+                        <td className="px-3 py-2 text-right text-base-400">{it.quantidade ?? '—'}{it.unidade ? ` ${it.unidade}` : ''}</td>
+                        <td className="px-3 py-2 text-right font-mono text-base-400">{it.valorReferencia != null ? formatBRL(Number(it.valorReferencia)) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <SecaoTexto label="Garantias" texto={analise.garantias} />
+          <SecaoTexto label="Amostras" texto={analise.amostras} />
+          <SecaoTexto label="Marcas Pré-Aprovadas" texto={marcasTexto} />
+
+          {analise.habilitacao && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">Habilitação</p>
+              <div className="flex flex-col gap-2">
+                {CAMPOS_HABILITACAO.map(({ chave, label }) => {
+                  const texto = analise.habilitacao?.[chave]
+                  if (!texto) return null
+                  return (
+                    <div key={chave} className="bg-base-850/60 border border-base-800 rounded-lg px-3 py-2">
+                      <p className="text-[10px] font-bold text-accent-400 uppercase tracking-wider mb-0.5">{label}</p>
+                      <p className="text-[12px] text-base-300">{texto}</p>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          <SecaoTexto label="Prazos" texto={analise.prazos} />
+          <SecaoTexto label="Condições de Pagamento" texto={analise.condicoesPagamento} />
+          <SecaoTexto label="Cláusulas Restritivas" texto={analise.clausulasRestritivas} />
+          <SecaoTexto label="Conclusão Técnica" texto={analise.conclusaoTecnica} />
+
+          {checklistDocumentacao.length > 0 && (
+            <div className="bg-accent-500/10 border border-accent-500/25 rounded-lg p-3">
+              <p className="text-[12px] text-accent-300 mb-2">{checklistDocumentacao.length} documento(s) sugerido(s) pela análise pra habilitação.</p>
+              <Button variant="secondary" onClick={() => addItensEmLote.mutate(checklistDocumentacao)} disabled={addItensEmLote.isPending}>
+                <Plus className="w-4 h-4" /> {addItensEmLote.isPending ? 'Adicionando...' : 'Adicionar ao Checklist'}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function LicitacaoPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -724,10 +915,7 @@ export default function LicitacaoPage() {
               )}
             </div>
 
-            <div className="bg-accent-500/10 border border-accent-500/25 rounded-lg p-3 text-[12px] text-accent-300 flex items-start gap-2">
-              <Sparkles className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              <span>A análise automática do edital por IA ainda não está configurada — quando estiver, o resumo, o checklist sugerido e os pontos de atenção aparecerão aqui automaticamente.</span>
-            </div>
+            <AnaliseEditalIA bidding={bidding} temEdital={!!edital} />
 
             {atestados.length > 0 && (
               <div>
