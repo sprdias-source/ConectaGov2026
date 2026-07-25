@@ -35,7 +35,8 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
   const uploadFile = useMutation({
     mutationFn: async ({ file, category }: { file: File; category: FileCategory }) => {
       if (!user || !entityId) throw new Error('Não autenticado')
-      const path = `${user.id}/${entityType}/${entityId}/${Date.now()}_${file.name}`
+      const ext = file.name.split('.').pop() ?? 'pdf'
+      const path = `${user.id}/${entityType}/${entityId}/${Date.now()}.${ext}`
       const { error: uploadError } = await supabase.storage
         .from('client-documents')
         .upload(path, file, { upsert: true })
