@@ -31,11 +31,20 @@ function fromRow(r: Database['public']['Tables']['bidding_analysis']['Row']): Bi
 
 const QUERY_KEY = ['bidding_analysis']
 
+// Se a function travar ou for encerrada à força pela plataforma (limite de
+// memória/tempo) antes de conseguir gravar o resultado, a linha fica presa
+// em status='processando' pra sempre — a function morta não tem como
+// atualizar mais nada. Passado esse tempo sem novidade, tratamos como
+// falho na tela em vez de confiar cegamente e ficar reconsultando pra
+// sempre (nenhum edital, por maior que seja, deveria levar tanto tempo).
+const LIMITE_PROCESSANDO_MS = 3 * 60 * 1000
+
 // Análise do edital por IA — a tabela bidding_analysis e a function
-// analisar-edital já existem no banco (feitas por fora deste repo). Aqui é
+// Analisar-edital já existem no banco (feitas por fora deste repo). Aqui é
 // só a leitura do resultado + o disparo da análise. Enquanto status estiver
 // 'processando' (a function roda em segundo plano e atualiza a linha
-// depois), a query fica se atualizando sozinha até sair desse estado.
+// depois), a query fica se atualizando sozinha até sair desse estado — ou
+// até o limite de tempo acima, o que vier primeiro.
 export function useBiddingAnalysis(biddingId?: string) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -53,8 +62,18 @@ export function useBiddingAnalysis(biddingId?: string) {
       if (error) throw error
       return data ? fromRow(data) : null
     },
-    refetchInterval: (query) => (query.state.data?.status === 'processando' ? 3000 : false),
+    refetchInterval: (query) => {
+      const data = query.state.data
+      if (data?.status !== 'processando') return false
+      const decorrido = Date.now() - new Date(data.updatedAt).getTime()
+      return decorrido > LIMITE_PROCESSANDO_MS ? false : 3000
+    },
   })
+
+  const analysis = query.data ?? null
+  const travado = !!analysis
+    && analysis.status === 'processando'
+    && Date.now() - new Date(analysis.updatedAt).getTime() > LIMITE_PROCESSANDO_MS
 
   const analisar = useMutation({
     mutationFn: async () => {
@@ -68,8 +87,9 @@ export function useBiddingAnalysis(biddingId?: string) {
   })
 
   return {
-    analysis: query.data ?? null,
+    analysis,
     isLoading: query.isLoading,
+    travado,
     analisar,
   }
 }

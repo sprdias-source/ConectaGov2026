@@ -557,11 +557,11 @@ function SecaoTexto({ label, texto }: { label: string; texto?: string | null }) 
 }
 
 function AnaliseEditalIA({ bidding, temEdital }: { bidding: Bidding; temEdital: boolean }) {
-  const { analysis, analisar } = useBiddingAnalysis(bidding.id)
+  const { analysis, analisar, travado } = useBiddingAnalysis(bidding.id)
   const { addItensEmLote } = useBiddingChecklist(bidding.id)
 
   const status = analysis?.status
-  const processando = status === 'processando' || analisar.isPending
+  const processando = (status === 'processando' && !travado) || analisar.isPending
   const analise = (analysis?.analise ?? null) as AnaliseEdital | null
 
   const localOuFormaEntrega = [analise?.formaEntrega, analise?.localEntrega].filter(Boolean).join(' — ')
@@ -580,12 +580,14 @@ function AnaliseEditalIA({ bidding, temEdital }: { bidding: Bidding; temEdital: 
         )}
       </div>
 
-      {(status === 'erro' || analisar.isError) && (
+      {(status === 'erro' || analisar.isError || travado) && (
         <div className="bg-negative-500/10 border border-negative-500/25 rounded-lg p-3 flex items-start gap-2">
           <AlertCircle className="w-3.5 h-3.5 text-negative-400 shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="text-[12px] text-negative-300">
-              {analysis?.erroMensagem || (analisar.error instanceof Error ? analisar.error.message : null) || 'Não foi possível analisar o edital.'}
+              {travado
+                ? 'A análise demorou demais e parece ter travado (provavelmente o edital é grande/escaneado demais pra function atual processar a tempo). Tente novamente.'
+                : analysis?.erroMensagem || (analisar.error instanceof Error ? analisar.error.message : null) || 'Não foi possível analisar o edital.'}
             </p>
             <button onClick={() => analisar.mutate()} className="flex items-center gap-1.5 text-[11px] text-accent-300 hover:text-accent-200 transition mt-1.5">
               <RefreshCw className="w-3 h-3" /> Tentar novamente
