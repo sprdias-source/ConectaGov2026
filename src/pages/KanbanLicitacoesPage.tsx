@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { LayoutGrid, ChevronLeft, ChevronRight } from 'lucide-react'
 import { PageHeader } from '../components/ui/Primitives'
+import SeloHabilitacao from '../components/ui/SeloHabilitacao'
 import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
@@ -66,6 +67,7 @@ export default function KanbanLicitacoesPage() {
       >
         <p className="text-[12px] font-semibold text-base-100 line-clamp-2">{b.objeto}</p>
         <p className="text-[11px] text-base-500 truncate">{clientName(b.clientId)} — {b.orgao}</p>
+        <SeloHabilitacao bidding={b} />
         <div className="flex items-center justify-between mt-1">
           <span className="text-[11px] font-mono font-semibold text-accent-300">{formatBRL(b.valorLicitado)}</span>
           <span className="text-[10px] text-base-500">{new Date(b.dataAbertura + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
