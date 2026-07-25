@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { LayoutGrid, ChevronLeft, ChevronRight } from 'lucide-react'
 import { PageHeader } from '../components/ui/Primitives'
 import { useBiddings } from '../hooks/useBiddings'
@@ -59,7 +60,10 @@ export default function KanbanLicitacoesPage() {
   const CardLicitacao = ({ b, etapaAtual }: { b: Bidding; etapaAtual: BiddingEtapa | null }) => {
     const indiceAtual = etapaAtual ? ETAPAS.indexOf(etapaAtual) : -1
     return (
-      <div className="bg-base-900 border border-base-800 rounded-lg p-3 flex flex-col gap-1.5">
+      <Link
+        to={`/licitacoes/${b.id}`}
+        className="bg-base-900 border border-base-800 rounded-lg p-3 flex flex-col gap-1.5"
+      >
         <p className="text-[12px] font-semibold text-base-100 line-clamp-2">{b.objeto}</p>
         <p className="text-[11px] text-base-500 truncate">{clientName(b.clientId)} — {b.orgao}</p>
         <div className="flex items-center justify-between mt-1">
@@ -69,7 +73,7 @@ export default function KanbanLicitacoesPage() {
         {podeEditar && (
           <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-base-800">
             <button
-              onClick={() => mover(b, -1)}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); mover(b, -1) }}
               disabled={indiceAtual <= 0 || updateEtapa.isPending}
               className="p-1 text-base-500 hover:text-accent-300 disabled:opacity-30 disabled:cursor-not-allowed transition"
               title="Etapa anterior"
@@ -77,7 +81,7 @@ export default function KanbanLicitacoesPage() {
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
             <button
-              onClick={() => mover(b, 1)}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); mover(b, 1) }}
               disabled={indiceAtual === -1 ? false : indiceAtual >= ETAPAS.length - 1 || updateEtapa.isPending}
               className="p-1 text-base-500 hover:text-accent-300 disabled:opacity-30 disabled:cursor-not-allowed transition"
               title="Próxima etapa"
@@ -86,7 +90,7 @@ export default function KanbanLicitacoesPage() {
             </button>
           </div>
         )}
-      </div>
+      </Link>
     )
   }
 
