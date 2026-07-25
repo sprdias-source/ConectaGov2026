@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react'
-import { Calculator, Info } from 'lucide-react'
+import { Calculator, Info, Search, History } from 'lucide-react'
 import { PageHeader, Card } from '../components/ui/Primitives'
 import { Input } from '../components/ui/FormControls'
 import { formatBRL } from '../hooks/useAccountBalances'
+import { useSearchBiddingItems } from '../hooks/useBiddingItems'
 
 // Fórmula do "BDI sobre preço de venda" (markup divisor) — padrão usado em
 // licitações de obras/serviços de engenharia no Brasil: em vez de aplicar
@@ -29,6 +30,9 @@ export default function CalculadoraPrecoPage() {
   const [impostosPct, setImpostosPct] = useState('6')
   const [margemPct, setMargemPct] = useState('8')
   const [quantidade, setQuantidade] = useState('1')
+
+  const [buscaItem, setBuscaItem] = useState('')
+  const { resultados: historicoItens, isLoading: buscandoHistorico } = useSearchBiddingItems(buscaItem)
 
   const resultado = useMemo(() => {
     const custo = parseFloat(custoDireto)
@@ -121,6 +125,52 @@ export default function CalculadoraPrecoPage() {
               </div>
             </div>
           )}
+        </Card>
+      </div>
+
+      <div className="px-6 mt-4">
+        <Card className="p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <History className="w-4 h-4 text-accent-400" />
+            <p className="text-[12px] font-bold text-base-200">Histórico de Preços por Item</p>
+          </div>
+          <p className="text-[12px] text-base-500 mb-3">
+            Pesquise por itens parecidos já cotados em licitações anteriores — pra qual órgão/cliente foi, e por qual valor.
+          </p>
+          <div className="relative mb-3">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-base-500" />
+            <input
+              value={buscaItem}
+              onChange={(e) => setBuscaItem(e.target.value)}
+              placeholder="Ex: Notebook, Ar-condicionado, Combustível... (mín. 3 letras)"
+              className="w-full bg-base-850 border border-base-700 rounded-lg pl-9 pr-3 py-2 text-[13px] text-base-100 placeholder:text-base-500 outline-none focus:border-accent-400"
+            />
+          </div>
+
+          {buscaItem.trim().length > 0 && buscaItem.trim().length < 3 ? (
+            <p className="text-[12px] text-base-500 italic py-4 text-center">Digite pelo menos 3 letras pra buscar.</p>
+          ) : buscandoHistorico ? (
+            <div className="p-6 text-center text-base-500 text-sm">Buscando...</div>
+          ) : buscaItem.trim().length >= 3 && historicoItens.length === 0 ? (
+            <p className="text-[12px] text-base-500 italic py-4 text-center">Nenhum item parecido encontrado no histórico.</p>
+          ) : historicoItens.length > 0 ? (
+            <div className="flex flex-col gap-2 max-h-[320px] overflow-y-auto">
+              {historicoItens.map((i) => (
+                <div key={i.id} className="flex items-center justify-between gap-3 bg-base-850/60 border border-base-800 rounded-lg px-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-medium text-base-200 truncate">{i.descricao}</p>
+                    <p className="text-[11px] text-base-500 truncate">{i.clientName} — {i.biddingOrgao} · {i.biddingObjeto.slice(0, 50)}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="font-mono font-bold text-[13px] text-accent-300">{formatBRL(i.valorUnitarioLicitado)}</p>
+                    {i.valorUnitarioOfertado && (
+                      <p className="font-mono text-[11px] text-positive-400">ofertado: {formatBRL(i.valorUnitarioOfertado)}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </Card>
       </div>
     </div>

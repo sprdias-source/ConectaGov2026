@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, FolderKanban, Wallet, CalendarRange, FileBarChart,
   Receipt, FileSignature, Users, Calculator, ShieldCheck, Target, FileText, UserCog, UserCircle,
-  AlarmClock, DollarSign, ScrollText, ClipboardList, BookOpen, ClipboardCheck, Percent, LayoutGrid, CalendarDays, type LucideIcon,
+  AlarmClock, DollarSign, ScrollText, ClipboardList, BookOpen, ClipboardCheck, Percent, LayoutGrid, CalendarDays, Sun, type LucideIcon,
 } from 'lucide-react'
 export interface NavItem {
   key: string
@@ -22,6 +22,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Operação',
     items: [
       { key: 'dashboard', label: 'Dashboard', path: '/', icon: LayoutDashboard },
+      { key: 'hoje', label: 'Hoje', path: '/hoje', icon: Sun },
       { key: 'agenda', label: 'Agenda', path: '/agenda', icon: CalendarDays },
       { key: 'kanban', label: 'Kanban', path: '/kanban', icon: LayoutGrid },
       { key: 'central-prazos', label: 'Central de Prazos', path: '/central-prazos', icon: AlarmClock },

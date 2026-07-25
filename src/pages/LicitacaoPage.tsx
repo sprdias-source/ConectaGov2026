@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, FileText, Upload, Plus, Trash2, CheckCircle2, Circle, Download,
   AlertCircle, Loader2, Sparkles, Award, Check, History, ChevronDown, ChevronUp,
-  ClipboardList, Gavel, Wallet, Send, CircleDot, FileSignature, Info,
+  ClipboardList, Gavel, Wallet, Send, CircleDot, FileSignature, Info, Activity,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
@@ -47,6 +47,7 @@ const ABAS = [
   { key: 'checklist', label: 'Checklist & Habilitação', icon: ClipboardList },
   { key: 'proposta', label: 'Proposta & Itens', icon: Wallet },
   { key: 'documentos', label: 'Documentos', icon: FileSignature },
+  { key: 'sessao', label: 'Sessão Ao Vivo', icon: Activity },
 ] as const
 type AbaKey = typeof ABAS[number]['key']
 
@@ -456,6 +457,35 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
       )}
 
       <HistoricoVersoes biddingId={bidding.id} />
+    </div>
+  )
+}
+
+// Tela enxuta pensada pra ficar aberta numa aba do navegador durante o
+// pregão — só os itens (número, descrição, valor de referência) em fonte
+// grande pra consulta rápida no meio da disputa, sem os outros elementos
+// da página (checklist, edital, etc). Reaproveita o mesmo hook local de
+// itens já usado pela AbaProposta — mesma query, sem refazer o fetch.
+function AbaSessaoAoVivo({ bidding }: { bidding: Bidding }) {
+  const { items, isLoading } = useBiddingItemsDaLicitacao(bidding.id)
+
+  if (isLoading) return <p className="text-[13px] text-base-500 py-4">Carregando itens...</p>
+
+  if (items.length === 0) {
+    return <p className="text-[13px] text-base-500 italic py-4">Nenhum item cadastrado nesta licitação.</p>
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {items.map((i) => (
+        <div key={i.id} className="flex items-center justify-between gap-4 bg-base-850/60 border border-base-800 rounded-xl px-5 py-4">
+          <div className="flex items-center gap-4 min-w-0">
+            <span className="text-xl font-extrabold font-mono text-accent-300 shrink-0 w-14 text-center">{i.numeroItem}</span>
+            <p className="text-base font-semibold text-base-100">{i.descricao}</p>
+          </div>
+          <span className="text-lg font-extrabold font-mono text-base-100 shrink-0">{formatBRL(i.valorUnitarioLicitado)}</span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -872,6 +902,8 @@ export default function LicitacaoPage() {
             </div>
           </>
         )}
+
+        {aba === 'sessao' && <AbaSessaoAoVivo bidding={bidding} />}
       </div>
     </div>
   )

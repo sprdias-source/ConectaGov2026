@@ -27,6 +27,7 @@ import ExecucaoContratosPage from './pages/ExecucaoContratosPage'
 import AgendaPage from './pages/AgendaPage'
 import KanbanLicitacoesPage from './pages/KanbanLicitacoesPage'
 import LicitacaoPage from './pages/LicitacaoPage'
+import HojePage from './pages/HojePage'
 import { useRecurringEngine } from './hooks/useRecurringEngine'
 import { useOnlineStatus } from './hooks/useOnlineStatus'
 export default function App() {
@@ -57,6 +58,7 @@ export default function App() {
         )}
         <Routes>
           <Route path="/" element={<DashboardPage />} />
+          <Route path="/hoje" element={<HojePage />} />
           <Route path="/agenda" element={<AgendaPage />} />
           <Route path="/kanban" element={<KanbanLicitacoesPage />} />
           <Route path="/licitacoes/:id" element={<LicitacaoPage />} />

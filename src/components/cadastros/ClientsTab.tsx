@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect } from 'react'
 import { todayLocalISO } from '../../lib/dateUtils'
-import { Search, Plus, Pencil, Trash2, Globe, Phone, MessageCircle, Users, EyeOff, Eye, Power, Lock } from 'lucide-react'
+import { Search, Plus, Pencil, Trash2, Globe, Phone, MessageCircle, Users, EyeOff, Eye, Power, Lock, Gavel } from 'lucide-react'
 import { Button } from '../ui/FormControls'
 import { EmptyState } from '../ui/Primitives'
 import ClientFormModal from './ClientFormModal'
+import ClientBiddingsModal from './ClientBiddingsModal'
 import DeleteWithPasswordDialog from '../ui/DeleteWithPasswordDialog'
 import ErrorAlert from '../ui/ErrorAlert'
 import { useClients } from '../../hooks/useClients'
@@ -26,6 +27,7 @@ export default function ClientsTab() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Client | null>(null)
   const [deleting, setDeleting] = useState<Client | null>(null)
+  const [viewingBiddings, setViewingBiddings] = useState<Client | null>(null)
   const [financialWarning, setFinancialWarning] = useState<string | undefined>()
 
   useEffect(() => {
@@ -153,9 +155,7 @@ export default function ClientsTab() {
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Endereço</th>
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Contatos</th>
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Email/Site</th>
-                  {podeEditar && (
-                    <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Ações</th>
-                  )}
+                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -184,25 +184,34 @@ export default function ClientsTab() {
                       {c.email && <div className="text-base-300 truncate max-w-[160px]">{c.email}</div>}
                       {c.website && <div className="flex items-center gap-1 text-accent-400 mt-0.5"><Globe className="w-3 h-3" />{c.website}</div>}
                     </td>
-                    {podeEditar && (
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => toggleClientActive.mutate({ client: c, isActive: !c.isActive })}
-                            title={c.isActive ? 'Inativar cliente (preserva histórico)' : 'Reativar cliente'}
-                            className={`p-1.5 rounded transition hover:bg-base-800 ${c.isActive ? 'text-base-400 hover:text-warning-400' : 'text-positive-400 hover:text-positive-300'}`}
-                          >
-                            <Power className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => { setEditing(c); setModalOpen(true) }} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => setDeleting(c)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    )}
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => setViewingBiddings(c)}
+                          title="Ver licitações deste cliente"
+                          className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition"
+                        >
+                          <Gavel className="w-3.5 h-3.5" />
+                        </button>
+                        {podeEditar && (
+                          <>
+                            <button
+                              onClick={() => toggleClientActive.mutate({ client: c, isActive: !c.isActive })}
+                              title={c.isActive ? 'Inativar cliente (preserva histórico)' : 'Reativar cliente'}
+                              className={`p-1.5 rounded transition hover:bg-base-800 ${c.isActive ? 'text-base-400 hover:text-warning-400' : 'text-positive-400 hover:text-positive-300'}`}
+                            >
+                              <Power className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => { setEditing(c); setModalOpen(true) }} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => setDeleting(c)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -235,6 +244,10 @@ export default function ClientsTab() {
             error={deleteClient.error}
           />
         </>
+      )}
+
+      {viewingBiddings && (
+        <ClientBiddingsModal client={viewingBiddings} onClose={() => setViewingBiddings(null)} />
       )}
     </div>
   )
