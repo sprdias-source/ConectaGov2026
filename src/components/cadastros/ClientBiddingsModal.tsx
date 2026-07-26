@@ -4,6 +4,7 @@ import { Gavel } from 'lucide-react'
 import Modal from '../ui/Modal'
 import { Card, EmptyState } from '../ui/Primitives'
 import SeloHabilitacao from '../ui/SeloHabilitacao'
+import EditaisAnaliseSection from './EditaisAnaliseSection'
 import { useBiddings } from '../../hooks/useBiddings'
 import { formatBRL } from '../../hooks/useAccountBalances'
 import type { Client } from '../../types/domain'
@@ -77,6 +78,8 @@ export default function ClientBiddingsModal({ client, onClose }: { client: Clien
           ))}
         </div>
       )}
+
+      <EditaisAnaliseSection client={client} onClose={onClose} />
     </Modal>
   )
 }
