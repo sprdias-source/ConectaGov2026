@@ -63,6 +63,33 @@ export function useBiddingItems(biddingId: string | null) {
   }
 }
 
+// Busca os itens de várias licitações de uma vez (usado no relatório de
+// oportunidades por cliente — precisa dos itens de TODAS as licitações do
+// cliente pra montar o detalhamento por item, não só de uma).
+export function useBiddingItemsPorLicitacoes(biddingIds: string[]) {
+  const { user } = useAuth()
+  const idsOrdenados = useMemo(() => [...biddingIds].sort(), [biddingIds])
+
+  const query = useQuery({
+    queryKey: ['bidding_items_por_licitacoes', idsOrdenados],
+    enabled: !!user && idsOrdenados.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('bidding_items')
+        .select('*')
+        .in('bidding_id', idsOrdenados)
+        .order('numero_item', { ascending: true })
+      if (error) throw error
+      return data.map(fromBiddingItemRow)
+    },
+  })
+
+  return {
+    items: query.data ?? EMPTY_ITEMS,
+    isLoading: query.isLoading,
+  }
+}
+
 export interface BiddingItemHistorico extends BiddingItem {
   biddingObjeto: string
   biddingOrgao: string
