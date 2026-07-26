@@ -330,6 +330,19 @@ export interface ContractMarco {
   updatedAt: string
 }
 
+// Compromisso pessoal do usuário (reunião, viagem, lembrete) — aparece na
+// Agenda junto com pregões, prazos de checklist e financeiro, mas é criado
+// e editado livremente (os outros tipos vêm de outras telas).
+export interface PersonalEvent {
+  id: string
+  userId: string
+  titulo: string
+  descricao: string | null
+  data: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface AuditLog {
   id: string
   userId: string

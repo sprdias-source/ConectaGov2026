@@ -6,7 +6,7 @@
 import type { Database } from '../types/database'
 import type {
   Client, Bidding, BiddingItem, FinancialAccount, Empenho, Transaction,
-  Employee, Contract, Receipt, AttachedFile, AuditLog, Category, PaymentMethod, ClientDocument, BiddingChecklistItem, AtestadoTecnico, ModeloDocumento, ContractMarco,
+  Employee, Contract, Receipt, AttachedFile, AuditLog, Category, PaymentMethod, ClientDocument, BiddingChecklistItem, AtestadoTecnico, ModeloDocumento, ContractMarco, PersonalEvent,
 } from '../types/domain'
 import { todayLocalISO } from './dateUtils'
 
@@ -417,6 +417,25 @@ export const toBiddingChecklistItemInsert = (
   observacoes: i.observacoes ?? null,
   prazo: i.prazo ?? null,
   responsavel_nome: i.responsavelNome ?? null,
+})
+
+export const fromPersonalEventRow = (r: Row<'personal_events'>): PersonalEvent => ({
+  id: r.id,
+  userId: r.user_id,
+  titulo: r.titulo,
+  descricao: r.descricao,
+  data: r.data,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+})
+
+export const toPersonalEventInsert = (
+  e: Partial<PersonalEvent>, userId: string
+): Database['public']['Tables']['personal_events']['Insert'] => ({
+  user_id: userId,
+  titulo: e.titulo ?? '',
+  descricao: e.descricao ?? null,
+  data: e.data ?? todayLocalISO(),
 })
 
 export const fromAuditLogRow = (r: Row<'audit_logs'>): AuditLog => ({

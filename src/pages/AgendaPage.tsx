@@ -1,7 +1,11 @@
 import { useState, useMemo } from 'react'
-import { CalendarDays, ChevronLeft, ChevronRight, Gavel, ClipboardList, Wallet } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Gavel, ClipboardList, Wallet, AlarmClock, Plus, Pencil } from 'lucide-react'
 import { PageHeader, Card } from '../components/ui/Primitives'
-import { useAgendaEventos } from '../hooks/useAgendaEventos'
+import { Button } from '../components/ui/FormControls'
+import PersonalEventFormModal, { type PersonalEventFormValues } from '../components/agenda/PersonalEventFormModal'
+import { useAgendaEventos, type EventoAgenda } from '../hooks/useAgendaEventos'
+import { usePersonalEvents } from '../hooks/usePersonalEvents'
+import { useToast } from '../hooks/useToast'
 import { todayLocalISO } from '../lib/dateUtils'
 
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
@@ -9,6 +13,8 @@ const DIAS_SEMANA = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB']
 
 export default function AgendaPage() {
   const { eventosPorDia } = useAgendaEventos()
+  const { events: personalEvents, addEvent, updateEvent, deleteEvent } = usePersonalEvents()
+  const { showToast } = useToast()
 
   const hoje = todayLocalISO()
   const [mesAtual, setMesAtual] = useState(() => {
@@ -16,6 +22,8 @@ export default function AgendaPage() {
     return { ano: d.getFullYear(), mes: d.getMonth() } // mes: 0-11
   })
   const [diaSelecionado, setDiaSelecionado] = useState(hoje)
+  const [modalAberto, setModalAberto] = useState(false)
+  const [editando, setEditando] = useState<{ id: string; values: PersonalEventFormValues } | null>(null)
 
   // Monta a grade do mês: dias do mês anterior/seguinte pra completar
   // semanas, mais os dias do mês atual.
@@ -50,15 +58,58 @@ export default function AgendaPage() {
     })
   }
 
-  const iconePorTipo = { pregao: Gavel, checklist: ClipboardList, financeiro: Wallet }
-  const corPorTipo = { pregao: 'text-accent-400', checklist: 'text-warning-400', financeiro: 'text-positive-400' }
+  const iconePorTipo = { pregao: Gavel, checklist: ClipboardList, financeiro: Wallet, pessoal: AlarmClock }
+  const corPorTipo = { pregao: 'text-accent-400', checklist: 'text-warning-400', financeiro: 'text-positive-400', pessoal: 'text-negative-400' }
+  const corPontoPorTipo: Record<string, string> = {
+    pregao: 'bg-accent-400', checklist: 'bg-warning-400', financeiro: 'bg-positive-400', pessoal: 'bg-negative-400',
+  }
+
+  const abrirNovo = () => {
+    setEditando(null)
+    setModalAberto(true)
+  }
+
+  const abrirEdicao = (evento: EventoAgenda) => {
+    if (evento.tipo !== 'pessoal' || !evento.id) return
+    setEditando({ id: evento.id, values: { titulo: evento.titulo, descricao: evento.subtitulo === 'Compromisso pessoal' ? '' : evento.subtitulo, data: evento.data } })
+    setModalAberto(true)
+  }
+
+  const salvar = (values: PersonalEventFormValues) => {
+    if (editando) {
+      updateEvent.mutate({ id: editando.id, ...values }, {
+        onSuccess: () => { showToast('Compromisso atualizado.'); setModalAberto(false) },
+        onError: () => showToast('Erro ao atualizar compromisso.', 'error'),
+      })
+    } else {
+      addEvent.mutate({ ...values, data: values.data || diaSelecionado }, {
+        onSuccess: () => { showToast('Compromisso adicionado.'); setModalAberto(false) },
+        onError: () => showToast('Erro ao adicionar compromisso.', 'error'),
+      })
+    }
+  }
+
+  const excluir = () => {
+    if (!editando) return
+    const evento = personalEvents.find((e) => e.id === editando.id)
+    if (!evento) return
+    deleteEvent.mutate(evento, {
+      onSuccess: () => { showToast('Compromisso excluído.'); setModalAberto(false) },
+      onError: () => showToast('Erro ao excluir compromisso.', 'error'),
+    })
+  }
 
   return (
     <div className="pb-10">
       <PageHeader
         title="Agenda"
-        subtitle="Pregões, prazos de checklist e financeiro — tudo num calendário só"
+        subtitle="Pregões, prazos de checklist, financeiro e seus compromissos pessoais — tudo num calendário só"
         icon={CalendarDays}
+        actions={
+          <Button onClick={abrirNovo}>
+            <Plus className="w-4 h-4" /> Novo Compromisso
+          </Button>
+        }
       />
 
       <div className="px-6 mt-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -96,9 +147,7 @@ export default function AgendaPage() {
                   {eventos.length > 0 && (
                     <div className="flex gap-0.5 mt-1">
                       {Array.from(new Set(eventos.map((e) => e.tipo))).slice(0, 3).map((tipo) => (
-                        <span key={tipo} className={`w-1.5 h-1.5 rounded-full ${
-                          tipo === 'pregao' ? 'bg-accent-400' : tipo === 'checklist' ? 'bg-warning-400' : 'bg-positive-400'
-                        }`} />
+                        <span key={tipo} className={`w-1.5 h-1.5 rounded-full ${corPontoPorTipo[tipo]}`} />
                       ))}
                     </div>
                   )}
@@ -121,10 +170,15 @@ export default function AgendaPage() {
                 return (
                   <div key={idx} className="flex items-start gap-2.5 bg-base-850/60 border border-base-800 rounded-lg p-2.5">
                     <Icone className={`w-4 h-4 shrink-0 mt-0.5 ${corPorTipo[e.tipo]}`} />
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="text-[12px] font-medium text-base-200 truncate">{e.titulo}</p>
                       <p className="text-[11px] text-base-500 truncate">{e.subtitulo}</p>
                     </div>
+                    {e.tipo === 'pessoal' && (
+                      <button onClick={() => abrirEdicao(e)} className="p-1 text-base-500 hover:text-base-100 hover:bg-base-800 rounded shrink-0" title="Editar compromisso">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 )
               })}
@@ -132,6 +186,18 @@ export default function AgendaPage() {
           )}
         </Card>
       </div>
+
+      <PersonalEventFormModal
+        open={modalAberto}
+        onClose={() => setModalAberto(false)}
+        onSave={salvar}
+        onDelete={editando ? excluir : undefined}
+        initial={editando ? editando.values : null}
+        defaultData={diaSelecionado}
+        isSaving={addEvent.isPending || updateEvent.isPending}
+        isDeleting={deleteEvent.isPending}
+        error={addEvent.error || updateEvent.error || deleteEvent.error}
+      />
     </div>
   )
 }

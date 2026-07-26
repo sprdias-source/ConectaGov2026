@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Sun, Gavel, ClipboardList, Wallet, AlertTriangle, User } from 'lucide-react'
+import { Sun, Gavel, ClipboardList, Wallet, AlertTriangle, User, AlarmClock } from 'lucide-react'
 import { PageHeader, Card } from '../components/ui/Primitives'
 import { SkeletonList } from '../components/ui/Skeleton'
 import AlertaSessaoRisco from '../components/dashboard/AlertaSessaoRisco'
@@ -9,8 +9,8 @@ import { todayLocalISO } from '../lib/dateUtils'
 
 const JANELA_PENDENCIAS_SEMANA_DIAS = 7
 
-const ICONE_POR_TIPO = { pregao: Gavel, checklist: ClipboardList, financeiro: Wallet }
-const COR_POR_TIPO = { pregao: 'text-accent-400', checklist: 'text-warning-400', financeiro: 'text-positive-400' }
+const ICONE_POR_TIPO = { pregao: Gavel, checklist: ClipboardList, financeiro: Wallet, pessoal: AlarmClock }
+const COR_POR_TIPO = { pregao: 'text-accent-400', checklist: 'text-warning-400', financeiro: 'text-positive-400', pessoal: 'text-negative-400' }
 
 // Tudo que precisa de atenção HOJE, numa tela só — junta o que já existe
 // espalhado em três telas (Agenda, Pendências e o alerta do Dashboard) sem
