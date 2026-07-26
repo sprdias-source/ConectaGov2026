@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, FileText, Upload, Plus, Trash2, CheckCircle2, Circle, Download,
   AlertCircle, Loader2, Sparkles, Award, Check, History, ChevronDown, ChevronUp,
-  ClipboardList, Gavel, Wallet, Send, CircleDot, FileSignature, Info, Activity, RefreshCw,
+  ClipboardList, Gavel, Wallet, Send, CircleDot, FileSignature, Info, Activity, RefreshCw, Wand2,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
@@ -11,10 +11,12 @@ import { fromBiddingItemRow } from '../lib/mappers'
 import { useAuth } from '../hooks/useAuth'
 import { Button, Input, Select } from '../components/ui/FormControls'
 import { PageHeader, Card } from '../components/ui/Primitives'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useAttachedFiles } from '../hooks/useAttachedFiles'
 import { useBiddingChecklist, calcularHabilitacao, statusItemChecklist } from '../hooks/useBiddingChecklist'
 import { useBiddingAnalysis } from '../hooks/useBiddingAnalysis'
+import { useBiddingItems } from '../hooks/useBiddingItems'
 import { useBiddingItemVersions } from '../hooks/useBiddingItemVersions'
 import { useClientDocuments } from '../hooks/useClientDocuments'
 import { useAtestados, calcularSimilaridade } from '../hooks/useAtestados'
@@ -22,7 +24,7 @@ import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import { CERT_CONFIG } from '../types/domain'
-import type { Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingStatus } from '../types/domain'
+import type { Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingModalidade, BiddingStatus } from '../types/domain'
 
 const ETAPAS_TRILHA: BiddingEtapa[] = [
   'Análise de Edital',
@@ -500,6 +502,7 @@ function AbaSessaoAoVivo({ bidding }: { bidding: Bidding }) {
 interface AnaliseEdital {
   municipio?: string
   orgao?: string
+  objeto?: string
   modalidade?: string
   srp?: boolean
   data?: string
@@ -536,6 +539,66 @@ const CAMPOS_HABILITACAO: { chave: keyof NonNullable<AnaliseEdital['habilitacao'
   { chave: 'proposta', label: 'Proposta' },
 ]
 
+const MODALIDADES_VALIDAS: BiddingModalidade[] = [
+  'Pregão Eletrônico', 'Pregão Presencial', 'Concorrência Pública', 'Tomada de Preços',
+  'Convite', 'Leilão', 'Diálogo Competitivo', 'Dispensa de Licitação', 'Inexigibilidade',
+]
+
+const normalizarTexto = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+
+// A IA devolve a modalidade como texto livre — só aceitamos se bater com uma
+// das opções válidas do formulário, pra nunca gravar um valor fora do enum.
+function encontrarModalidade(texto?: string): BiddingModalidade | null {
+  if (!texto) return null
+  const alvo = normalizarTexto(texto)
+  return MODALIDADES_VALIDAS.find((m) => alvo.includes(normalizarTexto(m))) ?? null
+}
+
+// Idem para a data: a IA pode devolver "15/03/2026" ou já em ISO — qualquer
+// outro formato (ex: "15 de março") é ignorado em vez de gravar algo errado.
+function converterDataParaISO(texto?: string): string | null {
+  if (!texto) return null
+  const iso = texto.match(/(\d{4})-(\d{2})-(\d{2})/)
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`
+  const br = texto.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  if (br) return `${br[3]}-${br[2].padStart(2, '0')}-${br[1].padStart(2, '0')}`
+  return null
+}
+
+// Monta, a partir da análise de IA, só os campos que ela conseguiu
+// identificar (nunca sobrescreve com vazio) e a lista de itens — se a
+// análise não trouxe itens, mantém os já cadastrados em vez de apagá-los.
+function construirPreenchimento(analise: AnaliseEdital, itensAtuais: BiddingItem[]) {
+  const campos: Partial<Bidding> = {}
+  const resumo: string[] = []
+
+  if (analise.municipio) { campos.municipio = analise.municipio; resumo.push('Município') }
+  if (analise.orgao) { campos.orgao = analise.orgao; resumo.push('Órgão') }
+  if (analise.objeto) { campos.objeto = analise.objeto; resumo.push('Objeto') }
+  const modalidade = encontrarModalidade(analise.modalidade)
+  if (modalidade) { campos.modalidade = modalidade; resumo.push('Modalidade') }
+  const dataISO = converterDataParaISO(analise.data)
+  if (dataISO) { campos.dataAbertura = dataISO; resumo.push('Data do Pregão') }
+  if (analise.validadeProposta) { campos.diasValidadeProposta = analise.validadeProposta; resumo.push('Validade da Proposta') }
+
+  const temItensNaAnalise = !!analise.itens?.length
+  const itens: Partial<BiddingItem>[] = temItensNaAnalise
+    ? analise.itens!.map((it, idx) => ({
+        numeroItem: it.numero != null ? String(it.numero) : String(idx + 1),
+        descricao: it.descricao,
+        unidade: it.unidade ?? null,
+        quantidade: it.quantidade ?? 1,
+        marca: null,
+        referencia: null,
+        valorUnitarioLicitado: it.valorReferencia ?? 0,
+        valorUnitarioOfertado: null,
+      }))
+    : itensAtuais
+  if (temItensNaAnalise) resumo.push(`Itens/Lotes (${analise.itens!.length})`)
+
+  return { campos, itens, substituiItens: temItensNaAnalise, resumo }
+}
+
 function CampoResumo({ label, valor }: { label: string; valor?: string | null }) {
   if (!valor) return null
   return (
@@ -556,9 +619,13 @@ function SecaoTexto({ label, texto }: { label: string; texto?: string | null }) 
   )
 }
 
-function AnaliseEditalIA({ bidding, temEdital }: { bidding: Bidding; temEdital: boolean }) {
+function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding; temEdital: boolean; podeEditar: boolean }) {
   const { analysis, analisar, travado } = useBiddingAnalysis(bidding.id)
   const { addItensEmLote } = useBiddingChecklist(bidding.id)
+  const { updateBidding } = useBiddings()
+  const { items: itensAtuais } = useBiddingItems(bidding.id)
+  const [confirmandoPreenchimento, setConfirmandoPreenchimento] = useState(false)
+  const [preenchimentoAplicado, setPreenchimentoAplicado] = useState(false)
 
   const status = analysis?.status
   const processando = (status === 'processando' && !travado) || analisar.isPending
@@ -567,11 +634,20 @@ function AnaliseEditalIA({ bidding, temEdital }: { bidding: Bidding; temEdital: 
   const localOuFormaEntrega = [analise?.formaEntrega, analise?.localEntrega].filter(Boolean).join(' — ')
   const marcasTexto = Array.isArray(analise?.marcasPreAprovadas) ? analise.marcasPreAprovadas.join(', ') : analise?.marcasPreAprovadas
   const checklistDocumentacao = analise?.checklistDocumentacao ?? []
+  const preenchimento = analise ? construirPreenchimento(analise, itensAtuais) : null
+
+  const confirmarPreenchimento = () => {
+    if (!preenchimento) return
+    updateBidding.mutate({ bidding: { ...bidding, ...preenchimento.campos }, items: preenchimento.itens }, {
+      onSuccess: () => { setPreenchimentoAplicado(true); setConfirmandoPreenchimento(false) },
+      onError: () => setConfirmandoPreenchimento(false),
+    })
+  }
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3 flex-wrap">
-        <Button onClick={() => analisar.mutate()} disabled={!temEdital || processando}>
+        <Button onClick={() => { setPreenchimentoAplicado(false); analisar.mutate() }} disabled={!temEdital || processando}>
           {processando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           {processando ? 'Analisando...' : status === 'concluido' ? 'Analisar Novamente' : 'Analisar com IA'}
         </Button>
@@ -605,8 +681,31 @@ function AnaliseEditalIA({ bidding, temEdital }: { bidding: Bidding; temEdital: 
 
       {status === 'concluido' && analise && (
         <div className="flex flex-col gap-4">
+          {podeEditar && preenchimento && preenchimento.resumo.length > 0 && (
+            <div className="flex items-center gap-3 flex-wrap bg-accent-500/10 border border-accent-500/25 rounded-lg p-3">
+              <Button type="button" variant="secondary" onClick={() => setConfirmandoPreenchimento(true)} disabled={updateBidding.isPending}>
+                <Wand2 className="w-4 h-4" /> Preencher Licitação com estes Dados
+              </Button>
+              <span className="text-[11px] text-base-400 flex-1 min-w-[220px]">
+                Atualiza {preenchimento.resumo.join(', ')} desta licitação com o que foi identificado no edital.
+              </span>
+              {preenchimentoAplicado && (
+                <span className="text-[11px] text-positive-400 font-semibold flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Licitação atualizada
+                </span>
+              )}
+            </div>
+          )}
+
+          {updateBidding.isError && (
+            <div className="bg-negative-500/10 border border-negative-500/25 rounded-lg p-3 text-[12px] text-negative-300">
+              {updateBidding.error instanceof Error ? updateBidding.error.message : 'Não foi possível atualizar a licitação com os dados da análise.'}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <CampoResumo label="Município / Órgão" valor={[analise.municipio, analise.orgao].filter(Boolean).join(' — ')} />
+            <CampoResumo label="Objeto" valor={analise.objeto} />
             <CampoResumo label="Modalidade / SRP" valor={[analise.modalidade, analise.srp ? 'SRP' : null].filter(Boolean).join(' — ')} />
             <CampoResumo label="Data / Horário / Portal" valor={[analise.data, analise.horario, analise.portal].filter(Boolean).join(' — ')} />
             <CampoResumo label="Validade da Proposta" valor={analise.validadeProposta} />
@@ -681,6 +780,16 @@ function AnaliseEditalIA({ bidding, temEdital }: { bidding: Bidding; temEdital: 
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmandoPreenchimento}
+        title="Preencher Licitação com os Dados da Análise"
+        description={`Isso vai atualizar ${preenchimento?.resumo.join(', ') ?? 'os campos identificados'} desta licitação com o que a IA extraiu do edital${preenchimento?.substituiItens ? ', substituindo também os Itens/Lotes já cadastrados (a versão atual fica salva no histórico de versões dos itens)' : ''}. Deseja continuar?`}
+        confirmLabel="Preencher"
+        onCancel={() => setConfirmandoPreenchimento(false)}
+        onConfirm={confirmarPreenchimento}
+        isLoading={updateBidding.isPending}
+      />
     </div>
   )
 }
@@ -919,7 +1028,7 @@ export default function LicitacaoPage() {
               )}
             </div>
 
-            <AnaliseEditalIA bidding={bidding} temEdital={!!edital} />
+            <AnaliseEditalIA bidding={bidding} temEdital={!!edital} podeEditar={podeEditar} />
 
             {atestados.length > 0 && (
               <div>
