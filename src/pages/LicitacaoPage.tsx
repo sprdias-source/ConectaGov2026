@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, FileText, Upload, Plus, Trash2, CheckCircle2, Circle, Download,
+  ArrowLeft, FileText, Upload, Plus, Trash2, CheckCircle2, Circle, Download, Eye,
   AlertCircle, Loader2, Sparkles, Award, Check, History, ChevronDown, ChevronUp,
   ClipboardList, Gavel, Wallet, Send, CircleDot, FileSignature, Info, Activity, RefreshCw, Wand2,
 } from 'lucide-react'
@@ -13,6 +13,7 @@ import { Button, Input, Select } from '../components/ui/FormControls'
 import { PageHeader, Card } from '../components/ui/Primitives'
 import { SkeletonTableRows, SkeletonList } from '../components/ui/Skeleton'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
+import PdfViewerModal from '../components/ui/PdfViewerModal'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useAttachedFiles } from '../hooks/useAttachedFiles'
 import { useBiddingChecklist, calcularHabilitacao, statusItemChecklist } from '../hooks/useBiddingChecklist'
@@ -822,6 +823,7 @@ export default function LicitacaoPage() {
   const [showNovoItem, setShowNovoItem] = useState(false)
   const [novoItem, setNovoItem] = useState({ descricao: '', categoria: CATEGORIAS_CHECKLIST[0], obrigatorio: true, prazo: '', responsavelNome: '' })
   const [abrindo, setAbrindo] = useState<string | null>(null)
+  const [visualizando, setVisualizando] = useState<{ nome: string; url: string | null } | null>(null)
 
   if (!bidding) {
     return (
@@ -855,6 +857,17 @@ export default function LicitacaoPage() {
       showToast('Não foi possível abrir o arquivo.', 'error')
     } finally {
       setAbrindo(null)
+    }
+  }
+
+  const handleVisualizarAnexo = async (anexo: { id: string; name: string; storagePath: string }) => {
+    setVisualizando({ nome: anexo.name, url: null })
+    try {
+      const url = await getAnexoUrl(anexo.storagePath)
+      setVisualizando({ nome: anexo.name, url })
+    } catch {
+      showToast('Não foi possível carregar o arquivo pra visualização.', 'error')
+      setVisualizando(null)
     }
   }
 
@@ -989,7 +1002,10 @@ export default function LicitacaoPage() {
                 <div className="flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-xl px-4 py-3">
                   <FileText className="w-5 h-5 text-accent-400 shrink-0" />
                   <span className="flex-1 text-[13px] text-base-200 truncate">{edital.name}</span>
-                  <button onClick={() => handleAbrirAnexo(edital)} disabled={abrindo === edital.id} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                  <button onClick={() => handleVisualizarAnexo(edital)} title="Visualizar" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                    <Eye className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => handleAbrirAnexo(edital)} disabled={abrindo === edital.id} title="Abrir em nova aba" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
                     <Download className="w-3.5 h-3.5" />
                   </button>
                   {podeEditar && (
@@ -1015,7 +1031,10 @@ export default function LicitacaoPage() {
                 <div className="flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-xl px-4 py-3">
                   <FileText className="w-5 h-5 text-accent-400 shrink-0" />
                   <span className="flex-1 text-[13px] text-base-200 truncate">{termoReferencia.name}</span>
-                  <button onClick={() => handleAbrirAnexo(termoReferencia)} disabled={abrindo === termoReferencia.id} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                  <button onClick={() => handleVisualizarAnexo(termoReferencia)} title="Visualizar" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                    <Eye className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => handleAbrirAnexo(termoReferencia)} disabled={abrindo === termoReferencia.id} title="Abrir em nova aba" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
                     <Download className="w-3.5 h-3.5" />
                   </button>
                   {podeEditar && (
@@ -1181,7 +1200,10 @@ export default function LicitacaoPage() {
                 <div className="flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-xl px-4 py-3">
                   <FileSignature className="w-5 h-5 text-accent-400 shrink-0" />
                   <span className="flex-1 text-[13px] text-base-200 truncate">{contrato.name}</span>
-                  <button onClick={() => handleAbrirAnexo(contrato)} disabled={abrindo === contrato.id} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                  <button onClick={() => handleVisualizarAnexo(contrato)} title="Visualizar" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                    <Eye className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => handleAbrirAnexo(contrato)} disabled={abrindo === contrato.id} title="Abrir em nova aba" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
                     <Download className="w-3.5 h-3.5" />
                   </button>
                   {podeEditar && (
@@ -1213,6 +1235,13 @@ export default function LicitacaoPage() {
 
         {aba === 'sessao' && <AbaSessaoAoVivo bidding={bidding} />}
       </div>
+
+      <PdfViewerModal
+        open={!!visualizando}
+        onClose={() => setVisualizando(null)}
+        nome={visualizando?.nome ?? ''}
+        url={visualizando?.url ?? null}
+      />
     </div>
   )
 }

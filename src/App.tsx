@@ -3,6 +3,7 @@ import { AlertTriangle, X, WifiOff, Loader2 } from 'lucide-react'
 import { lazy, Suspense, useState } from 'react'
 import RequireAuth from './components/layout/RequireAuth'
 import AppShell from './components/layout/AppShell'
+import ScrollToTop from './components/layout/ScrollToTop'
 import { useRecurringEngine } from './hooks/useRecurringEngine'
 import { useOnlineStatus } from './hooks/useOnlineStatus'
 
@@ -51,6 +52,7 @@ export default function App() {
   const isOnline = useOnlineStatus()
   return (
     <RequireAuth>
+      <ScrollToTop />
       <AppShell>
         {!isOnline && (
           <div className="bg-warning-500/15 border-b border-warning-500/30 px-4 py-2.5 flex items-center gap-2">
