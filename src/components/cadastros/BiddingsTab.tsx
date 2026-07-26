@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Pencil, Trash2, Gavel, Power, Eye, EyeOff, Lock, FileText, FileCheck2, FileUp, Loader2, FolderCheck } from 'lucide-react'
 import { Button } from '../ui/FormControls'
 import { EmptyState, StatusBadge } from '../ui/Primitives'
+import ActionsMenu, { type ActionsMenuItem } from '../ui/ActionsMenu'
 import { formatBRL } from '../../hooks/useAccountBalances'
 import { supabase } from '../../lib/supabase'
 import BiddingFormModal from './BiddingFormModal'
@@ -206,6 +207,104 @@ export default function BiddingsTab() {
     }
   }
 
+  // Junta as ações menos usadas (gerar documentos, modelo próprio, inativar,
+  // excluir) num menu "..." só — inativar Editar/Ver fora dele, que são as
+  // ações do dia a dia. Sem isso a linha tinha até 8 ícones lado a lado.
+  const montarAcoes = (b: Bidding): ActionsMenuItem[] => {
+    const ganhou = b.status === 'Ganhou'
+    const temModeloProprio = !!b.modeloCustomizadoPath
+    const enviandoEsteModelo = enviandoModeloId === b.id
+    const itens: ActionsMenuItem[] = [
+      {
+        key: 'ver',
+        label: 'Ver Documentação e Checklist',
+        icon: <FolderCheck className="w-4 h-4" />,
+        onClick: () => navigate(`/licitacoes/${b.id}`),
+      },
+      {
+        key: 'declaracoes',
+        label: 'Gerar Declarações Padrão',
+        icon: gerandoPropostaKey === `${b.id}:declaracoes` ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileCheck2 className="w-4 h-4" />,
+        onClick: () => handleGerarDeclaracoes(b),
+        disabled: gerandoPropostaKey === `${b.id}:declaracoes`,
+      },
+      {
+        key: 'proposta',
+        label: 'Gerar Proposta de Preços',
+        icon: gerandoPropostaKey === `${b.id}:normal` ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />,
+        onClick: () => handleGerarProposta(b, 'normal'),
+        disabled: gerandoPropostaKey === `${b.id}:normal`,
+      },
+    ]
+    if (ganhou) {
+      itens.push({
+        key: 'proposta-readequada',
+        label: 'Gerar Proposta Readequada',
+        icon: gerandoPropostaKey === `${b.id}:readequada` ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileCheck2 className="w-4 h-4" />,
+        onClick: () => handleGerarProposta(b, 'readequada'),
+        disabled: gerandoPropostaKey === `${b.id}:readequada`,
+      })
+    }
+    if (podeEditar) {
+      itens.push(
+        temModeloProprio
+          ? {
+              key: 'modelo',
+              label: 'Remover Modelo Próprio (voltar ao padrão)',
+              icon: enviandoEsteModelo ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileUp className="w-4 h-4" />,
+              onClick: () => handleRemoverModelo(b),
+              disabled: enviandoEsteModelo,
+            }
+          : {
+              key: 'modelo',
+              label: 'Enviar Modelo Próprio (.docx)',
+              icon: enviandoEsteModelo ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileUp className="w-4 h-4" />,
+              render: (fechar) => (
+                <label className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] font-medium text-left text-base-200 hover:bg-base-800 transition cursor-pointer">
+                  {enviandoEsteModelo ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileUp className="w-4 h-4" />}
+                  Enviar Modelo Próprio (.docx)
+                  <input
+                    type="file"
+                    accept=".docx"
+                    className="hidden"
+                    disabled={enviandoEsteModelo}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) handleUploadModelo(b, file)
+                      e.target.value = ''
+                      fechar()
+                    }}
+                  />
+                </label>
+              ),
+            }
+      )
+      itens.push({
+        key: 'toggle-ativa',
+        label: b.isActive ? 'Inativar Licitação' : 'Reativar Licitação',
+        icon: <Power className="w-4 h-4" />,
+        onClick: () => toggleBiddingActive.mutate({ bidding: b, isActive: !b.isActive }, { onSuccess: (updated) => showToast(updated.isActive ? 'Licitação reativada.' : 'Licitação inativada.') }),
+      })
+      itens.push({
+        key: 'excluir',
+        label: 'Excluir Licitação',
+        icon: <Trash2 className="w-4 h-4" />,
+        onClick: () => setDeleting(b),
+        danger: true,
+      })
+    }
+    return itens
+  }
+
+  const valoresNode = (b: Bidding): ReactNode => (
+    <div className="flex flex-col gap-0.5">
+      <span className="font-mono font-semibold text-base-200 text-[13px]">{formatBRL(b.valorLicitado)}</span>
+      <span className="text-[10px] text-base-500">
+        Ofertado: {b.valorOfertadoReal ? <span className="font-mono text-positive-400">{formatBRL(b.valorOfertadoReal)}</span> : '—'}
+      </span>
+    </div>
+  )
+
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -259,145 +358,119 @@ export default function BiddingsTab() {
         ) : visibleBiddings.length === 0 ? (
           <EmptyState icon={Gavel} title="Nenhuma licitação cadastrada" description="Registre sua primeira licitação para começar a acompanhar o funil." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-base-800 text-left">
-                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Objeto / Órgão</th>
-                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Cliente</th>
-                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Modalidade</th>
-                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Data do Pregão</th>
-                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Valor Licitado</th>
-                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 bg-base-850/40">Valor Ofertado</th>
-                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Status</th>
-                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginated.map((b) => {
-                  const ganhou = b.status === 'Ganhou'
-                  const temModeloProprio = !!b.modeloCustomizadoPath
-                  const enviandoEsteModelo = enviandoModeloId === b.id
-                  return (
-                  <tr key={b.id} className={`border-b border-base-800/60 hover:bg-base-850/40 transition ${!b.isActive ? 'opacity-50' : ''}`}>
-                    <td className="px-4 py-3 max-w-[260px]">
-                      <div className="font-semibold text-base-100 truncate flex items-center gap-2">
-                        {b.objeto}
+          <>
+            {/* Desktop: tabela enxuta — 6 colunas em vez de 8, e as ações
+                menos usadas (gerar documentos, modelo, inativar, excluir)
+                foram pro menu "...", deixando só Editar visível na linha. */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-base-800 text-left">
+                    <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Objeto / Órgão</th>
+                    <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Cliente</th>
+                    <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Modalidade / Data</th>
+                    <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Valores</th>
+                    <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Status</th>
+                    <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginated.map((b) => (
+                    <tr key={b.id} className={`border-b border-base-800/60 hover:bg-base-850/40 transition ${!b.isActive ? 'opacity-50' : ''}`}>
+                      <td className="px-4 py-3 max-w-[260px]">
+                        <button
+                          onClick={() => navigate(`/licitacoes/${b.id}`)}
+                          title="Ver documentação e checklist desta licitação"
+                          className="font-semibold text-base-100 hover:text-accent-300 truncate flex items-center gap-2 text-left transition"
+                        >
+                          <span className="truncate">{b.objeto}</span>
+                          {!b.isActive && <span className="px-1.5 py-0.5 rounded bg-base-700 text-base-400 text-[10px] font-bold shrink-0">Inativa</span>}
+                        </button>
+                        <div className="text-base-500 text-[12px] truncate">{b.orgao}</div>
+                      </td>
+                      <td className="px-4 py-3 text-base-300 text-[13px]">
+                        {clientName(b.clientId)}
+                        <span className={`block text-[10px] font-bold mt-0.5 ${isMensalista(b.clientId) ? 'text-accent-400' : 'text-warning-400'}`}>
+                          {isMensalista(b.clientId) ? 'Mensalista' : 'Individual'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-base-400 text-[12px] whitespace-nowrap">
+                        {b.modalidade}
+                        <span className="block text-base-300 mt-0.5">{new Date(b.dataAbertura + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+                      </td>
+                      <td className="px-4 py-3">{valoresNode(b)}</td>
+                      <td className="px-4 py-3">
+                        <StatusBadge status={b.status} />
+                        {b.status === 'Em Andamento' && b.etapa && (
+                          <p className="text-[10px] text-base-500 mt-1">Etapa: {b.etapa}</p>
+                        )}
+                        <SeloHabilitacao bidding={b} className="block mt-1" />
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {podeEditar && (
+                            <button onClick={() => { setEditing(b); setModalOpen(true) }} title="Editar dados da licitação" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
+                          <ActionsMenu items={montarAcoes(b)} />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile: card por licitação, mesma informação e ações. */}
+            <div className="flex flex-col gap-2.5 p-3 md:hidden">
+              {paginated.map((b) => (
+                <div key={b.id} className={`bg-base-850/40 border border-base-800 rounded-xl p-3.5 flex flex-col gap-2.5 ${!b.isActive ? 'opacity-50' : ''}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <button
+                      onClick={() => navigate(`/licitacoes/${b.id}`)}
+                      className="min-w-0 text-left"
+                      title="Ver documentação e checklist desta licitação"
+                    >
+                      <div className="font-semibold text-base-100 flex items-center gap-2 flex-wrap">
+                        <span className="truncate">{b.objeto}</span>
                         {!b.isActive && <span className="px-1.5 py-0.5 rounded bg-base-700 text-base-400 text-[10px] font-bold shrink-0">Inativa</span>}
                       </div>
                       <div className="text-base-500 text-[12px] truncate">{b.orgao}</div>
-                    </td>
-                    <td className="px-4 py-3 text-base-300 text-[13px]">
-                      {clientName(b.clientId)}
+                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {podeEditar && (
+                        <button onClick={() => { setEditing(b); setModalOpen(true) }} title="Editar dados da licitação" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
+                      <ActionsMenu items={montarAcoes(b)} />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-base-800 text-[12px]">
+                    <div>
+                      <span className="text-base-300">{clientName(b.clientId)}</span>
                       <span className={`block text-[10px] font-bold mt-0.5 ${isMensalista(b.clientId) ? 'text-accent-400' : 'text-warning-400'}`}>
                         {isMensalista(b.clientId) ? 'Mensalista' : 'Individual'}
                       </span>
-                    </td>
-                    <td className="px-4 py-3 text-base-400 text-[12px]">{b.modalidade}</td>
-                    <td className="px-4 py-3 text-base-300 text-[12px] whitespace-nowrap">
-                      {new Date(b.dataAbertura + 'T12:00:00').toLocaleDateString('pt-BR')}
-                    </td>
-                    <td className="px-4 py-3 font-mono font-semibold text-base-200 text-[13px]">{formatBRL(b.valorLicitado)}</td>
-                    <td className="px-4 py-3 font-mono font-semibold text-[13px] bg-base-850/25">
-                      {b.valorOfertadoReal ? <span className="text-positive-400">{formatBRL(b.valorOfertadoReal)}</span> : <span className="text-base-500">—</span>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={b.status} />
-                      {b.status === 'Em Andamento' && b.etapa && (
-                        <p className="text-[10px] text-base-500 mt-1">Etapa: {b.etapa}</p>
-                      )}
-                      <SeloHabilitacao bidding={b} className="block mt-1" />
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => navigate(`/licitacoes/${b.id}`)}
-                          title="Documentação da Licitação (checklist e edital)"
-                          className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition"
-                        >
-                          <FolderCheck className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleGerarDeclaracoes(b)}
-                          disabled={gerandoPropostaKey === `${b.id}:declaracoes`}
-                          title="Gerar Declarações Padrão (.docx)"
-                          className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition disabled:opacity-50 disabled:cursor-wait"
-                        >
-                          {gerandoPropostaKey === `${b.id}:declaracoes` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileCheck2 className="w-3.5 h-3.5 opacity-70" />}
-                        </button>
-                        <button
-                          onClick={() => handleGerarProposta(b, 'normal')}
-                          disabled={gerandoPropostaKey === `${b.id}:normal`}
-                          title="Gerar Proposta de Preços (.docx)"
-                          className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition disabled:opacity-50 disabled:cursor-wait"
-                        >
-                          {gerandoPropostaKey === `${b.id}:normal` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
-                        </button>
-                        {ganhou && (
-                          <button
-                            onClick={() => handleGerarProposta(b, 'readequada')}
-                            disabled={gerandoPropostaKey === `${b.id}:readequada`}
-                            title="Gerar Proposta Readequada (.docx)"
-                            className="p-1.5 text-base-400 hover:text-positive-400 hover:bg-base-800 rounded transition disabled:opacity-50 disabled:cursor-wait"
-                          >
-                            {gerandoPropostaKey === `${b.id}:readequada` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileCheck2 className="w-3.5 h-3.5" />}
-                          </button>
-                        )}
-                        {podeEditar && (
-                          temModeloProprio ? (
-                            <button
-                              onClick={() => handleRemoverModelo(b)}
-                              disabled={enviandoEsteModelo}
-                              title="Modelo próprio enviado — clique para remover e voltar ao padrão"
-                              className="p-1.5 text-accent-300 hover:text-negative-400 hover:bg-base-800 rounded transition disabled:opacity-50 disabled:cursor-wait"
-                            >
-                              {enviandoEsteModelo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileUp className="w-3.5 h-3.5" />}
-                            </button>
-                          ) : (
-                            <label
-                              title="Enviar modelo próprio (.docx) desta prefeitura"
-                              className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition cursor-pointer inline-flex disabled:opacity-50"
-                            >
-                              {enviandoEsteModelo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileUp className="w-3.5 h-3.5" />}
-                              <input
-                                type="file"
-                                accept=".docx"
-                                className="hidden"
-                                disabled={enviandoEsteModelo}
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0]
-                                  if (file) handleUploadModelo(b, file)
-                                  e.target.value = ''
-                                }}
-                              />
-                            </label>
-                          )
-                        )}
-                        {podeEditar && (
-                          <>
-                            <button
-                              onClick={() => toggleBiddingActive.mutate({ bidding: b, isActive: !b.isActive }, { onSuccess: (updated) => showToast(updated.isActive ? 'Licitação reativada.' : 'Licitação inativada.') })}
-                              title={b.isActive ? 'Inativar licitação (preserva histórico)' : 'Reativar licitação'}
-                              className={`p-1.5 rounded transition hover:bg-base-800 ${b.isActive ? 'text-base-400 hover:text-warning-400' : 'text-positive-400 hover:text-positive-300'}`}
-                            >
-                              <Power className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => { setEditing(b); setModalOpen(true) }} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => setDeleting(b)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                    <StatusBadge status={b.status} />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 text-[12px]">
+                    <span className="text-base-400">{b.modalidade} · {new Date(b.dataAbertura + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+                    {valoresNode(b)}
+                  </div>
+
+                  {b.status === 'Em Andamento' && b.etapa && (
+                    <p className="text-[11px] text-base-500">Etapa: {b.etapa}</p>
+                  )}
+                  <SeloHabilitacao bidding={b} />
+                </div>
+              ))}
+            </div>
+          </>
         )}
         <PaginationControls page={page} totalPages={totalPages} totalItems={totalItems} pageSize={pageSize} onPageChange={setPage} />
       </div>
