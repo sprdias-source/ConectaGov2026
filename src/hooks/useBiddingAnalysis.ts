@@ -86,10 +86,28 @@ export function useBiddingAnalysis(biddingId?: string) {
     },
   })
 
+  // Apaga o resultado da análise guardado pra esta licitação — usado quando
+  // o edital que gerou aquela análise é removido (ou trocado por outro), pra
+  // não deixar dado de um documento que não existe mais disponível pra
+  // "Preencher Licitação com estes Dados" nem exibido como se ainda
+  // valesse. Sem isso, a análise antiga ficava presa até alguém clicar
+  // "Analisar Novamente" por conta própria.
+  const limparAnalise = useMutation({
+    mutationFn: async () => {
+      if (!biddingId) throw new Error('Licitação não informada')
+      const { error } = await supabase.from('bidding_analysis').delete().eq('bidding_id', biddingId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey })
+    },
+  })
+
   return {
     analysis,
     isLoading: query.isLoading,
     travado,
     analisar,
+    limparAnalise,
   }
 }
