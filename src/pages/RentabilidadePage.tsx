@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { DollarSign, TrendingUp, Award } from 'lucide-react'
 import { PageHeader, Card, EmptyState } from '../components/ui/Primitives'
+import { SkeletonTableRows } from '../components/ui/Skeleton'
 import { useTransactions } from '../hooks/useTransactions'
 import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
@@ -95,7 +96,7 @@ export default function RentabilidadePage() {
       />
 
       {isLoading ? (
-        <div className="p-10 text-center text-base-500 text-sm">Carregando...</div>
+        <SkeletonTableRows linhas={6} colunas={7} />
       ) : linhas.length === 0 ? (
         <div className="px-6 mt-4">
           <Card>

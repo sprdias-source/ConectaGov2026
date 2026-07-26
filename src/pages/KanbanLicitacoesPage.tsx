@@ -1,6 +1,10 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { LayoutGrid, ChevronLeft, ChevronRight, ClipboardList, Pencil } from 'lucide-react'
+import {
+  DndContext, DragOverlay, PointerSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors,
+  type DragEndEvent, type DragStartEvent,
+} from '@dnd-kit/core'
+import { LayoutGrid, ChevronLeft, ChevronRight, ClipboardList, Pencil, GripVertical } from 'lucide-react'
 import { PageHeader } from '../components/ui/Primitives'
 import SeloHabilitacao from '../components/ui/SeloHabilitacao'
 import BiddingFormModal from '../components/cadastros/BiddingFormModal'
@@ -31,6 +35,101 @@ const CORES_COLUNA: Record<string, string> = {
 
 type Visualizacao = 'quadro' | 'lista'
 
+// Hoisted fora do componente principal (não recriado a cada render) — importa
+// porque agora usa useDraggable, um hook: se ficasse redeclarado dentro do
+// componente pai a cada render, o dnd-kit perderia a referência do nó
+// arrastável e o drag ficaria instável.
+function CardLicitacao({
+  b, clienteNome, podeEditar, podeRetroceder, podeAvancar, desabilitado,
+  onMoverAnterior, onMoverProxima, onEditar,
+}: {
+  b: Bidding
+  clienteNome: string
+  podeEditar: boolean
+  podeRetroceder: boolean
+  podeAvancar: boolean
+  desabilitado: boolean
+  onMoverAnterior: () => void
+  onMoverProxima: () => void
+  onEditar: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: b.id, disabled: !podeEditar || desabilitado })
+  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 10 } : undefined
+
+  return (
+    <Link
+      ref={setNodeRef}
+      style={style}
+      to={`/licitacoes/${b.id}`}
+      className={`relative bg-base-900 border border-base-800 rounded-lg p-3 flex flex-col gap-1.5 transition ${isDragging ? 'opacity-30' : ''}`}
+    >
+      {podeEditar && (
+        <span
+          {...attributes}
+          {...listeners}
+          onClick={(e) => e.preventDefault()}
+          title="Arraste pra mudar de etapa"
+          className="absolute top-2 right-2 p-0.5 text-base-600 hover:text-base-400 cursor-grab active:cursor-grabbing touch-none"
+        >
+          <GripVertical className="w-3.5 h-3.5" />
+        </span>
+      )}
+      <p className="text-[12px] font-semibold text-base-100 line-clamp-2 pr-4">{b.objeto}</p>
+      <p className="text-[11px] text-base-500 truncate">{clienteNome} — {b.orgao}</p>
+      <SeloHabilitacao bidding={b} />
+      <div className="flex items-center justify-between mt-1">
+        <span className="text-[11px] font-mono font-semibold text-accent-300">{formatBRL(b.valorLicitado)}</span>
+        <span className="text-[10px] text-base-500">{new Date(b.dataAbertura + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+      </div>
+      {podeEditar && (
+        <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-base-800">
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onMoverAnterior() }}
+            disabled={!podeRetroceder || desabilitado}
+            className="p-1 text-base-500 hover:text-accent-300 disabled:opacity-30 disabled:cursor-not-allowed transition"
+            title="Etapa anterior"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEditar() }}
+            className="p-1 text-base-500 hover:text-accent-300 transition"
+            title="Editar dados completos (mesmo cadastro da aba Licitações)"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onMoverProxima() }}
+            disabled={!podeAvancar || desabilitado}
+            className="p-1 text-base-500 hover:text-accent-300 disabled:opacity-30 disabled:cursor-not-allowed transition"
+            title="Próxima etapa"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+    </Link>
+  )
+}
+
+function ColunaKanban({ id, titulo, cor, itens, children }: { id: string; titulo: string; cor?: string; itens: number; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id })
+  return (
+    <div
+      ref={setNodeRef}
+      className={`w-72 shrink-0 bg-base-900/40 border rounded-xl p-3 transition ${
+        isOver ? 'border-accent-400 ring-1 ring-accent-400/40' : `border-base-800 border-t-2 ${cor ?? 'border-t-base-600'}`
+      }`}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[11px] font-bold uppercase tracking-wider text-base-400">{titulo}</p>
+        <span className="text-[10px] font-bold bg-base-800 text-base-400 rounded-full px-2 py-0.5">{itens}</span>
+      </div>
+      <div className="flex flex-col gap-2">{children}</div>
+    </div>
+  )
+}
+
 export default function KanbanLicitacoesPage() {
   const { biddings, updateEtapa, updateBidding } = useBiddings()
   const { clients } = useClients()
@@ -42,6 +141,16 @@ export default function KanbanLicitacoesPage() {
     () => (localStorage.getItem('cg_kanban_visualizacao') as Visualizacao) || 'quadro'
   )
   const [editando, setEditando] = useState<Bidding | null>(null)
+  const [arrastando, setArrastando] = useState<Bidding | null>(null)
+
+  const sensors = useSensors(
+    // distance mínima antes de virar drag — sem isso, qualquer clique no
+    // card (pra abrir a licitação) seria interpretado como arraste.
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    // delay no touch — sem isso, tentar rolar a tela num celular já dispara
+    // um arraste sem querer.
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } })
+  )
 
   const isMensalista = (id: string) => clients.find((c) => c.id === id)?.isMensalista ?? false
 
@@ -76,55 +185,50 @@ export default function KanbanLicitacoesPage() {
     return { semEtapa, porEtapa }
   }, [ativas])
 
+  const irParaEtapa = (bidding: Bidding, etapa: BiddingEtapa) => {
+    if (bidding.etapa === etapa) return
+    updateEtapa.mutate({ biddingId: bidding.id, etapa }, {
+      onError: (err) => showToast(`Erro ao mudar a etapa: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+    })
+  }
+
   const mover = (bidding: Bidding, direcao: -1 | 1) => {
     const indiceAtual = bidding.etapa ? ETAPAS.indexOf(bidding.etapa) : -1
     const novoIndice = indiceAtual + direcao
     if (novoIndice < 0 || novoIndice >= ETAPAS.length) return
-    updateEtapa.mutate({ biddingId: bidding.id, etapa: ETAPAS[novoIndice] })
+    irParaEtapa(bidding, ETAPAS[novoIndice])
   }
 
-  const CardLicitacao = ({ b, etapaAtual }: { b: Bidding; etapaAtual: BiddingEtapa | null }) => {
-    const indiceAtual = etapaAtual ? ETAPAS.indexOf(etapaAtual) : -1
+  const handleDragStart = (event: DragStartEvent) => {
+    const bidding = ativas.find((b) => b.id === event.active.id)
+    setArrastando(bidding ?? null)
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setArrastando(null)
+    const { active, over } = event
+    if (!over) return
+    const bidding = ativas.find((b) => b.id === active.id)
+    const etapaDestino = ETAPAS.find((e) => e === over.id)
+    if (!bidding || !etapaDestino) return
+    irParaEtapa(bidding, etapaDestino)
+  }
+
+  const renderCard = (b: Bidding) => {
+    const indiceAtual = b.etapa ? ETAPAS.indexOf(b.etapa) : -1
     return (
-      <Link
-        to={`/licitacoes/${b.id}`}
-        className="bg-base-900 border border-base-800 rounded-lg p-3 flex flex-col gap-1.5"
-      >
-        <p className="text-[12px] font-semibold text-base-100 line-clamp-2">{b.objeto}</p>
-        <p className="text-[11px] text-base-500 truncate">{clientName(b.clientId)} — {b.orgao}</p>
-        <SeloHabilitacao bidding={b} />
-        <div className="flex items-center justify-between mt-1">
-          <span className="text-[11px] font-mono font-semibold text-accent-300">{formatBRL(b.valorLicitado)}</span>
-          <span className="text-[10px] text-base-500">{new Date(b.dataAbertura + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
-        </div>
-        {podeEditar && (
-          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-base-800">
-            <button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); mover(b, -1) }}
-              disabled={indiceAtual <= 0 || updateEtapa.isPending}
-              className="p-1 text-base-500 hover:text-accent-300 disabled:opacity-30 disabled:cursor-not-allowed transition"
-              title="Etapa anterior"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditando(b) }}
-              className="p-1 text-base-500 hover:text-accent-300 transition"
-              title="Editar dados completos (mesmo cadastro da aba Licitações)"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); mover(b, 1) }}
-              disabled={indiceAtual === -1 ? false : indiceAtual >= ETAPAS.length - 1 || updateEtapa.isPending}
-              className="p-1 text-base-500 hover:text-accent-300 disabled:opacity-30 disabled:cursor-not-allowed transition"
-              title="Próxima etapa"
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
-      </Link>
+      <CardLicitacao
+        key={b.id}
+        b={b}
+        clienteNome={clientName(b.clientId)}
+        podeEditar={podeEditar}
+        podeRetroceder={indiceAtual > 0}
+        podeAvancar={indiceAtual === -1 ? true : indiceAtual < ETAPAS.length - 1}
+        desabilitado={updateEtapa.isPending}
+        onMoverAnterior={() => mover(b, -1)}
+        onMoverProxima={() => mover(b, 1)}
+        onEditar={() => setEditando(b)}
+      />
     )
   }
 
@@ -157,37 +261,42 @@ export default function KanbanLicitacoesPage() {
       />
 
       {visualizacao === 'quadro' ? (
-        <div className="px-6 mt-4 overflow-x-auto">
-          <div className="flex gap-3 min-w-max pb-4">
-            {colunas.semEtapa.length > 0 && (
-              <div className="w-72 shrink-0 bg-base-900/40 border border-base-800 border-t-2 border-t-base-600 rounded-xl p-3">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-base-400">Sem Etapa</p>
-                  <span className="text-[10px] font-bold bg-base-800 text-base-400 rounded-full px-2 py-0.5">{colunas.semEtapa.length}</span>
+        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setArrastando(null)}>
+          <div className="px-6 mt-4 overflow-x-auto">
+            <div className="flex gap-3 min-w-max pb-4">
+              {colunas.semEtapa.length > 0 && (
+                <div className="w-72 shrink-0 bg-base-900/40 border border-base-800 border-t-2 border-t-base-600 rounded-xl p-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-base-400">Sem Etapa</p>
+                    <span className="text-[10px] font-bold bg-base-800 text-base-400 rounded-full px-2 py-0.5">{colunas.semEtapa.length}</span>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {colunas.semEtapa.map(renderCard)}
+                  </div>
                 </div>
-                <div className="flex flex-col gap-2">
-                  {colunas.semEtapa.map((b) => <CardLicitacao key={b.id} b={b} etapaAtual={b.etapa} />)}
-                </div>
-              </div>
-            )}
+              )}
 
-            {colunas.porEtapa.map(({ etapa, itens }) => (
-              <div key={etapa} className={`w-72 shrink-0 bg-base-900/40 border border-base-800 border-t-2 ${CORES_COLUNA[etapa]} rounded-xl p-3`}>
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-base-400">{etapa}</p>
-                  <span className="text-[10px] font-bold bg-base-800 text-base-400 rounded-full px-2 py-0.5">{itens.length}</span>
-                </div>
-                <div className="flex flex-col gap-2">
+              {colunas.porEtapa.map(({ etapa, itens }) => (
+                <ColunaKanban key={etapa} id={etapa} titulo={etapa} cor={CORES_COLUNA[etapa]} itens={itens.length}>
                   {itens.length === 0 ? (
                     <p className="text-[11px] text-base-600 italic text-center py-6">Nenhuma licitação aqui</p>
                   ) : (
-                    itens.map((b) => <CardLicitacao key={b.id} b={b} etapaAtual={b.etapa} />)
+                    itens.map(renderCard)
                   )}
-                </div>
-              </div>
-            ))}
+                </ColunaKanban>
+              ))}
+            </div>
           </div>
-        </div>
+
+          <DragOverlay>
+            {arrastando ? (
+              <div className="w-72 bg-base-900 border border-accent-400 rounded-lg p-3 shadow-2xl rotate-2 opacity-95">
+                <p className="text-[12px] font-semibold text-base-100 line-clamp-2">{arrastando.objeto}</p>
+                <p className="text-[11px] text-base-500 truncate mt-0.5">{clientName(arrastando.clientId)}</p>
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
       ) : (
         <div className="px-6 mt-4">
           <div className="bg-base-900/60 border border-base-700/50 rounded-xl overflow-hidden">

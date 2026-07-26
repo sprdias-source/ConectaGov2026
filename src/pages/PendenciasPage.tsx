@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { ClipboardList, AlertTriangle, User } from 'lucide-react'
 import { PageHeader, Card, EmptyState } from '../components/ui/Primitives'
+import { SkeletonList } from '../components/ui/Skeleton'
 import { usePendenciasChecklist } from '../hooks/useBiddingChecklist'
 import { todayLocalISO } from '../lib/dateUtils'
 
@@ -48,7 +49,7 @@ export default function PendenciasPage() {
           Itens ligados a certidões automáticas são conferidos sozinhos (na hora que a certidão é renovada, e também de hora em hora) — se a certidão está válida, o item some daqui sozinho; se está vencendo, o prazo aparece automaticamente.
         </p>
         {isLoading ? (
-          <div className="p-10 text-center text-base-500 text-sm">Carregando pendências...</div>
+          <SkeletonList itens={5} />
         ) : pendenciasOrdenadas.length === 0 ? (
           <Card>
             <EmptyState icon={ClipboardList} title="Nenhuma pendência" description="Todos os itens de checklist das licitações ativas estão atendidos ou já têm documento anexado." />
