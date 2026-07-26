@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { todayLocalISO } from '../lib/dateUtils'
 import { Users, UserPlus, Wallet, CheckCircle2, AlertTriangle, Pencil, Trash2, Landmark } from 'lucide-react'
 import { PageHeader, Card, EmptyState, StatusBadge } from '../components/ui/Primitives'
+import { SkeletonTableRows } from '../components/ui/Skeleton'
 import { Field, Select, Input, Button } from '../components/ui/FormControls'
 import { useEmployees } from '../hooks/useEmployees'
 import { useTransactions } from '../hooks/useTransactions'
@@ -315,7 +316,7 @@ export default function FuncionariosPage() {
             <ErrorAlert error={deleteEmployee.error} />
             <Card className="overflow-hidden">
             {isLoading ? (
-              <div className="p-10 text-center text-base-500 text-sm">Carregando colaboradores...</div>
+              <SkeletonTableRows linhas={5} colunas={5} />
             ) : employees.length === 0 ? (
               <EmptyState icon={Users} title="Nenhum colaborador cadastrado" description="Contrate seu primeiro colaborador para começar a gerenciar a equipe." />
             ) : (

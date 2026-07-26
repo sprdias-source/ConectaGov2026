@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { Sun, Gavel, ClipboardList, Wallet, AlertTriangle, User } from 'lucide-react'
 import { PageHeader, Card } from '../components/ui/Primitives'
+import { SkeletonList } from '../components/ui/Skeleton'
 import AlertaSessaoRisco from '../components/dashboard/AlertaSessaoRisco'
 import { useAgendaEventos } from '../hooks/useAgendaEventos'
 import { usePendenciasChecklist } from '../hooks/useBiddingChecklist'
@@ -70,7 +71,7 @@ export default function HojePage() {
         <Card className="p-4">
           <p className="text-[13px] font-bold text-base-100 mb-3">Agenda de Hoje</p>
           {loadingAgenda ? (
-            <div className="p-6 text-center text-base-500 text-sm">Carregando agenda...</div>
+            <SkeletonList itens={3} />
           ) : eventosDeHoje.length === 0 ? (
             <p className="text-[12px] text-base-500 italic py-6 text-center">Nenhum evento pra hoje.</p>
           ) : (
@@ -94,7 +95,7 @@ export default function HojePage() {
         <Card className="p-4">
           <p className="text-[13px] font-bold text-base-100 mb-3">Pendências Vencendo Esta Semana</p>
           {loadingPendencias ? (
-            <div className="p-6 text-center text-base-500 text-sm">Carregando pendências...</div>
+            <SkeletonList itens={3} />
           ) : pendenciasDaSemana.length === 0 ? (
             <p className="text-[12px] text-base-500 italic py-6 text-center">Nenhuma pendência de checklist nos próximos {JANELA_PENDENCIAS_SEMANA_DIAS} dias.</p>
           ) : (

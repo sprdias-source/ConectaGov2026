@@ -11,6 +11,7 @@ import { fromBiddingItemRow } from '../lib/mappers'
 import { useAuth } from '../hooks/useAuth'
 import { Button, Input, Select } from '../components/ui/FormControls'
 import { PageHeader, Card } from '../components/ui/Primitives'
+import { SkeletonTableRows, SkeletonList } from '../components/ui/Skeleton'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useAttachedFiles } from '../hooks/useAttachedFiles'
@@ -363,7 +364,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
     )
   }
 
-  if (isLoading) return <p className="text-[13px] text-base-500 py-4">Carregando itens...</p>
+  if (isLoading) return <SkeletonTableRows linhas={4} colunas={5} />
 
   if (items.length === 0) {
     return <p className="text-[13px] text-base-500 italic py-4">Nenhum item cadastrado nesta licitação ainda — os itens entram pela tela de edição da licitação.</p>
@@ -473,7 +474,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
 function AbaSessaoAoVivo({ bidding }: { bidding: Bidding }) {
   const { items, isLoading } = useBiddingItemsDaLicitacao(bidding.id)
 
-  if (isLoading) return <p className="text-[13px] text-base-500 py-4">Carregando itens...</p>
+  if (isLoading) return <SkeletonList itens={3} />
 
   if (items.length === 0) {
     return <p className="text-[13px] text-base-500 italic py-4">Nenhum item cadastrado nesta licitação.</p>

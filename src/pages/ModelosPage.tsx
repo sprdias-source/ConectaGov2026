@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { BookOpen, Plus, Search, Download, Trash2, Copy, FileText, X, Wand2, Sparkles } from 'lucide-react'
 import { PageHeader, Card, EmptyState } from '../components/ui/Primitives'
+import { SkeletonList } from '../components/ui/Skeleton'
 import { Button, Input, Select } from '../components/ui/FormControls'
 import { useModelosDocumentos } from '../hooks/useModelosDocumentos'
 import { useClients } from '../hooks/useClients'
@@ -235,7 +236,7 @@ export default function ModelosPage() {
         )}
 
         {isLoading ? (
-          <div className="p-10 text-center text-base-500 text-sm">Carregando modelos...</div>
+          <SkeletonList itens={4} />
         ) : modelosFiltrados.length === 0 ? (
           <Card>
             <EmptyState icon={BookOpen} title="Nenhum modelo encontrado" description="Cadastre modelos de impugnações, recursos, declarações e outros documentos que você reutiliza." />

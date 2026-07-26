@@ -1,35 +1,50 @@
 import { Routes, Route } from 'react-router-dom'
-import { AlertTriangle, X, WifiOff } from 'lucide-react'
-import { useState } from 'react'
+import { AlertTriangle, X, WifiOff, Loader2 } from 'lucide-react'
+import { lazy, Suspense, useState } from 'react'
 import RequireAuth from './components/layout/RequireAuth'
 import AppShell from './components/layout/AppShell'
-import DashboardPage from './pages/DashboardPage'
-import CadastrosPage from './pages/CadastrosPage'
-import ContasPage from './pages/ContasPage'
-import FluxoCaixaPage from './pages/FluxoCaixaPage'
-import RelatoriosPage from './pages/RelatoriosPage'
-import RecibosPage from './pages/RecibosPage'
-import ContratosPage from './pages/ContratosPage'
-import FuncionariosPage from './pages/FuncionariosPage'
-import ContabilidadePage from './pages/ContabilidadePage'
-import DiagnosticoPage from './pages/DiagnosticoPage'
-import BIConcorrenciaPage from './pages/BIConcorrenciaPage'
-import ExtratoOFXPage from './pages/ExtratoOFXPage'
-import UsuariosPage from './pages/UsuariosPage'
-import MinhaContaPage from './pages/MinhaContaPage'
-import CentralPrazosPage from './pages/CentralPrazosPage'
-import RentabilidadePage from './pages/RentabilidadePage'
-import EmissaoNfsePage from './pages/EmissaoNfsePage'
-import PendenciasPage from './pages/PendenciasPage'
-import ModelosPage from './pages/ModelosPage'
-import CalculadoraPrecoPage from './pages/CalculadoraPrecoPage'
-import ExecucaoContratosPage from './pages/ExecucaoContratosPage'
-import AgendaPage from './pages/AgendaPage'
-import KanbanLicitacoesPage from './pages/KanbanLicitacoesPage'
-import LicitacaoPage from './pages/LicitacaoPage'
-import HojePage from './pages/HojePage'
 import { useRecurringEngine } from './hooks/useRecurringEngine'
 import { useOnlineStatus } from './hooks/useOnlineStatus'
+
+// Code splitting por rota — antes disso, as ~29 páginas eram todas
+// importadas de uma vez só num bundle único (>500KB), mesmo quando o
+// usuário só ia usar uma tela. Com import() dinâmico, o Vite gera um
+// arquivo separado por página, carregado sob demanda ao navegar — melhora
+// bastante o primeiro carregamento, principalmente em conexão de celular.
+const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const CadastrosPage = lazy(() => import('./pages/CadastrosPage'))
+const ContasPage = lazy(() => import('./pages/ContasPage'))
+const FluxoCaixaPage = lazy(() => import('./pages/FluxoCaixaPage'))
+const RelatoriosPage = lazy(() => import('./pages/RelatoriosPage'))
+const RecibosPage = lazy(() => import('./pages/RecibosPage'))
+const ContratosPage = lazy(() => import('./pages/ContratosPage'))
+const FuncionariosPage = lazy(() => import('./pages/FuncionariosPage'))
+const ContabilidadePage = lazy(() => import('./pages/ContabilidadePage'))
+const DiagnosticoPage = lazy(() => import('./pages/DiagnosticoPage'))
+const BIConcorrenciaPage = lazy(() => import('./pages/BIConcorrenciaPage'))
+const ExtratoOFXPage = lazy(() => import('./pages/ExtratoOFXPage'))
+const UsuariosPage = lazy(() => import('./pages/UsuariosPage'))
+const MinhaContaPage = lazy(() => import('./pages/MinhaContaPage'))
+const CentralPrazosPage = lazy(() => import('./pages/CentralPrazosPage'))
+const RentabilidadePage = lazy(() => import('./pages/RentabilidadePage'))
+const EmissaoNfsePage = lazy(() => import('./pages/EmissaoNfsePage'))
+const PendenciasPage = lazy(() => import('./pages/PendenciasPage'))
+const ModelosPage = lazy(() => import('./pages/ModelosPage'))
+const CalculadoraPrecoPage = lazy(() => import('./pages/CalculadoraPrecoPage'))
+const ExecucaoContratosPage = lazy(() => import('./pages/ExecucaoContratosPage'))
+const AgendaPage = lazy(() => import('./pages/AgendaPage'))
+const KanbanLicitacoesPage = lazy(() => import('./pages/KanbanLicitacoesPage'))
+const LicitacaoPage = lazy(() => import('./pages/LicitacaoPage'))
+const HojePage = lazy(() => import('./pages/HojePage'))
+
+function CarregandoRota() {
+  return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <Loader2 className="w-6 h-6 text-accent-400 animate-spin" />
+    </div>
+  )
+}
+
 export default function App() {
   const { lastError } = useRecurringEngine()
   const [dismissed, setDismissed] = useState(false)
@@ -56,33 +71,35 @@ export default function App() {
             </button>
           </div>
         )}
-        <Routes>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/hoje" element={<HojePage />} />
-          <Route path="/agenda" element={<AgendaPage />} />
-          <Route path="/kanban" element={<KanbanLicitacoesPage />} />
-          <Route path="/licitacoes/:id" element={<LicitacaoPage />} />
-          <Route path="/central-prazos" element={<CentralPrazosPage />} />
-          <Route path="/pendencias" element={<PendenciasPage />} />
-          <Route path="/modelos" element={<ModelosPage />} />
-          <Route path="/calculadora-preco" element={<CalculadoraPrecoPage />} />
-          <Route path="/execucao-contratos" element={<ExecucaoContratosPage />} />
-          <Route path="/cadastros" element={<CadastrosPage />} />
-          <Route path="/contas" element={<ContasPage />} />
-          <Route path="/fluxo" element={<FluxoCaixaPage />} />
-          <Route path="/relatorios" element={<RelatoriosPage />} />
-          <Route path="/recibos" element={<RecibosPage />} />
-          <Route path="/contratos" element={<ContratosPage />} />
-          <Route path="/funcionarios" element={<FuncionariosPage />} />
-          <Route path="/contabilidade" element={<ContabilidadePage />} />
-          <Route path="/diagnostico" element={<DiagnosticoPage />} />
-          <Route path="/bi-concorrencia" element={<BIConcorrenciaPage />} />
-          <Route path="/rentabilidade" element={<RentabilidadePage />} />
-          <Route path="/emissao-nfse" element={<EmissaoNfsePage />} />
-          <Route path="/extrato" element={<ExtratoOFXPage />} />
-          <Route path="/usuarios" element={<UsuariosPage />} />
-          <Route path="/minha-conta" element={<MinhaContaPage />} />
-        </Routes>
+        <Suspense fallback={<CarregandoRota />}>
+          <Routes>
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/hoje" element={<HojePage />} />
+            <Route path="/agenda" element={<AgendaPage />} />
+            <Route path="/kanban" element={<KanbanLicitacoesPage />} />
+            <Route path="/licitacoes/:id" element={<LicitacaoPage />} />
+            <Route path="/central-prazos" element={<CentralPrazosPage />} />
+            <Route path="/pendencias" element={<PendenciasPage />} />
+            <Route path="/modelos" element={<ModelosPage />} />
+            <Route path="/calculadora-preco" element={<CalculadoraPrecoPage />} />
+            <Route path="/execucao-contratos" element={<ExecucaoContratosPage />} />
+            <Route path="/cadastros" element={<CadastrosPage />} />
+            <Route path="/contas" element={<ContasPage />} />
+            <Route path="/fluxo" element={<FluxoCaixaPage />} />
+            <Route path="/relatorios" element={<RelatoriosPage />} />
+            <Route path="/recibos" element={<RecibosPage />} />
+            <Route path="/contratos" element={<ContratosPage />} />
+            <Route path="/funcionarios" element={<FuncionariosPage />} />
+            <Route path="/contabilidade" element={<ContabilidadePage />} />
+            <Route path="/diagnostico" element={<DiagnosticoPage />} />
+            <Route path="/bi-concorrencia" element={<BIConcorrenciaPage />} />
+            <Route path="/rentabilidade" element={<RentabilidadePage />} />
+            <Route path="/emissao-nfse" element={<EmissaoNfsePage />} />
+            <Route path="/extrato" element={<ExtratoOFXPage />} />
+            <Route path="/usuarios" element={<UsuariosPage />} />
+            <Route path="/minha-conta" element={<MinhaContaPage />} />
+          </Routes>
+        </Suspense>
       </AppShell>
     </RequireAuth>
   )

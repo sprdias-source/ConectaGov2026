@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { AlarmClock, Gavel, ShieldAlert, Wallet } from 'lucide-react'
 import { PageHeader, Card, EmptyState } from '../components/ui/Primitives'
+import { SkeletonList } from '../components/ui/Skeleton'
 import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
 import { useTransactions } from '../hooks/useTransactions'
@@ -155,7 +156,7 @@ export default function CentralPrazosPage() {
 
       <div className="px-6 mt-4">
         {isLoading ? (
-          <div className="p-10 text-center text-base-500 text-sm">Carregando prazos...</div>
+          <SkeletonList itens={5} />
         ) : itens.length === 0 ? (
           <Card>
             <EmptyState icon={AlarmClock} title="Nenhum prazo urgente" description="Nada vencendo nos próximos 15 dias, nem certidões críticas. Tudo em dia." />

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ClipboardCheck, Plus, CheckCircle2, Circle, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import { PageHeader, Card, EmptyState } from '../components/ui/Primitives'
+import { SkeletonList } from '../components/ui/Skeleton'
 import { Button, Input } from '../components/ui/FormControls'
 import { useContractMarcos } from '../hooks/useContractMarcos'
 import { useClients } from '../hooks/useClients'
@@ -139,7 +140,7 @@ export default function ExecucaoContratosPage() {
 
       <div className="px-6 mt-4">
         {isLoading ? (
-          <div className="p-10 text-center text-base-500 text-sm">Carregando contratos...</div>
+          <SkeletonList itens={3} />
         ) : contratos.length === 0 ? (
           <Card>
             <EmptyState icon={ClipboardCheck} title="Nenhum contrato cadastrado" description="Cadastre um contrato na aba de Contratos pra começar a acompanhar a execução dele aqui." />
