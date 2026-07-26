@@ -6,14 +6,18 @@ import { formatBRL } from '../hooks/useAccountBalances'
 import { useTransactions } from '../hooks/useTransactions'
 import { useClients } from '../hooks/useClients'
 import { useCategories } from '../hooks/useCategories'
+import { useBiddings } from '../hooks/useBiddings'
 import { usePagination, PaginationControls } from '../hooks/usePagination'
+import RelatorioLicitacoesCliente from '../components/relatorios/RelatorioLicitacoesCliente'
 
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 
 export default function RelatoriosPage() {
+  const [aba, setAba] = useState<'faturamento' | 'licitacoes'>('faturamento')
   const { transactions } = useTransactions()
   const { clients } = useClients()
   const { categoriesReceber } = useCategories()
+  const { biddings } = useBiddings()
 
   const [monthFilter, setMonthFilter] = useState('todos')
   const [clientFilter, setClientFilter] = useState('todos')
@@ -58,21 +62,41 @@ export default function RelatoriosPage() {
     <div className="pb-10">
       <PageHeader
         title="Relatórios"
-        subtitle="Vendas detalhadas e auditoria de faturamento por cliente"
+        subtitle="Vendas detalhadas, auditoria de faturamento e relatório de oportunidades por cliente"
         icon={FileBarChart}
         actions={
-          <>
-            <button onClick={() => window.print()} className="flex items-center gap-1.5 text-[12px] font-semibold text-base-300 hover:text-base-100 bg-base-850 border border-base-700 rounded-lg px-3 py-1.5 transition">
-              <Printer className="w-3.5 h-3.5" /> Imprimir / PDF
-            </button>
-            <button onClick={exportCsv} className="flex items-center gap-1.5 text-[12px] font-semibold text-base-950 bg-positive-500 hover:bg-positive-400 rounded-lg px-3 py-1.5 transition">
-              <Download className="w-3.5 h-3.5" /> Exportar CSV
-            </button>
-          </>
+          aba === 'faturamento' && (
+            <>
+              <button onClick={() => window.print()} className="flex items-center gap-1.5 text-[12px] font-semibold text-base-300 hover:text-base-100 bg-base-850 border border-base-700 rounded-lg px-3 py-1.5 transition">
+                <Printer className="w-3.5 h-3.5" /> Imprimir / PDF
+              </button>
+              <button onClick={exportCsv} className="flex items-center gap-1.5 text-[12px] font-semibold text-base-950 bg-positive-500 hover:bg-positive-400 rounded-lg px-3 py-1.5 transition">
+                <Download className="w-3.5 h-3.5" /> Exportar CSV
+              </button>
+            </>
+          )
         }
       />
 
       <div className="px-6 mt-4">
+        <div className="flex gap-1 mb-4 bg-base-900 border border-base-800 rounded-lg p-1 w-fit screen-only">
+          <button
+            onClick={() => setAba('faturamento')}
+            className={`px-3 py-1.5 rounded-md text-[12px] font-semibold transition ${aba === 'faturamento' ? 'bg-accent-500 text-base-950' : 'text-base-400 hover:text-base-100'}`}
+          >
+            Faturamento
+          </button>
+          <button
+            onClick={() => setAba('licitacoes')}
+            className={`px-3 py-1.5 rounded-md text-[12px] font-semibold transition ${aba === 'licitacoes' ? 'bg-accent-500 text-base-950' : 'text-base-400 hover:text-base-100'}`}
+          >
+            Oportunidades por Cliente
+          </button>
+        </div>
+
+        {aba === 'licitacoes' && <RelatorioLicitacoesCliente clients={clients} biddings={biddings} />}
+
+        {aba === 'faturamento' && <>
         <Card className="p-4 mb-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-44">
@@ -187,6 +211,7 @@ export default function RelatoriosPage() {
             </table>
           </div>
         )}
+        </>}
       </div>
     </div>
   )

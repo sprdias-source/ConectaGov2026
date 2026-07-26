@@ -3,15 +3,18 @@ import { useBiddings } from './useBiddings'
 import { useClients } from './useClients'
 import { usePendenciasChecklist } from './useBiddingChecklist'
 import { useTransactions } from './useTransactions'
+import { usePersonalEvents } from './usePersonalEvents'
 import { formatBRL } from './useAccountBalances'
 
-export type TipoEventoAgenda = 'pregao' | 'checklist' | 'financeiro'
+export type TipoEventoAgenda = 'pregao' | 'checklist' | 'financeiro' | 'pessoal'
 
 export interface EventoAgenda {
   tipo: TipoEventoAgenda
   data: string
   titulo: string
   subtitulo: string
+  // Só existe pra eventos 'pessoal' — usado pra editar/excluir direto na Agenda.
+  id?: string
 }
 
 // Junta os 3 tipos de evento (pregões em andamento, prazos de checklist,
@@ -23,6 +26,7 @@ export function useAgendaEventos() {
   const { clients } = useClients()
   const { pendencias, isLoading: loadingPendencias } = usePendenciasChecklist()
   const { transactions, isLoading: loadingTransactions } = useTransactions()
+  const { events: personalEvents, isLoading: loadingPersonalEvents } = usePersonalEvents()
 
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? '—'
 
@@ -65,11 +69,21 @@ export function useAgendaEventos() {
       })
     }
 
+    for (const e of personalEvents) {
+      add(e.data, {
+        tipo: 'pessoal',
+        data: e.data,
+        titulo: e.titulo,
+        subtitulo: e.descricao ?? 'Compromisso pessoal',
+        id: e.id,
+      })
+    }
+
     return mapa
-  }, [biddings, pendencias, transactions, clients])
+  }, [biddings, pendencias, transactions, clients, personalEvents])
 
   return {
     eventosPorDia,
-    isLoading: loadingBiddings || loadingPendencias || loadingTransactions,
+    isLoading: loadingBiddings || loadingPendencias || loadingTransactions || loadingPersonalEvents,
   }
 }

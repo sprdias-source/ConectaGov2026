@@ -295,6 +295,7 @@ export type Database = {
           bidding_id: string
           created_at: string
           descricao: string
+          ganhou: boolean
           id: string
           marca: string | null
           numero_item: string
@@ -310,6 +311,7 @@ export type Database = {
           bidding_id: string
           created_at?: string
           descricao: string
+          ganhou?: boolean
           id?: string
           marca?: string | null
           numero_item: string
@@ -325,6 +327,7 @@ export type Database = {
           bidding_id?: string
           created_at?: string
           descricao?: string
+          ganhou?: boolean
           id?: string
           marca?: string | null
           numero_item?: string
@@ -1516,6 +1519,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      personal_events: {
+        Row: {
+          created_at: string
+          data: string
+          descricao: string | null
+          id: string
+          titulo: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          data: string
+          descricao?: string | null
+          id?: string
+          titulo: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          data?: string
+          descricao?: string | null
+          id?: string
+          titulo?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
     }
     Views: {

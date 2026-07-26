@@ -47,7 +47,7 @@ export default function BiddingItemsEditor({
   const addRow = () => {
     emitChange([
       ...drafts,
-      { _key: newKey(), numeroItem: String(drafts.length + 1), descricao: '', unidade: 'UN', quantidade: 1, marca: '', referencia: '', valorUnitarioLicitado: 0, valorUnitarioOfertado: null },
+      { _key: newKey(), numeroItem: String(drafts.length + 1), descricao: '', unidade: 'UN', quantidade: 1, marca: '', referencia: '', valorUnitarioLicitado: 0, valorUnitarioOfertado: null, ganhou: false },
     ])
   }
 
@@ -113,6 +113,7 @@ export default function BiddingItemsEditor({
             referencia: String(get('referência', 'referencia', 'ref', 'ref.', 'modelo') ?? '') || undefined,
             valorUnitarioLicitado: valorUnit ?? 0,
             valorUnitarioOfertado: null,
+            ganhou: false,
           })
         }
 
@@ -177,6 +178,7 @@ export default function BiddingItemsEditor({
                   <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Modelo</th>
                   <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Vl. Unit. Licitado</th>
                   <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Vl. Unit. Ofertado</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-16 text-center">Ganhou?</th>
                   <th className="px-2 py-2 w-8" />
                 </tr>
               </thead>
@@ -208,6 +210,15 @@ export default function BiddingItemsEditor({
                       <Input type="number" step="0.01" value={d.valorUnitarioOfertado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioOfertado: parseFloat(e.target.value) || undefined })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
                     </td>
                     <td className="px-2 py-1.5 text-center">
+                      <input
+                        type="checkbox"
+                        checked={d.ganhou ?? false}
+                        onChange={(e) => updateRow(d._key, { ganhou: e.target.checked })}
+                        title="Marcar se este item foi ganho nesta disputa"
+                        className="w-4 h-4 accent-accent-500 cursor-pointer"
+                      />
+                    </td>
+                    <td className="px-2 py-1.5 text-center">
                       <button type="button" onClick={() => removeRow(d._key)} className="text-base-500 hover:text-negative-400 transition">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -220,7 +231,7 @@ export default function BiddingItemsEditor({
                   <td colSpan={6} className="px-2 py-2 text-right text-[11px] font-bold text-base-400">Totais:</td>
                   <td className="px-2 py-2 font-mono font-bold text-base-200">{formatBRL(totalLicitado)}</td>
                   <td className="px-2 py-2 font-mono font-bold text-accent-300">{formatBRL(totalOfertado)}</td>
-                  <td />
+                  <td colSpan={2} />
                 </tr>
               </tfoot>
             </table>
@@ -271,6 +282,16 @@ export default function BiddingItemsEditor({
                     <Input type="number" step="0.01" value={d.valorUnitarioOfertado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioOfertado: parseFloat(e.target.value) || undefined })} className="!py-1.5 !px-2 text-[13px]" placeholder="—" />
                   </div>
                 </div>
+
+                <label className="flex items-center gap-2 text-[12px] text-base-300 pt-1 border-t border-base-800">
+                  <input
+                    type="checkbox"
+                    checked={d.ganhou ?? false}
+                    onChange={(e) => updateRow(d._key, { ganhou: e.target.checked })}
+                    className="w-4 h-4 accent-accent-500 cursor-pointer"
+                  />
+                  Ganhamos este item
+                </label>
               </div>
             ))}
 
