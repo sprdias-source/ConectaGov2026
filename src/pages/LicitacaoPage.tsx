@@ -697,7 +697,7 @@ export default function LicitacaoPage() {
   const bidding = biddings.find((b) => b.id === id)
   const clientName = bidding ? (clients.find((c) => c.id === bidding.clientId)?.name ?? 'Cliente removido') : ''
 
-  const { files: anexos, uploadFile: uploadAnexo, deleteFile: deleteAnexo, getDownloadUrl: getAnexoUrl } = useAttachedFiles('licitacao', bidding?.id)
+  const { files: anexos, uploadFile: uploadAnexo, uploadProgress, deleteFile: deleteAnexo, getDownloadUrl: getAnexoUrl } = useAttachedFiles('licitacao', bidding?.id)
   const { items, addItem, updateItem, deleteItem } = useBiddingChecklist(bidding?.id)
   const { documents: clientDocs } = useClientDocuments(bidding?.clientId)
   const { atestados } = useAtestados(bidding?.clientId)
@@ -885,7 +885,7 @@ export default function LicitacaoPage() {
               ) : podeEditar ? (
                 <label className="flex items-center gap-2 justify-center border border-dashed border-base-700 rounded-xl px-4 py-4 cursor-pointer hover:border-accent-500/40 hover:bg-base-850/40 transition text-base-400">
                   {enviando === 'Edital' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                  <span className="text-[12px] font-medium">{enviando === 'Edital' ? 'Enviando...' : 'Enviar PDF do edital'}</span>
+                  <span className="text-[12px] font-medium">{enviando === 'Edital' ? `Enviando...${uploadProgress !== null ? ` ${uploadProgress}%` : ''}` : 'Enviar PDF do edital'}</span>
                   <input type="file" accept=".pdf" className="hidden" disabled={!!enviando} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadAnexo(f, 'Edital'); e.target.value = '' }} />
                 </label>
               ) : (
@@ -911,7 +911,7 @@ export default function LicitacaoPage() {
               ) : podeEditar ? (
                 <label className="flex items-center gap-2 justify-center border border-dashed border-base-700 rounded-xl px-4 py-4 cursor-pointer hover:border-accent-500/40 hover:bg-base-850/40 transition text-base-400">
                   {enviando === 'Termo de Referência' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                  <span className="text-[12px] font-medium">{enviando === 'Termo de Referência' ? 'Enviando...' : 'Enviar PDF do TR'}</span>
+                  <span className="text-[12px] font-medium">{enviando === 'Termo de Referência' ? `Enviando...${uploadProgress !== null ? ` ${uploadProgress}%` : ''}` : 'Enviar PDF do TR'}</span>
                   <input type="file" accept=".pdf" className="hidden" disabled={!!enviando} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadAnexo(f, 'Termo de Referência'); e.target.value = '' }} />
                 </label>
               ) : (
@@ -1077,7 +1077,7 @@ export default function LicitacaoPage() {
               ) : podeEditar ? (
                 <label className="flex items-center gap-2 justify-center border border-dashed border-base-700 rounded-xl px-4 py-4 cursor-pointer hover:border-accent-500/40 hover:bg-base-850/40 transition text-base-400">
                   {enviando === 'Contrato' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                  <span className="text-[12px] font-medium">{enviando === 'Contrato' ? 'Enviando...' : 'Enviar PDF do contrato assinado'}</span>
+                  <span className="text-[12px] font-medium">{enviando === 'Contrato' ? `Enviando...${uploadProgress !== null ? ` ${uploadProgress}%` : ''}` : 'Enviar PDF do contrato assinado'}</span>
                   <input type="file" accept=".pdf" className="hidden" disabled={!!enviando} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadAnexo(f, 'Contrato'); e.target.value = '' }} />
                 </label>
               ) : (
