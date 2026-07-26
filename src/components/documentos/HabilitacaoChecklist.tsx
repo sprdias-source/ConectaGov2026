@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase'
 import { useClientDocuments, calcDocStatus, diasRestantes } from '../../hooks/useClientDocuments'
 import { useAtestados } from '../../hooks/useAtestados'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
+import { useToast } from '../../hooks/useToast'
 import AcoesDocumentoManual from './AcoesDocumentoManual'
 import { CERT_CONFIG } from '../../types/domain'
 import type { ClientDocument, DocumentTipo, DocumentStatus, AtestadoTecnico } from '../../types/domain'
@@ -87,6 +88,7 @@ function PastaDocumentos({
     pasta?: string | null
   }) => Promise<unknown>
 }) {
+  const { showToast } = useToast()
   const [pastaAberta, setPastaAberta] = useState<string | null>(null)
   const [abrindo, setAbrindo] = useState<string | null>(null)
   const [mostrarNovaPasta, setMostrarNovaPasta] = useState(false)
@@ -124,7 +126,7 @@ function PastaDocumentos({
       const url = await getDownloadUrl(doc.storagePath)
       window.open(url, '_blank')
     } catch {
-      alert('Não foi possível abrir esse documento.')
+      showToast('Não foi possível abrir esse documento.', 'error')
     } finally {
       setAbrindo(null)
     }
@@ -269,6 +271,7 @@ function PastaDocumentos({
 // alimenta o ranking de compatibilidade na tela da licitação.
 function AtestadosTecnicosSection({ clientId, podeEditar }: { clientId: string; podeEditar: boolean }) {
   const { atestados, addAtestado, deleteAtestado, getDownloadUrl } = useAtestados(clientId)
+  const { showToast } = useToast()
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ nome: '', objeto: '', orgaoEmissor: '', valor: '', dataEmissao: '' })
   const [arquivo, setArquivo] = useState<File | null>(null)
@@ -281,7 +284,7 @@ function AtestadosTecnicosSection({ clientId, podeEditar }: { clientId: string; 
       const url = await getDownloadUrl(a.storagePath)
       window.open(url, '_blank')
     } catch {
-      alert('Não foi possível abrir o atestado.')
+      showToast('Não foi possível abrir o atestado.', 'error')
     } finally {
       setAbrindo(null)
     }

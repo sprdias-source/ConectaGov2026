@@ -6,6 +6,7 @@ import { useModelosDocumentos } from '../hooks/useModelosDocumentos'
 import { useClients } from '../hooks/useClients'
 import { useBiddings } from '../hooks/useBiddings'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
+import { useToast } from '../hooks/useToast'
 import { DECLARACOES_PADRAO } from '../lib/declaracoesPadrao'
 import type { CategoriaModeloDocumento } from '../types/domain'
 
@@ -40,6 +41,7 @@ export default function ModelosPage() {
   const { biddings } = useBiddings()
   const { nivel: nivelCadastros } = usePermissaoFerramenta('cadastros')
   const podeEditar = nivelCadastros === 'edicao'
+  const { showToast } = useToast()
   const [busca, setBusca] = useState('')
   const [filtroCategoria, setFiltroCategoria] = useState<string>('todas')
   const [gerandoId, setGerandoId] = useState<string | null>(null)
@@ -81,9 +83,9 @@ export default function ModelosPage() {
   const handleCopiar = async (conteudo: string) => {
     try {
       await navigator.clipboard.writeText(conteudo)
-      alert('Conteúdo copiado!')
+      showToast('Conteúdo copiado!')
     } catch {
-      alert('Não foi possível copiar — selecione e copie manualmente.')
+      showToast('Não foi possível copiar — selecione e copie manualmente.', 'error')
     }
   }
 
@@ -93,7 +95,7 @@ export default function ModelosPage() {
       const url = await getDownloadUrl(storagePath)
       window.open(url, '_blank')
     } catch {
-      alert('Não foi possível abrir o arquivo.')
+      showToast('Não foi possível abrir o arquivo.', 'error')
     } finally {
       setBaixando(null)
     }
@@ -121,15 +123,15 @@ export default function ModelosPage() {
       const nomesExistentes = new Set(modelos.map((m) => m.nome))
       const faltando = DECLARACOES_PADRAO.filter((d) => !nomesExistentes.has(d.nome))
       if (faltando.length === 0) {
-        alert('Todas as declarações padrão já estão cadastradas.')
+        showToast('Todas as declarações padrão já estão cadastradas.', 'info')
         return
       }
       for (const d of faltando) {
         await addModelo.mutateAsync({ nome: d.nome, categoria: d.categoria, tags: d.tags, conteudo: d.conteudo })
       }
-      alert(`${faltando.length} declaração(ões) padrão adicionada(s). Confira a base legal com seu jurídico antes de usar oficialmente.`)
+      showToast(`${faltando.length} declaração(ões) padrão adicionada(s). Confira a base legal com seu jurídico antes de usar oficialmente.`)
     } catch (err) {
-      alert('Erro ao carregar as declarações padrão: ' + String(err))
+      showToast('Erro ao carregar as declarações padrão: ' + String(err), 'error')
     } finally {
       setCarregandoPadrao(false)
     }

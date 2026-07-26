@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { Upload, FileText, Download, Trash2, Loader2 } from 'lucide-react'
 import { useAttachedFiles } from '../../hooks/useAttachedFiles'
+import { useToast } from '../../hooks/useToast'
 import type { FileCategory, FileEntityType } from '../../types/domain'
 function formatSize(bytes: number | null): string {
   if (!bytes) return ''
@@ -17,6 +18,7 @@ export default function DocumentUploader({
   label?: string
 }) {
   const { files, uploadFile, deleteFile, getDownloadUrl } = useAttachedFiles(entityType, entityId)
+  const { showToast } = useToast()
   const inputRef = useRef<HTMLInputElement>(null)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -34,7 +36,7 @@ export default function DocumentUploader({
       const url = await getDownloadUrl(file.storagePath)
       window.open(url, '_blank')
     } catch {
-      alert('Não foi possível gerar o link de download. Tente novamente.')
+      showToast('Não foi possível gerar o link de download. Tente novamente.', 'error')
     } finally {
       setDownloadingId(null)
     }

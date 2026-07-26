@@ -9,9 +9,21 @@ import DeleteWithPasswordDialog from '../ui/DeleteWithPasswordDialog'
 import ErrorAlert from '../ui/ErrorAlert'
 import { useClients } from '../../hooks/useClients'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
+import { useToast } from '../../hooks/useToast'
 import type { Client } from '../../types/domain'
 
 type FilterMode = 'todos' | 'mensalistas' | 'individuais'
+
+// Iniciais pro avatar circular — primeira letra do primeiro e do último
+// "nome" (separado por espaço), pra ficar parecido com um nome de pessoa
+// mesmo quando o cadastro é uma razão social ("Prefeitura Municipal de..."
+// vira "PM"). Com uma palavra só, usa as duas primeiras letras.
+function iniciais(nome: string): string {
+  const partes = nome.trim().split(/\s+/).filter(Boolean)
+  if (partes.length === 0) return '?'
+  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase()
+  return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+}
 
 export default function ClientsTab() {
   const { clients, isLoading, addClient, updateClient, deleteClient, toggleClientActive, checkClientHasFinancialHistory } = useClients()
@@ -20,6 +32,7 @@ export default function ClientsTab() {
   // botões de criar/editar/apagar/ativar somem desta tela.
   const { nivel: nivelAcesso } = usePermissaoFerramenta('clientes')
   const podeEditar = nivelAcesso === 'edicao'
+  const { showToast } = useToast()
 
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<FilterMode>('todos')
@@ -60,9 +73,15 @@ export default function ClientsTab() {
 
   const handleSave = (data: Partial<Client>) => {
     if (editing) {
-      updateClient.mutate({ ...editing, ...data } as Client, { onSuccess: () => { setModalOpen(false); setEditing(null) } })
+      updateClient.mutate({ ...editing, ...data } as Client, {
+        onSuccess: () => { setModalOpen(false); setEditing(null); showToast('Cliente atualizado com sucesso.') },
+        onError: (err) => showToast(`Erro ao atualizar o cliente: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+      })
     } else {
-      addClient.mutate(data, { onSuccess: () => setModalOpen(false) })
+      addClient.mutate(data, {
+        onSuccess: () => { setModalOpen(false); showToast('Cliente cadastrado com sucesso.') },
+        onError: (err) => showToast(`Erro ao cadastrar o cliente: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+      })
     }
   }
 
@@ -140,21 +159,21 @@ export default function ClientsTab() {
 
       <ErrorAlert error={deleteClient.error || toggleClientActive.error} />
 
-      <div className="bg-base-900/60 border border-base-700/50 rounded-xl overflow-hidden">
-        {isLoading ? (
-          <div className="p-10 text-center text-base-500 text-sm">Carregando clientes...</div>
-        ) : filtered.length === 0 ? (
+      {isLoading ? (
+        <div className="bg-base-900/60 border border-base-700/50 rounded-xl p-10 text-center text-base-500 text-sm">Carregando clientes...</div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-base-900/60 border border-base-700/50 rounded-xl overflow-hidden">
           <EmptyState icon={Users} title="Nenhum cliente encontrado" description="Cadastre seu primeiro cliente ou ajuste os filtros de busca." />
-        ) : (
-          <div className="overflow-x-auto">
+        </div>
+      ) : (
+        <>
+          <div className="hidden md:block bg-base-900/60 border border-base-700/50 rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-base-800 text-left">
-                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Nome / Razão Social</th>
-                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">CNPJ</th>
-                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Endereço</th>
-                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Contatos</th>
-                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Email/Site</th>
+                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Cliente</th>
+                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Contato</th>
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Ações</th>
                 </tr>
               </thead>
@@ -162,27 +181,32 @@ export default function ClientsTab() {
                 {filtered.map((c) => (
                   <tr key={c.id} className={`border-b border-base-800/60 hover:bg-base-850/40 transition ${!c.isActive ? 'opacity-50' : ''}`}>
                     <td className="px-4 py-3">
-                      <div className="font-semibold text-base-100 flex items-center gap-2">
-                        {c.name}
-                        {!c.isActive && (
-                          <span className="px-1.5 py-0.5 rounded bg-base-700 text-base-400 text-[10px] font-bold">Inativo</span>
-                        )}
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-accent-500/15 border border-accent-500/25 flex items-center justify-center text-accent-300 text-[11px] font-bold shrink-0">
+                          {iniciais(c.name)}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-semibold text-base-100 flex items-center gap-2">
+                            <span className="truncate">{c.name}</span>
+                            {!c.isActive && (
+                              <span className="px-1.5 py-0.5 rounded bg-base-700 text-base-400 text-[10px] font-bold shrink-0">Inativo</span>
+                            )}
+                          </div>
+                          {c.cnpj && <div className="text-base-500 font-mono text-[11px]">{c.cnpj}</div>}
+                          {c.isMensalista && (
+                            <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded bg-accent-500/15 text-accent-300 text-[10px] font-bold">
+                              Mensalista (R$ {c.valorMensalidade?.toLocaleString('pt-BR')})
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      {c.isMensalista && (
-                        <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded bg-accent-500/15 text-accent-300 text-[10px] font-bold">
-                          Mensalista (R$ {c.valorMensalidade?.toLocaleString('pt-BR')})
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-base-300 font-mono text-[12px]">{c.cnpj || '—'}</td>
-                    <td className="px-4 py-3 text-base-400 text-[13px] max-w-[200px] truncate">{c.address || '—'}</td>
-                    <td className="px-4 py-3 text-[12px]">
-                      {c.phone && <div className="flex items-center gap-1.5 text-base-300"><Phone className="w-3 h-3" />{c.phone}</div>}
-                      {c.whatsapp && <div className="flex items-center gap-1.5 text-positive-400 mt-0.5"><MessageCircle className="w-3 h-3" />{c.whatsapp}</div>}
                     </td>
                     <td className="px-4 py-3 text-[12px]">
-                      {c.email && <div className="text-base-300 truncate max-w-[160px]">{c.email}</div>}
-                      {c.website && <div className="flex items-center gap-1 text-accent-400 mt-0.5"><Globe className="w-3 h-3" />{c.website}</div>}
+                      {c.phone && <div className="flex items-center gap-1.5 text-base-300"><Phone className="w-3 h-3 shrink-0" />{c.phone}</div>}
+                      {c.whatsapp && <div className="flex items-center gap-1.5 text-positive-400 mt-0.5"><MessageCircle className="w-3 h-3 shrink-0" />{c.whatsapp}</div>}
+                      {c.email && <div className="text-base-400 truncate max-w-[200px] mt-0.5">{c.email}</div>}
+                      {c.website && <div className="flex items-center gap-1.5 text-accent-400 mt-0.5"><Globe className="w-3 h-3 shrink-0" />{c.website}</div>}
+                      {!c.phone && !c.whatsapp && !c.email && !c.website && <span className="text-base-600">—</span>}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -196,7 +220,7 @@ export default function ClientsTab() {
                         {podeEditar && (
                           <>
                             <button
-                              onClick={() => toggleClientActive.mutate({ client: c, isActive: !c.isActive })}
+                              onClick={() => toggleClientActive.mutate({ client: c, isActive: !c.isActive }, { onSuccess: (updated) => showToast(updated.isActive ? 'Cliente reativado.' : 'Cliente inativado.') })}
                               title={c.isActive ? 'Inativar cliente (preserva histórico)' : 'Reativar cliente'}
                               className={`p-1.5 rounded transition hover:bg-base-800 ${c.isActive ? 'text-base-400 hover:text-warning-400' : 'text-positive-400 hover:text-positive-300'}`}
                             >
@@ -216,9 +240,76 @@ export default function ClientsTab() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
-        )}
-      </div>
+
+          {/* Celular: cada cliente vira um card — evita a tabela de 6 colunas
+              densas empilhando informação minúscula por linha. */}
+          <div className="flex flex-col gap-2.5 md:hidden">
+            {filtered.map((c) => (
+              <div key={c.id} className={`bg-base-900/60 border border-base-700/50 rounded-xl p-3.5 flex flex-col gap-2.5 ${!c.isActive ? 'opacity-50' : ''}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-accent-500/15 border border-accent-500/25 flex items-center justify-center text-accent-300 text-[10px] font-bold shrink-0 mt-0.5">
+                      {iniciais(c.name)}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-base-100 flex items-center gap-2 flex-wrap">
+                        <span className="truncate">{c.name}</span>
+                        {!c.isActive && (
+                          <span className="px-1.5 py-0.5 rounded bg-base-700 text-base-400 text-[10px] font-bold shrink-0">Inativo</span>
+                        )}
+                      </div>
+                      {c.cnpj && <div className="text-base-400 font-mono text-[11px] mt-0.5">{c.cnpj}</div>}
+                      {c.isMensalista && (
+                        <span className="inline-flex items-center gap-1 mt-1.5 px-1.5 py-0.5 rounded bg-accent-500/15 text-accent-300 text-[10px] font-bold">
+                          Mensalista (R$ {c.valorMensalidade?.toLocaleString('pt-BR')})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => setViewingBiddings(c)}
+                      title="Ver licitações deste cliente"
+                      className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition"
+                    >
+                      <Gavel className="w-4 h-4" />
+                    </button>
+                    {podeEditar && (
+                      <>
+                        <button
+                          onClick={() => toggleClientActive.mutate({ client: c, isActive: !c.isActive }, { onSuccess: (updated) => showToast(updated.isActive ? 'Cliente reativado.' : 'Cliente inativado.') })}
+                          title={c.isActive ? 'Inativar cliente (preserva histórico)' : 'Reativar cliente'}
+                          className={`p-1.5 rounded transition hover:bg-base-800 ${c.isActive ? 'text-base-400 hover:text-warning-400' : 'text-positive-400 hover:text-positive-300'}`}
+                        >
+                          <Power className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => { setEditing(c); setModalOpen(true) }} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setDeleting(c)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {(c.address || c.phone || c.whatsapp || c.email || c.website) && (
+                  <div className="flex flex-col gap-1 pt-2 border-t border-base-800 text-[12px]">
+                    {c.address && <div className="text-base-400">{c.address}</div>}
+                    {c.phone && <div className="flex items-center gap-1.5 text-base-300"><Phone className="w-3 h-3 shrink-0" />{c.phone}</div>}
+                    {c.whatsapp && <div className="flex items-center gap-1.5 text-positive-400"><MessageCircle className="w-3 h-3 shrink-0" />{c.whatsapp}</div>}
+                    {c.email && <div className="text-base-300 truncate">{c.email}</div>}
+                    {c.website && <div className="flex items-center gap-1.5 text-accent-400"><Globe className="w-3 h-3 shrink-0" />{c.website}</div>}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {podeEditar && (
         <>
@@ -238,7 +329,7 @@ export default function ClientsTab() {
             financialWarning={financialWarning}
             onCancel={() => setDeleting(null)}
             onConfirm={() => {
-              if (deleting) deleteClient.mutate(deleting, { onSuccess: () => setDeleting(null) })
+              if (deleting) deleteClient.mutate(deleting, { onSuccess: () => { setDeleting(null); showToast('Cliente excluído.') } })
             }}
             isLoading={deleteClient.isPending}
             error={deleteClient.error}
