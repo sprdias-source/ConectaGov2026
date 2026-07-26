@@ -810,6 +810,7 @@ export default function LicitacaoPage() {
   const { items, addItem, updateItem, deleteItem } = useBiddingChecklist(bidding?.id)
   const { documents: clientDocs } = useClientDocuments(bidding?.clientId)
   const { atestados } = useAtestados(bidding?.clientId)
+  const { limparAnalise } = useBiddingAnalysis(bidding?.id)
 
   const [enviando, setEnviando] = useState<string | null>(null)
   const [showNovoItem, setShowNovoItem] = useState(false)
@@ -986,7 +987,7 @@ export default function LicitacaoPage() {
                     <Download className="w-3.5 h-3.5" />
                   </button>
                   {podeEditar && (
-                    <button onClick={() => deleteAnexo.mutate(edital)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                    <button onClick={() => deleteAnexo.mutate(edital, { onSuccess: () => limparAnalise.mutate() })} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   )}
