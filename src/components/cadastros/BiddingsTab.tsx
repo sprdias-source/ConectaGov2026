@@ -13,6 +13,7 @@ import { usePagination, PaginationControls } from '../../hooks/usePagination'
 import { useBiddings } from '../../hooks/useBiddings'
 import { useClients } from '../../hooks/useClients'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
+import { useToast } from '../../hooks/useToast'
 import type { Bidding, BiddingItem } from '../../types/domain'
 
 function fileParaBase64(file: File): Promise<string> {
@@ -31,6 +32,7 @@ export default function BiddingsTab() {
   const navigate = useNavigate()
   const { biddings, isLoading, addBidding, updateBidding, deleteBidding, toggleBiddingActive, setModeloCustomizado, checkBiddingHasFinancialHistory } = useBiddings()
   const { clients } = useClients()
+  const { showToast } = useToast()
   const { nivel: nivelAcesso } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivelAcesso === 'edicao'
 
@@ -75,9 +77,15 @@ export default function BiddingsTab() {
 
   const handleSave = (data: Partial<Bidding>, items: Partial<BiddingItem>[]) => {
     if (editing) {
-      updateBidding.mutate({ bidding: { ...editing, ...data } as Bidding, items }, { onSuccess: () => { setModalOpen(false); setEditing(null) } })
+      updateBidding.mutate({ bidding: { ...editing, ...data } as Bidding, items }, {
+        onSuccess: () => { setModalOpen(false); setEditing(null); showToast('Licitação atualizada com sucesso.') },
+        onError: (err) => showToast(`Erro ao atualizar a licitação: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+      })
     } else {
-      addBidding.mutate({ bidding: data, items }, { onSuccess: () => setModalOpen(false) })
+      addBidding.mutate({ bidding: data, items }, {
+        onSuccess: () => { setModalOpen(false); showToast('Licitação cadastrada com sucesso.') },
+        onError: (err) => showToast(`Erro ao cadastrar a licitação: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+      })
     }
   }
 
@@ -365,7 +373,7 @@ export default function BiddingsTab() {
                         {podeEditar && (
                           <>
                             <button
-                              onClick={() => toggleBiddingActive.mutate({ bidding: b, isActive: !b.isActive })}
+                              onClick={() => toggleBiddingActive.mutate({ bidding: b, isActive: !b.isActive }, { onSuccess: (updated) => showToast(updated.isActive ? 'Licitação reativada.' : 'Licitação inativada.') })}
                               title={b.isActive ? 'Inativar licitação (preserva histórico)' : 'Reativar licitação'}
                               className={`p-1.5 rounded transition hover:bg-base-800 ${b.isActive ? 'text-base-400 hover:text-warning-400' : 'text-positive-400 hover:text-positive-300'}`}
                             >
@@ -410,7 +418,7 @@ export default function BiddingsTab() {
             entityLabel={`A licitação "${deleting?.objeto}" e todos os empenhos vinculados a ela`}
             financialWarning={financialWarning}
             onCancel={() => setDeleting(null)}
-            onConfirm={() => { if (deleting) deleteBidding.mutate(deleting, { onSuccess: () => setDeleting(null) }) }}
+            onConfirm={() => { if (deleting) deleteBidding.mutate(deleting, { onSuccess: () => { setDeleting(null); showToast('Licitação excluída.') } }) }}
             isLoading={deleteBidding.isPending}
             error={deleteBidding.error}
           />

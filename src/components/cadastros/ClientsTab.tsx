@@ -9,6 +9,7 @@ import DeleteWithPasswordDialog from '../ui/DeleteWithPasswordDialog'
 import ErrorAlert from '../ui/ErrorAlert'
 import { useClients } from '../../hooks/useClients'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
+import { useToast } from '../../hooks/useToast'
 import type { Client } from '../../types/domain'
 
 type FilterMode = 'todos' | 'mensalistas' | 'individuais'
@@ -20,6 +21,7 @@ export default function ClientsTab() {
   // botões de criar/editar/apagar/ativar somem desta tela.
   const { nivel: nivelAcesso } = usePermissaoFerramenta('clientes')
   const podeEditar = nivelAcesso === 'edicao'
+  const { showToast } = useToast()
 
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<FilterMode>('todos')
@@ -60,9 +62,15 @@ export default function ClientsTab() {
 
   const handleSave = (data: Partial<Client>) => {
     if (editing) {
-      updateClient.mutate({ ...editing, ...data } as Client, { onSuccess: () => { setModalOpen(false); setEditing(null) } })
+      updateClient.mutate({ ...editing, ...data } as Client, {
+        onSuccess: () => { setModalOpen(false); setEditing(null); showToast('Cliente atualizado com sucesso.') },
+        onError: (err) => showToast(`Erro ao atualizar o cliente: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+      })
     } else {
-      addClient.mutate(data, { onSuccess: () => setModalOpen(false) })
+      addClient.mutate(data, {
+        onSuccess: () => { setModalOpen(false); showToast('Cliente cadastrado com sucesso.') },
+        onError: (err) => showToast(`Erro ao cadastrar o cliente: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+      })
     }
   }
 
@@ -140,13 +148,16 @@ export default function ClientsTab() {
 
       <ErrorAlert error={deleteClient.error || toggleClientActive.error} />
 
-      <div className="bg-base-900/60 border border-base-700/50 rounded-xl overflow-hidden">
-        {isLoading ? (
-          <div className="p-10 text-center text-base-500 text-sm">Carregando clientes...</div>
-        ) : filtered.length === 0 ? (
+      {isLoading ? (
+        <div className="bg-base-900/60 border border-base-700/50 rounded-xl p-10 text-center text-base-500 text-sm">Carregando clientes...</div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-base-900/60 border border-base-700/50 rounded-xl overflow-hidden">
           <EmptyState icon={Users} title="Nenhum cliente encontrado" description="Cadastre seu primeiro cliente ou ajuste os filtros de busca." />
-        ) : (
-          <div className="overflow-x-auto">
+        </div>
+      ) : (
+        <>
+          <div className="hidden md:block bg-base-900/60 border border-base-700/50 rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-base-800 text-left">
@@ -196,7 +207,7 @@ export default function ClientsTab() {
                         {podeEditar && (
                           <>
                             <button
-                              onClick={() => toggleClientActive.mutate({ client: c, isActive: !c.isActive })}
+                              onClick={() => toggleClientActive.mutate({ client: c, isActive: !c.isActive }, { onSuccess: (updated) => showToast(updated.isActive ? 'Cliente reativado.' : 'Cliente inativado.') })}
                               title={c.isActive ? 'Inativar cliente (preserva histórico)' : 'Reativar cliente'}
                               className={`p-1.5 rounded transition hover:bg-base-800 ${c.isActive ? 'text-base-400 hover:text-warning-400' : 'text-positive-400 hover:text-positive-300'}`}
                             >
@@ -216,9 +227,71 @@ export default function ClientsTab() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
-        )}
-      </div>
+
+          {/* Celular: cada cliente vira um card — evita a tabela de 6 colunas
+              densas empilhando informação minúscula por linha. */}
+          <div className="flex flex-col gap-2.5 md:hidden">
+            {filtered.map((c) => (
+              <div key={c.id} className={`bg-base-900/60 border border-base-700/50 rounded-xl p-3.5 flex flex-col gap-2.5 ${!c.isActive ? 'opacity-50' : ''}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-semibold text-base-100 flex items-center gap-2 flex-wrap">
+                      <span className="truncate">{c.name}</span>
+                      {!c.isActive && (
+                        <span className="px-1.5 py-0.5 rounded bg-base-700 text-base-400 text-[10px] font-bold shrink-0">Inativo</span>
+                      )}
+                    </div>
+                    {c.cnpj && <div className="text-base-400 font-mono text-[11px] mt-0.5">{c.cnpj}</div>}
+                    {c.isMensalista && (
+                      <span className="inline-flex items-center gap-1 mt-1.5 px-1.5 py-0.5 rounded bg-accent-500/15 text-accent-300 text-[10px] font-bold">
+                        Mensalista (R$ {c.valorMensalidade?.toLocaleString('pt-BR')})
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => setViewingBiddings(c)}
+                      title="Ver licitações deste cliente"
+                      className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition"
+                    >
+                      <Gavel className="w-4 h-4" />
+                    </button>
+                    {podeEditar && (
+                      <>
+                        <button
+                          onClick={() => toggleClientActive.mutate({ client: c, isActive: !c.isActive }, { onSuccess: (updated) => showToast(updated.isActive ? 'Cliente reativado.' : 'Cliente inativado.') })}
+                          title={c.isActive ? 'Inativar cliente (preserva histórico)' : 'Reativar cliente'}
+                          className={`p-1.5 rounded transition hover:bg-base-800 ${c.isActive ? 'text-base-400 hover:text-warning-400' : 'text-positive-400 hover:text-positive-300'}`}
+                        >
+                          <Power className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => { setEditing(c); setModalOpen(true) }} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setDeleting(c)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {(c.address || c.phone || c.whatsapp || c.email || c.website) && (
+                  <div className="flex flex-col gap-1 pt-2 border-t border-base-800 text-[12px]">
+                    {c.address && <div className="text-base-400">{c.address}</div>}
+                    {c.phone && <div className="flex items-center gap-1.5 text-base-300"><Phone className="w-3 h-3 shrink-0" />{c.phone}</div>}
+                    {c.whatsapp && <div className="flex items-center gap-1.5 text-positive-400"><MessageCircle className="w-3 h-3 shrink-0" />{c.whatsapp}</div>}
+                    {c.email && <div className="text-base-300 truncate">{c.email}</div>}
+                    {c.website && <div className="flex items-center gap-1.5 text-accent-400"><Globe className="w-3 h-3 shrink-0" />{c.website}</div>}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {podeEditar && (
         <>
@@ -238,7 +311,7 @@ export default function ClientsTab() {
             financialWarning={financialWarning}
             onCancel={() => setDeleting(null)}
             onConfirm={() => {
-              if (deleting) deleteClient.mutate(deleting, { onSuccess: () => setDeleting(null) })
+              if (deleting) deleteClient.mutate(deleting, { onSuccess: () => { setDeleting(null); showToast('Cliente excluído.') } })
             }}
             isLoading={deleteClient.isPending}
             error={deleteClient.error}

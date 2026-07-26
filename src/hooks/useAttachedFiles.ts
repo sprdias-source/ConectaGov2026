@@ -4,6 +4,7 @@ import { Upload as TusUpload } from 'tus-js-client'
 import { supabase } from '../lib/supabase'
 import { fromFileRow, toFileInsert } from '../lib/mappers'
 import { useAuth } from './useAuth'
+import { useToast } from './useToast'
 import type { AttachedFile, FileCategory, FileEntityType } from '../types/domain'
 
 const QUERY_KEY = ['attached_files']
@@ -66,6 +67,7 @@ function uploadResumivel(file: File, path: string, accessToken: string, onProgre
 // em cima.
 export function useAttachedFiles(entityType: FileEntityType, entityId?: string) {
   const { user } = useAuth()
+  const { showToast } = useToast()
   const queryClient = useQueryClient()
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
 
@@ -117,7 +119,10 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
       if (error) throw error
       return path
     },
-    onSuccess: invalidate,
+    onSuccess: (_, variables) => {
+      invalidate()
+      showToast(`${variables.category} enviado com sucesso.`)
+    },
   })
 
   const deleteFile = useMutation({
@@ -126,7 +131,10 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
       const { error } = await supabase.from('attached_files').delete().eq('id', file.id)
       if (error) throw error
     },
-    onSuccess: invalidate,
+    onSuccess: (_, file) => {
+      invalidate()
+      showToast(`${file.category} removido.`)
+    },
   })
 
   const getDownloadUrl = async (storagePath: string) => {

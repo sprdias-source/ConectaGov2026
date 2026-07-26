@@ -1,10 +1,11 @@
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   Eye, EyeOff, Menu, X, ChevronLeft, ChevronRight, ChevronDown, Wallet,
-  CreditCard, ShieldCheck, LogOut, Download, Sun, Moon,
+  CreditCard, ShieldCheck, LogOut, Download, Sun, Moon, Search,
 } from 'lucide-react'
 import { NAV_GROUPS } from './navConfig'
+import GlobalSearch from './GlobalSearch'
 import { useAuth } from '../../hooks/useAuth'
 import { useTheme } from '../../hooks/useTheme'
 import { useFinancialAccounts } from '../../hooks/useFinancialAccounts'
@@ -26,7 +27,20 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   const [patrimonioVisible, setPatrimonioVisible] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('cg_sidebar_collapsed') === 'true')
+
+  // Busca global — Ctrl+K (Windows/Linux) ou Cmd+K (Mac), de qualquer tela.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setSearchOpen(true)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   // Ausência de uma chave no objeto salvo = grupo aberto (padrão pra quem
   // nunca mexeu nisso, e também pra qualquer grupo novo que apareça depois
@@ -77,6 +91,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setSearchOpen(true)}
+            title="Buscar (Ctrl+K)"
+            className="p-1.5 text-base-400 hover:text-base-100 rounded"
+          >
+            <Search className="w-4 h-4" />
+          </button>
+          <button
             onClick={toggleTheme}
             title={theme === 'dark' ? 'Modo claro' : 'Modo escuro'}
             className="p-1.5 text-base-400 hover:text-base-100 rounded"
@@ -121,6 +142,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
               >
                 {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
               </button>
+              <button
+                onClick={() => setSearchOpen(true)}
+                title="Buscar (Ctrl+K)"
+                className="p-1 rounded bg-base-850 hover:bg-base-800 text-base-400 hover:text-base-100 border border-base-700 transition"
+              >
+                <Search className="w-3.5 h-3.5" />
+              </button>
             </div>
             <div
               onClick={() => setPatrimonioVisible((v) => !v)}
@@ -156,6 +184,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 </button>
               </div>
             </div>
+
+            <button
+              onClick={() => setSearchOpen(true)}
+              className="flex items-center gap-2 px-3 py-2 bg-base-900/60 border border-base-700/50 rounded-lg text-base-500 hover:text-base-300 hover:border-base-600 transition text-left"
+            >
+              <Search className="w-3.5 h-3.5 shrink-0" />
+              <span className="text-[12px] flex-1">Buscar...</span>
+              <span className="text-[10px] font-mono border border-base-700 rounded px-1.5 py-0.5">Ctrl+K</span>
+            </button>
 
             <div className="bg-base-900/60 border border-base-700/50 rounded-xl p-3 shadow-sm">
               <div className="flex justify-between items-center text-base-400">
@@ -318,6 +355,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       </main>
 
       <ResolverCaptchaModal />
+      <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
   )
 }

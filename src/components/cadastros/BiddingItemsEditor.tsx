@@ -3,6 +3,7 @@ import { Plus, Trash2, Upload, FileSpreadsheet } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { Input } from '../ui/FormControls'
 import { parseFlexibleNumber } from '../../lib/numberParsing'
+import { useToast } from '../../hooks/useToast'
 import type { BiddingItem } from '../../types/domain'
 import { formatBRL } from '../../hooks/useAccountBalances'
 
@@ -18,6 +19,7 @@ export default function BiddingItemsEditor({
   onChange: (items: Partial<BiddingItem>[]) => void
   tipoDisputa: 'Item' | 'Lote'
 }) {
+  const { showToast } = useToast()
   const [drafts, setDrafts] = useState<ItemDraft[]>([])
   // Guarda a última lista que NÓS mesmos emitimos via onChange, pra
   // diferenciar "items mudou porque o pai ecoou nossa própria edição" (não
@@ -116,15 +118,16 @@ export default function BiddingItemsEditor({
 
         if (imported.length > 0) {
           emitChange([...drafts, ...imported])
+          showToast(`${imported.length} item(ns) importado(s) da planilha.`)
         }
         if (linhasComProblema > 0) {
-          alert(`${linhasComProblema} linha(s) tinham valores de quantidade/preço suspeitos (não reconhecidos ou negativos) — revise manualmente antes de salvar.`)
+          showToast(`${linhasComProblema} linha(s) tinham valores de quantidade/preço suspeitos (não reconhecidos ou negativos) — revise manualmente antes de salvar.`, 'error')
         }
         if (imported.length === 0) {
-          alert('Nenhum item foi encontrado. Verifique se a planilha tem uma coluna de Descrição preenchida.')
+          showToast('Nenhum item foi encontrado. Verifique se a planilha tem uma coluna de Descrição preenchida.', 'error')
         }
       } catch {
-        alert('Não foi possível ler este arquivo. Verifique se é uma planilha Excel (.xlsx) válida com colunas de Item, Descrição, Quantidade e Valor Unitário.')
+        showToast('Não foi possível ler este arquivo. Verifique se é uma planilha Excel (.xlsx) válida com colunas de Item, Descrição, Quantidade e Valor Unitário.', 'error')
       }
     }
     reader.readAsBinaryString(file)
@@ -157,66 +160,129 @@ export default function BiddingItemsEditor({
           Nenhum {tipoDisputa === 'Lote' ? 'lote' : 'item'} cadastrado. Adicione manualmente ou importe uma planilha.
         </div>
       ) : (
-        <div className="overflow-x-auto border border-base-700/50 rounded-lg">
-          <table className="w-full text-[12px]">
-            <thead>
-              <tr className="bg-base-850 text-left">
-                <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-16">Nº</th>
-                <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500">Descrição</th>
-                <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-20">Unid.</th>
-                <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-20">Qtd.</th>
-                <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Marca</th>
-                <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Modelo</th>
-                <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Vl. Unit. Licitado</th>
-                <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Vl. Unit. Ofertado</th>
-                <th className="px-2 py-2 w-8" />
-              </tr>
-            </thead>
-            <tbody>
-              {drafts.map((d) => (
-                <tr key={d._key} className="border-t border-base-800">
-                  <td className="px-2 py-1.5">
-                    <Input value={d.numeroItem ?? ''} onChange={(e) => updateRow(d._key, { numeroItem: e.target.value })} className="!py-1 !px-2 text-[12px]" />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <Input value={d.descricao ?? ''} onChange={(e) => updateRow(d._key, { descricao: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="Descrição do item" />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <Input value={d.unidade ?? ''} onChange={(e) => updateRow(d._key, { unidade: e.target.value })} className="!py-1 !px-2 text-[12px]" />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <Input type="number" value={d.quantidade ?? ''} onChange={(e) => updateRow(d._key, { quantidade: parseFloat(e.target.value) || 0 })} className="!py-1 !px-2 text-[12px]" />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <Input value={d.marca ?? ''} onChange={(e) => updateRow(d._key, { marca: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <Input value={d.referencia ?? ''} onChange={(e) => updateRow(d._key, { referencia: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <Input type="number" step="0.01" value={d.valorUnitarioLicitado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioLicitado: parseFloat(e.target.value) || 0 })} className="!py-1 !px-2 text-[12px]" />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <Input type="number" step="0.01" value={d.valorUnitarioOfertado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioOfertado: parseFloat(e.target.value) || undefined })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
-                  </td>
-                  <td className="px-2 py-1.5 text-center">
-                    <button type="button" onClick={() => removeRow(d._key)} className="text-base-500 hover:text-negative-400 transition">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </td>
+        <>
+          {/* Telas médias/grandes: tabela tradicional — cabe bem todas as colunas
+              lado a lado. Em telas estreitas viraria colunas espremidas demais
+              (foi exatamente essa compressão que causou a confusão de "dado
+              cortado" nesta tela), por isso o layout troca pra cards abaixo. */}
+          <div className="hidden md:block overflow-x-auto border border-base-700/50 rounded-lg">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="bg-base-850 text-left">
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-16">Nº</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500">Descrição</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-20">Unid.</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-20">Qtd.</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Marca</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Modelo</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Vl. Unit. Licitado</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Vl. Unit. Ofertado</th>
+                  <th className="px-2 py-2 w-8" />
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t border-base-700 bg-base-850/60">
-                <td colSpan={6} className="px-2 py-2 text-right text-[11px] font-bold text-base-400">Totais:</td>
-                <td className="px-2 py-2 font-mono font-bold text-base-200">{formatBRL(totalLicitado)}</td>
-                <td className="px-2 py-2 font-mono font-bold text-accent-300">{formatBRL(totalOfertado)}</td>
-                <td />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {drafts.map((d) => (
+                  <tr key={d._key} className="border-t border-base-800">
+                    <td className="px-2 py-1.5">
+                      <Input value={d.numeroItem ?? ''} onChange={(e) => updateRow(d._key, { numeroItem: e.target.value })} className="!py-1 !px-2 text-[12px]" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <Input value={d.descricao ?? ''} onChange={(e) => updateRow(d._key, { descricao: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="Descrição do item" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <Input value={d.unidade ?? ''} onChange={(e) => updateRow(d._key, { unidade: e.target.value })} className="!py-1 !px-2 text-[12px]" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <Input type="number" value={d.quantidade ?? ''} onChange={(e) => updateRow(d._key, { quantidade: parseFloat(e.target.value) || 0 })} className="!py-1 !px-2 text-[12px]" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <Input value={d.marca ?? ''} onChange={(e) => updateRow(d._key, { marca: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <Input value={d.referencia ?? ''} onChange={(e) => updateRow(d._key, { referencia: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <Input type="number" step="0.01" value={d.valorUnitarioLicitado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioLicitado: parseFloat(e.target.value) || 0 })} className="!py-1 !px-2 text-[12px]" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <Input type="number" step="0.01" value={d.valorUnitarioOfertado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioOfertado: parseFloat(e.target.value) || undefined })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
+                    </td>
+                    <td className="px-2 py-1.5 text-center">
+                      <button type="button" onClick={() => removeRow(d._key)} className="text-base-500 hover:text-negative-400 transition">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-base-700 bg-base-850/60">
+                  <td colSpan={6} className="px-2 py-2 text-right text-[11px] font-bold text-base-400">Totais:</td>
+                  <td className="px-2 py-2 font-mono font-bold text-base-200">{formatBRL(totalLicitado)}</td>
+                  <td className="px-2 py-2 font-mono font-bold text-accent-300">{formatBRL(totalOfertado)}</td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* Celular: cada item vira um card com campos empilhados em largura
+              total — nenhum valor fica espremido numa caixinha estreita. */}
+          <div className="flex flex-col gap-3 md:hidden">
+            {drafts.map((d) => (
+              <div key={d._key} className="border border-base-700/50 rounded-lg p-3 bg-base-900/40 flex flex-col gap-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-14 shrink-0">
+                    <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Nº</p>
+                    <Input value={d.numeroItem ?? ''} onChange={(e) => updateRow(d._key, { numeroItem: e.target.value })} className="!py-1.5 !px-2 text-[13px]" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Descrição</p>
+                    <Input value={d.descricao ?? ''} onChange={(e) => updateRow(d._key, { descricao: e.target.value })} className="!py-1.5 !px-2 text-[13px]" placeholder="Descrição do item" />
+                  </div>
+                  <button type="button" onClick={() => removeRow(d._key)} className="self-end mb-2 p-1.5 text-base-500 hover:text-negative-400 transition shrink-0">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Unidade</p>
+                    <Input value={d.unidade ?? ''} onChange={(e) => updateRow(d._key, { unidade: e.target.value })} className="!py-1.5 !px-2 text-[13px]" />
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Quantidade</p>
+                    <Input type="number" value={d.quantidade ?? ''} onChange={(e) => updateRow(d._key, { quantidade: parseFloat(e.target.value) || 0 })} className="!py-1.5 !px-2 text-[13px]" />
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Marca</p>
+                    <Input value={d.marca ?? ''} onChange={(e) => updateRow(d._key, { marca: e.target.value })} className="!py-1.5 !px-2 text-[13px]" placeholder="—" />
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Modelo</p>
+                    <Input value={d.referencia ?? ''} onChange={(e) => updateRow(d._key, { referencia: e.target.value })} className="!py-1.5 !px-2 text-[13px]" placeholder="—" />
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Vl. Unit. Licitado</p>
+                    <Input type="number" step="0.01" value={d.valorUnitarioLicitado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioLicitado: parseFloat(e.target.value) || 0 })} className="!py-1.5 !px-2 text-[13px]" />
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Vl. Unit. Ofertado</p>
+                    <Input type="number" step="0.01" value={d.valorUnitarioOfertado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioOfertado: parseFloat(e.target.value) || undefined })} className="!py-1.5 !px-2 text-[13px]" placeholder="—" />
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            <div className="border border-base-700/50 rounded-lg p-3 bg-base-850/60 flex items-center justify-between text-[12px]">
+              <span className="font-bold text-base-400">Totais:</span>
+              <div className="flex flex-col items-end gap-0.5">
+                <span className="font-mono font-bold text-base-200">{formatBRL(totalLicitado)}</span>
+                <span className="font-mono font-bold text-accent-300">{formatBRL(totalOfertado)}</span>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   )

@@ -23,6 +23,7 @@ import { useAtestados, calcularSimilaridade } from '../hooks/useAtestados'
 import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
+import { useToast } from '../hooks/useToast'
 import { CERT_CONFIG } from '../types/domain'
 import type { Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingModalidade, BiddingStatus } from '../types/domain'
 
@@ -632,8 +633,8 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
   const { addItensEmLote } = useBiddingChecklist(bidding.id)
   const { updateBidding } = useBiddings()
   const { items: itensAtuais } = useBiddingItems(bidding.id)
+  const { showToast } = useToast()
   const [confirmandoPreenchimento, setConfirmandoPreenchimento] = useState(false)
-  const [preenchimentoAplicado, setPreenchimentoAplicado] = useState(false)
 
   const status = analysis?.status
   const processando = (status === 'processando' && !travado) || analisar.isPending
@@ -647,7 +648,7 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
   const confirmarPreenchimento = () => {
     if (!preenchimento) return
     updateBidding.mutate({ bidding: { ...bidding, ...preenchimento.campos }, items: preenchimento.itens }, {
-      onSuccess: () => { setPreenchimentoAplicado(true); setConfirmandoPreenchimento(false) },
+      onSuccess: () => { setConfirmandoPreenchimento(false); showToast('Licitação atualizada com os dados da análise.') },
       onError: () => setConfirmandoPreenchimento(false),
     })
   }
@@ -655,7 +656,7 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3 flex-wrap">
-        <Button onClick={() => { setPreenchimentoAplicado(false); analisar.mutate() }} disabled={!temEdital || processando}>
+        <Button onClick={() => analisar.mutate()} disabled={!temEdital || processando}>
           {processando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           {processando ? 'Analisando...' : status === 'concluido' ? 'Analisar Novamente' : 'Analisar com IA'}
         </Button>
@@ -697,11 +698,6 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
               <span className="text-[11px] text-base-400 flex-1 min-w-[220px]">
                 Atualiza {preenchimento.resumo.join(', ')} desta licitação com o que foi identificado no edital.
               </span>
-              {preenchimentoAplicado && (
-                <span className="text-[11px] text-positive-400 font-semibold flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Licitação atualizada
-                </span>
-              )}
             </div>
           )}
 
@@ -806,6 +802,7 @@ export default function LicitacaoPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { biddings, updateEtapa } = useBiddings()
+  const { showToast } = useToast()
   const { clients } = useClients()
   const { nivel: nivelLicitacoes } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivelLicitacoes === 'edicao'
@@ -842,7 +839,7 @@ export default function LicitacaoPage() {
     try {
       await uploadAnexo.mutateAsync({ file, category })
     } catch (err) {
-      alert(`Erro ao enviar: ${String(err)}`)
+      showToast(`Erro ao enviar: ${err instanceof Error ? err.message : String(err)}`, 'error')
     } finally {
       setEnviando(null)
     }
@@ -854,7 +851,7 @@ export default function LicitacaoPage() {
       const url = await getAnexoUrl(anexo.storagePath)
       window.open(url, '_blank')
     } catch {
-      alert('Não foi possível abrir o arquivo.')
+      showToast('Não foi possível abrir o arquivo.', 'error')
     } finally {
       setAbrindo(null)
     }
