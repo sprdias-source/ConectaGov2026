@@ -569,6 +569,14 @@ function converterDataParaISO(texto?: string): string | null {
 // identificar (nunca sobrescreve com vazio) e a lista de itens — se a
 // análise não trouxe itens, mantém os já cadastrados em vez de apagá-los.
 function construirPreenchimento(analise: AnaliseEdital, itensAtuais: BiddingItem[]) {
+  // Diagnóstico: loga o item bruto exatamente como veio da análise de IA,
+  // antes de qualquer transformação — usado pra confirmar se um valor
+  // como quantidade/unidade errado (ex: "405"/"m³" virando "4"/"m") já
+  // chega assim da function ou se é introduzido por este código.
+  if (analise.itens?.length) {
+    console.log('[Preencher Licitação] itens brutos recebidos da análise:', JSON.stringify(analise.itens))
+  }
+
   const campos: Partial<Bidding> = {}
   const resumo: string[] = []
 
