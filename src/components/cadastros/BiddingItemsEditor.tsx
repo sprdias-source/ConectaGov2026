@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Plus, Trash2, Upload, FileSpreadsheet } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { Input } from '../ui/FormControls'
@@ -19,15 +19,27 @@ export default function BiddingItemsEditor({
   tipoDisputa: 'Item' | 'Lote'
 }) {
   const [drafts, setDrafts] = useState<ItemDraft[]>([])
+  // Guarda a última lista que NÓS mesmos emitimos via onChange, pra
+  // diferenciar "items mudou porque o pai ecoou nossa própria edição" (não
+  // deve resincronizar — resetaria o cursor/foco a cada tecla digitada) de
+  // "items mudou porque chegou dado novo de fora" (ex: os itens da
+  // licitação ainda estavam carregando quando este componente montou pela
+  // primeira vez, ou o "Preencher Licitação com estes Dados" atualizou os
+  // itens enquanto esta aba estava aberta) — nesse segundo caso, SIM precisa
+  // resincronizar, senão o formulário fica preso pra sempre no que veio no
+  // primeiro render, mesmo depois do dado real chegar.
+  const ultimoEmitido = useRef<Partial<BiddingItem>[] | null>(null)
 
   useEffect(() => {
+    if (items === ultimoEmitido.current) return
     setDrafts(items.map((i) => ({ ...i, _key: newKey() })))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [items])
 
   const emitChange = (next: ItemDraft[]) => {
     setDrafts(next)
-    onChange(next.map(({ _key, ...rest }) => rest))
+    const stripped = next.map(({ _key, ...rest }) => rest)
+    ultimoEmitido.current = stripped
+    onChange(stripped)
   }
 
   const addRow = () => {
