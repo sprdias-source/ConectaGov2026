@@ -108,6 +108,7 @@ export interface BiddingItem {
   referencia: string | null
   valorUnitarioLicitado: number
   valorUnitarioOfertado: number | null
+  ganhou: boolean
   createdAt: string
   updatedAt: string
 }

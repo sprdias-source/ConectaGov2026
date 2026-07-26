@@ -150,6 +150,7 @@ export const fromBiddingItemRow = (r: Row<'bidding_items'>): BiddingItem => ({
   referencia: r.referencia,
   valorUnitarioLicitado: Number(r.valor_unitario_licitado),
   valorUnitarioOfertado: r.valor_unitario_ofertado !== null ? Number(r.valor_unitario_ofertado) : null,
+  ganhou: r.ganhou,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 })
@@ -165,6 +166,7 @@ export const toBiddingItemInsert = (i: Partial<BiddingItem>, userId: string): Da
   referencia: i.referencia ?? null,
   valor_unitario_licitado: i.valorUnitarioLicitado ?? 0,
   valor_unitario_ofertado: i.valorUnitarioOfertado ?? null,
+  ganhou: i.ganhou ?? false,
 })
 
 export const fromAccountRow = (r: Row<'financial_accounts'>): FinancialAccount => ({

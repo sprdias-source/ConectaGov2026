@@ -338,24 +338,32 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   const [percentuais, setPercentuais] = useState<Record<string, string>>({})
   const [marcarEnviadaAoSalvar, setMarcarEnviadaAoSalvar] = useState(true)
 
-  const somaOriginal = items.reduce((s, i) => s + i.quantidade * i.valorUnitarioLicitado, 0)
+  // A proposta reajustada só faz sentido pros itens que a licitação
+  // efetivamente ganhou — numa disputa por item, é comum ganhar só uma
+  // parte. Se ninguém marcou "ganhou" ainda (tela de edição da licitação,
+  // aba Itens/Lotes), cai de volta pra todos os itens, pra não quebrar
+  // licitações antigas ganhas por inteiro que nunca precisaram marcar item
+  // por item.
+  const itensGanhos = items.some((i) => i.ganhou) ? items.filter((i) => i.ganhou) : items
+
+  const somaOriginal = itensGanhos.reduce((s, i) => s + i.quantidade * i.valorUnitarioLicitado, 0)
 
   const pesos: Record<string, number> = {}
   if (metodo === 'proporcional') {
-    items.forEach((i) => {
+    itensGanhos.forEach((i) => {
       const total = i.quantidade * i.valorUnitarioLicitado
-      pesos[i.id] = somaOriginal > 0 ? total / somaOriginal : 1 / (items.length || 1)
+      pesos[i.id] = somaOriginal > 0 ? total / somaOriginal : 1 / (itensGanhos.length || 1)
     })
   } else {
     const somaPercentuais = Object.values(percentuais).reduce((s, p) => s + (parseFloat(p.replace(',', '.')) || 0), 0)
-    items.forEach((i) => {
+    itensGanhos.forEach((i) => {
       const p = parseFloat((percentuais[i.id] ?? '').replace(',', '.')) || 0
       pesos[i.id] = somaPercentuais > 0 ? p / somaPercentuais : 0
     })
   }
 
   const valorFinalNum = parseFloat(valorFinal.replace(',', '.')) || 0
-  const rateio = valorFinalNum > 0 && items.length > 0 ? calcularRateio(items, valorFinalNum, pesos) : null
+  const rateio = valorFinalNum > 0 && itensGanhos.length > 0 ? calcularRateio(itensGanhos, valorFinalNum, pesos) : null
 
   const handleSalvar = () => {
     if (!rateio) return
@@ -384,42 +392,53 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
                 <th className="text-right font-semibold px-3 py-2">Qtd.</th>
                 <th className="text-right font-semibold px-3 py-2">Vl. Unit. Licitado</th>
                 <th className="text-right font-semibold px-3 py-2">Vl. Unit. Ofertado</th>
+                <th className="text-center font-semibold px-3 py-2">Ganhou?</th>
                 {metodo === 'percentual' && <th className="text-right font-semibold px-3 py-2">% do Rateio</th>}
                 {rateio && <th className="text-right font-semibold px-3 py-2 bg-base-800/40">Novo Vl. Unit.</th>}
               </tr>
             </thead>
             <tbody>
-              {items.map((i) => (
-                <tr key={i.id} className="border-t border-base-800/60">
+              {items.map((i) => {
+                const entraNoRateio = itensGanhos.includes(i)
+                return (
+                <tr key={i.id} className={`border-t border-base-800/60 ${!entraNoRateio && rateio ? 'opacity-50' : ''}`}>
                   <td className="px-3 py-2 text-base-300">{i.numeroItem}</td>
                   <td className="px-3 py-2 text-base-300 max-w-[220px] truncate">{i.descricao}</td>
                   <td className="px-3 py-2 text-right text-base-400">{i.quantidade}</td>
                   <td className="px-3 py-2 text-right font-mono text-base-400">{formatBRL(i.valorUnitarioLicitado)}</td>
                   <td className="px-3 py-2 text-right font-mono text-base-400">{i.valorUnitarioOfertado ? formatBRL(i.valorUnitarioOfertado) : '—'}</td>
+                  <td className="px-3 py-2 text-center">
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${i.ganhou ? 'bg-positive-500/15 text-positive-400' : 'bg-base-700/40 text-base-500'}`}>
+                      {i.ganhou ? 'Sim' : 'Não'}
+                    </span>
+                  </td>
                   {metodo === 'percentual' && (
                     <td className="px-3 py-2 text-right">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="0"
-                        value={percentuais[i.id] ?? ''}
-                        onChange={(e) => setPercentuais({ ...percentuais, [i.id]: e.target.value })}
-                        className="w-16 bg-base-900 border border-base-700 rounded px-1.5 py-1 text-right text-[12px] text-base-100"
-                      />
+                      {entraNoRateio && (
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0"
+                          value={percentuais[i.id] ?? ''}
+                          onChange={(e) => setPercentuais({ ...percentuais, [i.id]: e.target.value })}
+                          className="w-16 bg-base-900 border border-base-700 rounded px-1.5 py-1 text-right text-[12px] text-base-100"
+                        />
+                      )}
                     </td>
                   )}
                   {rateio && (
                     <td className="px-3 py-2 text-right font-mono font-semibold text-accent-300 bg-base-800/20">
-                      {formatBRL((rateio[i.id] ?? 0) / (i.quantidade || 1))}
+                      {entraNoRateio ? formatBRL((rateio[i.id] ?? 0) / (i.quantidade || 1)) : '—'}
                     </td>
                   )}
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
             {rateio && (
               <tfoot>
                 <tr className="border-t border-base-700">
-                  <td colSpan={metodo === 'percentual' ? 6 : 5} className="px-3 py-2 text-right text-[11px] text-base-500">Soma do rateio</td>
+                  <td colSpan={metodo === 'percentual' ? 7 : 6} className="px-3 py-2 text-right text-[11px] text-base-500">Soma do rateio</td>
                   <td className="px-3 py-2 text-right font-mono font-bold text-positive-400 bg-base-800/40">
                     {formatBRL(Object.values(rateio).reduce((s, v) => s + v, 0))}
                   </td>
@@ -436,6 +455,11 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
           <p className="text-[12px] text-base-400">
             Informe o valor total final (dos lances) e escolha como dividir entre os itens. O sistema ajusta os centavos pra soma fechar exatamente com o valor informado.
           </p>
+          {items.some((i) => i.ganhou) ? (
+            <p className="text-[11px] text-accent-300">O rateio considera só os {itensGanhos.length} item(ns) marcado(s) como "Ganhou" — os demais ficam de fora da proposta reajustada.</p>
+          ) : (
+            <p className="text-[11px] text-warning-400">Nenhum item foi marcado como "Ganhou" ainda — o rateio abaixo está considerando todos os itens. Marque os itens ganhos na aba Itens/Lotes (Cadastros → Licitações → Editar) pra restringir o rateio só a eles.</p>
+          )}
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-44">
               <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Valor Total Final</label>

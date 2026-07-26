@@ -295,6 +295,7 @@ export type Database = {
           bidding_id: string
           created_at: string
           descricao: string
+          ganhou: boolean
           id: string
           marca: string | null
           numero_item: string
@@ -310,6 +311,7 @@ export type Database = {
           bidding_id: string
           created_at?: string
           descricao: string
+          ganhou?: boolean
           id?: string
           marca?: string | null
           numero_item: string
@@ -325,6 +327,7 @@ export type Database = {
           bidding_id?: string
           created_at?: string
           descricao?: string
+          ganhou?: boolean
           id?: string
           marca?: string | null
           numero_item?: string
