@@ -303,6 +303,9 @@ export default function BiddingsTab() {
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={b.status} />
+                      {b.status === 'Em Andamento' && b.etapa && (
+                        <p className="text-[10px] text-base-500 mt-1">Etapa: {b.etapa}</p>
+                      )}
                       <SeloHabilitacao bidding={b} className="block mt-1" />
                     </td>
                     <td className="px-4 py-3 text-right">

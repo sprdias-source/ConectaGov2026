@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { LayoutGrid, ChevronLeft, ChevronRight, ClipboardList } from 'lucide-react'
+import { LayoutGrid, ChevronLeft, ChevronRight, ClipboardList, Pencil } from 'lucide-react'
 import { PageHeader } from '../components/ui/Primitives'
 import SeloHabilitacao from '../components/ui/SeloHabilitacao'
+import BiddingFormModal from '../components/cadastros/BiddingFormModal'
 import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
+import { useToast } from '../hooks/useToast'
 import { formatBRL } from '../hooks/useAccountBalances'
-import type { Bidding, BiddingEtapa } from '../types/domain'
+import type { Bidding, BiddingEtapa, BiddingItem } from '../types/domain'
 
 const ETAPAS: BiddingEtapa[] = [
   'Análise de Edital',
@@ -30,14 +32,26 @@ const CORES_COLUNA: Record<string, string> = {
 type Visualizacao = 'quadro' | 'lista'
 
 export default function KanbanLicitacoesPage() {
-  const { biddings, updateEtapa } = useBiddings()
+  const { biddings, updateEtapa, updateBidding } = useBiddings()
   const { clients } = useClients()
   const { nivel: nivelLicitacoes } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivelLicitacoes === 'edicao'
+  const { showToast } = useToast()
 
   const [visualizacao, setVisualizacao] = useState<Visualizacao>(
     () => (localStorage.getItem('cg_kanban_visualizacao') as Visualizacao) || 'quadro'
   )
+  const [editando, setEditando] = useState<Bidding | null>(null)
+
+  const isMensalista = (id: string) => clients.find((c) => c.id === id)?.isMensalista ?? false
+
+  const handleSalvarEdicao = (data: Partial<Bidding>, items: Partial<BiddingItem>[]) => {
+    if (!editando) return
+    updateBidding.mutate({ bidding: { ...editando, ...data } as Bidding, items }, {
+      onSuccess: () => { setEditando(null); showToast('Licitação atualizada com sucesso.') },
+      onError: (err) => showToast(`Erro ao atualizar a licitação: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+    })
+  }
 
   const mudarVisualizacao = (v: Visualizacao) => {
     setVisualizacao(v)
@@ -92,6 +106,13 @@ export default function KanbanLicitacoesPage() {
               title="Etapa anterior"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditando(b) }}
+              className="p-1 text-base-500 hover:text-accent-300 transition"
+              title="Editar dados completos (mesmo cadastro da aba Licitações)"
+            >
+              <Pencil className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); mover(b, 1) }}
@@ -182,6 +203,8 @@ export default function KanbanLicitacoesPage() {
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Órgão</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Valor Licitado</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Habilitação</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Etapa</th>
+                      {podeEditar && <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Ações</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -196,6 +219,18 @@ export default function KanbanLicitacoesPage() {
                         <td className="px-4 py-3 text-base-400 text-[12px]">{b.orgao}</td>
                         <td className="px-4 py-3 font-mono font-semibold text-base-200 text-[13px]">{formatBRL(b.valorLicitado)}</td>
                         <td className="px-4 py-3"><SeloHabilitacao bidding={b} /></td>
+                        <td className="px-4 py-3 text-base-400 text-[12px]">{b.etapa ?? '—'}</td>
+                        {podeEditar && (
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              onClick={() => setEditando(b)}
+                              title="Editar dados completos (mesmo cadastro da aba Licitações)"
+                              className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -204,6 +239,19 @@ export default function KanbanLicitacoesPage() {
             )}
           </div>
         </div>
+      )}
+
+      {podeEditar && (
+        <BiddingFormModal
+          open={!!editando}
+          onClose={() => setEditando(null)}
+          onSave={handleSalvarEdicao}
+          initial={editando}
+          clients={clients}
+          clientIsMensalista={isMensalista}
+          isSaving={updateBidding.isPending}
+          error={updateBidding.error}
+        />
       )}
     </div>
   )
