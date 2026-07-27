@@ -221,6 +221,50 @@ export type Database = {
           },
         ]
       }
+      bidding_analysis_juridica: {
+        Row: {
+          bidding_id: string
+          created_at: string
+          erro_mensagem: string | null
+          id: string
+          resultado: Json | null
+          status: string
+          tipo: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bidding_id: string
+          created_at?: string
+          erro_mensagem?: string | null
+          id?: string
+          resultado?: Json | null
+          status?: string
+          tipo: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bidding_id?: string
+          created_at?: string
+          erro_mensagem?: string | null
+          id?: string
+          resultado?: Json | null
+          status?: string
+          tipo?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bidding_analysis_juridica_bidding_id_fkey"
+            columns: ["bidding_id"]
+            isOneToOne: false
+            referencedRelation: "biddings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bidding_checklist_items: {
         Row: {
           atendido: boolean
