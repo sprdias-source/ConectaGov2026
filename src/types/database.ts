@@ -691,7 +691,6 @@ export type Database = {
           name: string
           periodo_meses: number | null
           phone: string | null
-          portal_consulta_url: string | null
           responsavel_cargo: string | null
           responsavel_cpf: string | null
           responsavel_nome: string | null
@@ -723,7 +722,6 @@ export type Database = {
           name: string
           periodo_meses?: number | null
           phone?: string | null
-          portal_consulta_url?: string | null
           responsavel_cargo?: string | null
           responsavel_cpf?: string | null
           responsavel_nome?: string | null
@@ -755,7 +753,6 @@ export type Database = {
           name?: string
           periodo_meses?: number | null
           phone?: string | null
-          portal_consulta_url?: string | null
           responsavel_cargo?: string | null
           responsavel_cpf?: string | null
           responsavel_nome?: string | null
@@ -764,6 +761,36 @@ export type Database = {
           valor_mensalidade?: number | null
           website?: string | null
           whatsapp?: string | null
+        }
+        Relationships: []
+      }
+      client_prefeituras: {
+        Row: {
+          client_id: string
+          created_at: string
+          id: string
+          portal_url: string | null
+          prefeitura: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          id?: string
+          portal_url?: string | null
+          prefeitura: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          id?: string
+          portal_url?: string | null
+          prefeitura?: string
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }

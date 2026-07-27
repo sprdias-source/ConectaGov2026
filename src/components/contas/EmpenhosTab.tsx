@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Plus, Pencil, Trash2, FileSpreadsheet, Ban, CheckCircle2, Repeat, Power, Eye, EyeOff, Globe, ExternalLink, Save, Check } from 'lucide-react'
-import { Button, Field, Select, Input } from '../ui/FormControls'
+import { Plus, Pencil, Trash2, FileSpreadsheet, Ban, CheckCircle2, Repeat, Power, Eye, EyeOff } from 'lucide-react'
+import { Button, Field, Select } from '../ui/FormControls'
 import { EmptyState, StatusBadge } from '../ui/Primitives'
 import { formatBRL } from '../../hooks/useAccountBalances'
 import { useEmpenhos } from '../../hooks/useEmpenhos'
@@ -8,6 +8,7 @@ import { useClients } from '../../hooks/useClients'
 import { useBiddings } from '../../hooks/useBiddings'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import EmpenhoFormModal from './EmpenhoFormModal'
+import ClientPrefeiturasPanel from './ClientPrefeiturasPanel'
 import DeleteWithPasswordDialog from '../ui/DeleteWithPasswordDialog'
 import ErrorAlert from '../ui/ErrorAlert'
 import type { Empenho } from '../../types/domain'
@@ -23,7 +24,7 @@ export default function EmpenhosTab() {
     empenhos, isLoading, addEmpenho, updateEmpenho, updateEmpenhoStatus, deleteEmpenho,
     toggleEmpenhoActive, checkEmpenhoHasFinancialHistory,
   } = useEmpenhos()
-  const { clients, updateClient } = useClients()
+  const { clients } = useClients()
   const { biddings } = useBiddings()
   const { nivel: nivelFinanceiro } = usePermissaoFerramenta('financeiro')
   const podeEditar = nivelFinanceiro === 'edicao'
@@ -33,12 +34,10 @@ export default function EmpenhosTab() {
   const [showInactive, setShowInactive] = useState(false)
   const [financialWarning, setFinancialWarning] = useState<string | undefined>()
 
-  // Painel "Consultar site do cliente" — cliente escolhido aqui é
+  // Painel "Prefeituras deste cliente" — cliente escolhido aqui é
   // independente do filtro da lista de empenhos abaixo, só serve pra
   // achar rápido o portal onde confirmar se o empenho já saiu.
   const [consultaClientIdEscolhido, setConsultaClientIdEscolhido] = useState('')
-  const [portalInput, setPortalInput] = useState('')
-  const [portalSalvo, setPortalSalvo] = useState(false)
 
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? 'Cliente removido'
   const biddingName = (id: string | null) => biddings.find((b) => b.id === id)?.objeto ?? '—'
@@ -46,36 +45,6 @@ export default function EmpenhosTab() {
   // Sem cliente escolhido ainda (primeira renderização), cai pro primeiro
   // da lista — sem precisar de um efeito só pra isso.
   const consultaClientId = consultaClientIdEscolhido || clients[0]?.id || ''
-  const clienteConsulta = clients.find((c) => c.id === consultaClientId)
-
-  // Reseta o campo de portal sempre que o cliente selecionado muda —
-  // ajuste de estado durante a própria renderização (padrão recomendado
-  // pelo React pra isso: https://react.dev/learn/you-might-not-need-an-effect),
-  // em vez de um useEffect, que geraria um render extra desnecessário.
-  const [portalCarregadoPara, setPortalCarregadoPara] = useState(consultaClientId)
-  if (portalCarregadoPara !== consultaClientId) {
-    setPortalCarregadoPara(consultaClientId)
-    setPortalInput(clienteConsulta?.portalConsultaUrl ?? '')
-    setPortalSalvo(false)
-  }
-
-  const portalSujo = portalInput !== (clienteConsulta?.portalConsultaUrl ?? '')
-
-  const handleSalvarPortal = () => {
-    if (!clienteConsulta) return
-    updateClient.mutate({ ...clienteConsulta, portalConsultaUrl: portalInput.trim() || null }, {
-      onSuccess: () => {
-        setPortalSalvo(true)
-        setTimeout(() => setPortalSalvo(false), 1800)
-      },
-    })
-  }
-
-  const handleAbrirPortal = () => {
-    const url = portalInput.trim()
-    if (!url) return
-    window.open(/^https?:\/\//i.test(url) ? url : `https://${url}`, '_blank', 'noopener,noreferrer')
-  }
 
   useEffect(() => {
     if (!deleting) {
@@ -127,45 +96,15 @@ export default function EmpenhosTab() {
       </div>
 
       {clients.length > 0 && (
-        <div className="bg-base-900/60 border border-base-700/50 rounded-xl p-4 mb-4 flex flex-col gap-3">
-          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-base-400">
-            <Globe className="w-3.5 h-3.5 text-accent-400" />
-            Consultar site do cliente
+        <div className="mb-4">
+          <div className="w-56 mb-2">
+            <Field label="Cliente">
+              <Select value={consultaClientId} onChange={(e) => setConsultaClientIdEscolhido(e.target.value)}>
+                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select>
+            </Field>
           </div>
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="w-56">
-              <Field label="Cliente">
-                <Select value={consultaClientId} onChange={(e) => setConsultaClientIdEscolhido(e.target.value)}>
-                  {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </Select>
-              </Field>
-            </div>
-            <div className="flex-1 min-w-[220px]">
-              <Field label="Site / portal de consulta">
-                <Input
-                  value={portalInput}
-                  onChange={(e) => setPortalInput(e.target.value)}
-                  placeholder="https://transparencia.prefeitura.../empenhos"
-                  className="font-mono text-[12.5px]"
-                  disabled={!podeEditar}
-                />
-              </Field>
-            </div>
-            <div className="flex items-center gap-2 pb-0.5">
-              {podeEditar && (
-                <Button variant="secondary" onClick={handleSalvarPortal} disabled={!portalSujo || updateClient.isPending}>
-                  {portalSalvo ? <Check className="w-3.5 h-3.5 text-positive-400" /> : <Save className="w-3.5 h-3.5" />}
-                  {portalSalvo ? 'Salvo' : 'Salvar'}
-                </Button>
-              )}
-              <Button variant="secondary" onClick={handleAbrirPortal} disabled={!portalInput.trim()}>
-                <ExternalLink className="w-3.5 h-3.5" /> Abrir
-              </Button>
-            </div>
-          </div>
-          <p className="text-[11px] text-base-500">
-            O link fica salvo por cliente — da próxima vez que você selecionar esse cliente aqui, ele já aparece preenchido.
-          </p>
+          <ClientPrefeiturasPanel key={consultaClientId} clientId={consultaClientId} podeEditar={podeEditar} />
         </div>
       )}
 
