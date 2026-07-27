@@ -5,7 +5,7 @@
 
 import type { Database } from '../types/database'
 import type {
-  Client, Bidding, BiddingItem, FinancialAccount, Empenho, Transaction,
+  Client, ClientPrefeitura, Bidding, BiddingItem, FinancialAccount, Empenho, Transaction,
   Employee, Contract, Receipt, AttachedFile, AuditLog, Category, PaymentMethod, ClientDocument, BiddingChecklistItem, AtestadoTecnico, ModeloDocumento, ContractMarco, PersonalEvent,
 } from '../types/domain'
 import { todayLocalISO } from './dateUtils'
@@ -26,7 +26,6 @@ export const fromClientRow = (r: Row<'clients'>): Client => ({
   whatsapp: r.whatsapp,
   email: r.email,
   website: r.website,
-  portalConsultaUrl: r.portal_consulta_url,
   bancoNome: r.banco_nome,
   bancoAgencia: r.banco_agencia,
   bancoConta: r.banco_conta,
@@ -58,7 +57,6 @@ export const toClientInsert = (c: Partial<Client>, userId: string): Database['pu
   whatsapp: c.whatsapp ?? null,
   email: c.email ?? null,
   website: c.website ?? null,
-  portal_consulta_url: c.portalConsultaUrl ?? null,
   banco_nome: c.bancoNome ?? null,
   banco_agencia: c.bancoAgencia ?? null,
   banco_conta: c.bancoConta ?? null,
@@ -73,6 +71,25 @@ export const toClientInsert = (c: Partial<Client>, userId: string): Database['pu
   data_cadastro: c.dataCadastro ?? null,
   data_inicio_pagamento: c.dataInicioPagamento ?? null,
   is_active: c.isActive ?? true,
+})
+
+export const fromClientPrefeituraRow = (r: Row<'client_prefeituras'>): ClientPrefeitura => ({
+  id: r.id,
+  userId: r.user_id,
+  clientId: r.client_id,
+  prefeitura: r.prefeitura,
+  portalUrl: r.portal_url,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+})
+
+export const toClientPrefeituraInsert = (
+  p: Partial<ClientPrefeitura>, userId: string
+): Database['public']['Tables']['client_prefeituras']['Insert'] => ({
+  user_id: userId,
+  client_id: p.clientId ?? '',
+  prefeitura: p.prefeitura ?? '',
+  portal_url: p.portalUrl ?? null,
 })
 
 export const fromBiddingRow = (r: Row<'biddings'>): Bidding => ({

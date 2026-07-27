@@ -44,9 +44,6 @@ export interface Client {
   whatsapp: string | null
   email: string | null
   website: string | null
-  // Portal/site pra conferir se o empenho foi confirmado na prefeitura —
-  // diferente do website acima (que é o site da própria empresa cliente).
-  portalConsultaUrl: string | null
   bancoNome: string | null
   bancoAgencia: string | null
   bancoConta: string | null
@@ -61,6 +58,18 @@ export interface Client {
   dataCadastro: string | null
   dataInicioPagamento: string | null
   isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+// Um cliente pode ter empenhos em várias prefeituras — cada uma com seu
+// próprio portal de consulta.
+export interface ClientPrefeitura {
+  id: string
+  userId: string
+  clientId: string
+  prefeitura: string
+  portalUrl: string | null
   createdAt: string
   updatedAt: string
 }
