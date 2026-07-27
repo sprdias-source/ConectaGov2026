@@ -44,6 +44,9 @@ export interface Client {
   whatsapp: string | null
   email: string | null
   website: string | null
+  // Portal/site pra conferir se o empenho foi confirmado na prefeitura —
+  // diferente do website acima (que é o site da própria empresa cliente).
+  portalConsultaUrl: string | null
   bancoNome: string | null
   bancoAgencia: string | null
   bancoConta: string | null
