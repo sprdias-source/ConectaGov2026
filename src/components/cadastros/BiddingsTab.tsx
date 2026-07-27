@@ -381,7 +381,7 @@ export default function BiddingsTab() {
                         <button
                           onClick={() => navigate(`/licitacoes/${b.id}`)}
                           title="Ver documentação e checklist desta licitação"
-                          className="font-semibold text-base-100 hover:text-accent-300 truncate flex items-center gap-2 text-left transition"
+                          className="w-full min-w-0 flex items-center gap-2 text-left font-semibold text-base-100 hover:text-accent-300 transition"
                         >
                           <span className="truncate">{b.objeto}</span>
                           {!b.isActive && <span className="px-1.5 py-0.5 rounded bg-base-700 text-base-400 text-[10px] font-bold shrink-0">Inativa</span>}

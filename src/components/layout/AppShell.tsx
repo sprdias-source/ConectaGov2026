@@ -258,7 +258,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       <aside
         className={`fixed inset-y-0 left-0 bg-sidebar border-r border-base-700/50 flex flex-col justify-between z-40 transition-all duration-300
           ${collapsed ? 'w-16 p-3' : 'w-64 p-4'}
-          lg:static lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:flex'}`}
+          lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:flex'}`}
       >
         {collapsed ? (
           <div
