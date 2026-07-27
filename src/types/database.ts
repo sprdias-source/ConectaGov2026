@@ -691,6 +691,7 @@ export type Database = {
           name: string
           periodo_meses: number | null
           phone: string | null
+          portal_consulta_url: string | null
           responsavel_cargo: string | null
           responsavel_cpf: string | null
           responsavel_nome: string | null
@@ -722,6 +723,7 @@ export type Database = {
           name: string
           periodo_meses?: number | null
           phone?: string | null
+          portal_consulta_url?: string | null
           responsavel_cargo?: string | null
           responsavel_cpf?: string | null
           responsavel_nome?: string | null
@@ -753,6 +755,7 @@ export type Database = {
           name?: string
           periodo_meses?: number | null
           phone?: string | null
+          portal_consulta_url?: string | null
           responsavel_cargo?: string | null
           responsavel_cpf?: string | null
           responsavel_nome?: string | null
