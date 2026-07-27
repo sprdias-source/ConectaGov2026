@@ -18,7 +18,10 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!
-const GEMINI_MODEL = 'gemini-2.5-flash'
+// Alias oficial do Google que sempre aponta pro último release estável da
+// família Flash — evita quebrar de novo quando uma versão fixa (ex:
+// gemini-2.5-flash) for descontinuada, como aconteceu em jul/2026.
+const GEMINI_MODEL = 'gemini-flash-latest'
 
 const TIPOS_VALIDOS = ['esclarecimento', 'impugnacao', 'raio_x'] as const
 type Tipo = typeof TIPOS_VALIDOS[number]
