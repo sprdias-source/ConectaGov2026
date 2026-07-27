@@ -1,10 +1,10 @@
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   Eye, EyeOff, Menu, X, ChevronLeft, ChevronRight, ChevronDown, Wallet,
   CreditCard, ShieldCheck, LogOut, Download, Sun, Moon, Search,
 } from 'lucide-react'
-import { NAV_GROUPS } from './navConfig'
+import { NAV_GROUPS, NAV_ITEMS } from './navConfig'
 import GlobalSearch from './GlobalSearch'
 import { useAuth } from '../../hooks/useAuth'
 import { useTheme } from '../../hooks/useTheme'
@@ -29,6 +29,20 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('cg_sidebar_collapsed') === 'true')
+  // Com a sidebar recolhida (só ícones), passar o mouse por cima "espia" o
+  // menu completo por cima do conteúdo, sem alterar o estado recolhido
+  // salvo — só uma revelação temporária. O timeout no "sair" evita que o
+  // menu suma se o mouse só passar de raspão a caminho do painel.
+  const [peeking, setPeeking] = useState(false)
+  const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const abrirEspiada = () => {
+    if (peekTimer.current) clearTimeout(peekTimer.current)
+    setPeeking(true)
+  }
+  const fecharEspiadaComAtraso = () => {
+    peekTimer.current = setTimeout(() => setPeeking(false), 150)
+  }
 
   // Busca global — Ctrl+K (Windows/Linux) ou Cmd+K (Mac), de qualquer tela.
   useEffect(() => {
@@ -81,6 +95,127 @@ export default function AppShell({ children }: { children: ReactNode }) {
     clientDocuments.filter((d) => d.status === 'vencendo' || d.status === 'vencido').length +
     transactions.filter((t) => t.status === 'Atrasado').length
 
+  // Conteúdo completo do menu (busca, patrimônio, contas/cartões, grupos de
+  // navegação) — reaproveitado tanto no painel expandido normal quanto na
+  // "espiada" que aparece flutuando quando o menu recolhido recebe hover.
+  const sidebarBody = (
+    <>
+      <button
+        onClick={() => setSearchOpen(true)}
+        className="flex items-center gap-2 px-3 py-2 bg-base-900/60 border border-base-700/50 rounded-lg text-base-500 hover:text-base-300 hover:border-base-600 transition text-left"
+      >
+        <Search className="w-3.5 h-3.5 shrink-0" />
+        <span className="text-[12px] flex-1">Buscar...</span>
+        <span className="text-[10px] font-mono border border-base-700 rounded px-1.5 py-0.5">Ctrl+K</span>
+      </button>
+
+      <div className="bg-base-900/60 border border-base-700/50 rounded-xl p-3 shadow-sm">
+        <div className="flex justify-between items-center text-base-400">
+          <span className="text-[9px] font-bold tracking-widest uppercase">Patrimônio Total</span>
+          <button onClick={() => setPatrimonioVisible((v) => !v)} className="text-base-500 hover:text-base-200 transition">
+            {patrimonioVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+          </button>
+        </div>
+        <div className={`text-xl font-extrabold mt-1 font-mono tabular-nums tracking-tight ${patrimonioTotal >= 0 ? 'text-positive-400' : 'text-negative-400'}`}>
+          {patrimonioVisible ? formatBRL(patrimonioTotal) : 'R$ ••••••'}
+        </div>
+        {unlinkedPaidCount > 0 && (
+          <p className="text-[9px] text-warning-400 mt-1.5 leading-tight">
+            {unlinkedPaidCount} lançamento(s) pago(s) sem conta vinculada não entram nesse total.
+          </p>
+        )}
+      </div>
+
+      <NavSection
+        icon={<Wallet className="w-3.5 h-3.5 text-accent-400" />}
+        label="Contas"
+        empty="Nenhuma conta"
+        items={standardAccounts.map((a) => ({
+          key: a.id,
+          name: a.name,
+          value: balances.get(a.id) ?? 0,
+          positiveColor: 'text-positive-400',
+          negativeColor: 'text-negative-400',
+        }))}
+        visible={patrimonioVisible}
+      />
+
+      <NavSection
+        icon={<CreditCard className="w-3.5 h-3.5 text-accent-400" />}
+        label="Cartões"
+        empty="Nenhum cartão"
+        items={creditCards.map((a) => ({
+          key: a.id,
+          name: a.name,
+          value: -(balances.get(a.id) ?? 0),
+          positiveColor: 'text-negative-400',
+          negativeColor: 'text-negative-400',
+        }))}
+        visible={patrimonioVisible}
+      />
+
+      {accounts.filter((a) => a.type === 'INTERNO').length > 0 && (
+        <div className="mt-1">
+          <p className="px-2.5 text-[9px] font-bold uppercase tracking-widest text-base-600 mb-1">Caixa Interno</p>
+          {accounts.filter((a) => a.type === 'INTERNO').map((a) => {
+            // Calcula o saldo desta conta interna isoladamente — nunca
+            // entra no patrimônio nem em qualquer outro cálculo.
+            const saldoInterno = transactions
+              .filter((t) => t.status === 'Pago' && t.accountId === a.id)
+              .reduce((s, t) => s + (t.type === 'Receber' ? t.value : -t.value), a.startingBalance)
+            return (
+              <div key={a.id} className="flex items-center justify-between px-2.5 py-1.5">
+                <span className="text-[12px] text-base-500 truncate">{a.name}</span>
+                <span className={`text-[12px] font-mono font-semibold ml-2 shrink-0 ${saldoInterno >= 0 ? 'text-base-400' : 'text-negative-400'}`}>
+                  {formatBRL(saldoInterno)}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <nav className="flex flex-col gap-3 mt-1">
+        {NAV_GROUPS.map((group) => {
+          const aberto = gruposAbertos[group.label] ?? true
+          return (
+            <div key={group.label} className="flex flex-col gap-0.5">
+              <button
+                onClick={() => toggleGrupo(group.label)}
+                className="flex items-center justify-between px-2.5 mb-0.5 text-[9px] font-bold uppercase tracking-widest text-base-600 hover:text-base-400 transition"
+              >
+                {group.label}
+                <ChevronDown className={`w-3 h-3 shrink-0 transition-transform ${aberto ? '' : '-rotate-90'}`} />
+              </button>
+              {aberto && group.items.map((item) => (
+                <NavLink
+                  key={item.key}
+                  to={item.path}
+                  onClick={() => { setMobileOpen(false); setPeeking(false) }}
+                  className={({ isActive }) =>
+                    `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium transition ${
+                      isActive
+                        ? 'bg-[var(--nav-active-bg)] text-accent-300 border border-[var(--nav-active-border)]'
+                        : 'text-base-400 hover:text-base-100 hover:bg-base-850 border border-transparent'
+                    }`
+                  }
+                >
+                  <item.icon className="w-4 h-4 shrink-0" />
+                  {item.label}
+                  {item.key === 'central-prazos' && alertasUrgentes > 0 && (
+                    <span className="ml-auto text-[10px] font-bold bg-negative-500 text-white rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center shrink-0">
+                      {alertasUrgentes > 9 ? '9+' : alertasUrgentes}
+                    </span>
+                  )}
+                </NavLink>
+              ))}
+            </div>
+          )
+        })}
+      </nav>
+    </>
+  )
+
   return (
     <div className="min-h-screen bg-base-950 flex flex-col lg:flex-row text-base-100 font-sans antialiased selection:bg-accent-500/30">
       {/* Mobile header */}
@@ -121,16 +256,26 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 bg-base-950 border-r border-base-700/50 flex flex-col justify-between z-40 transition-all duration-300
+        className={`fixed inset-y-0 left-0 bg-sidebar border-r border-base-700/50 flex flex-col justify-between z-40 transition-all duration-300
           ${collapsed ? 'w-16 p-3' : 'w-64 p-4'}
-          lg:static lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:flex'}`}
+          lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:flex'}`}
       >
         {collapsed ? (
-          <div className="flex flex-col gap-5 items-center flex-1 py-1 overflow-y-auto">
-            <div className="pb-4 border-b border-base-800 w-full flex flex-col items-center gap-2">
-              <img src="/logo-icon.png" alt="ConectaGov" className="w-8 h-8 rounded-lg object-cover" />
+          <div
+            className="relative flex flex-col gap-3 items-center flex-1 py-1 min-h-0"
+            onMouseEnter={abrirEspiada}
+            onMouseLeave={fecharEspiadaComAtraso}
+          >
+            <div className="pb-3 border-b border-base-800 w-full flex flex-col items-center gap-2 shrink-0">
+              <div className="relative">
+                <img src="/logo-icon.png" alt="ConectaGov" className="w-8 h-8 rounded-lg object-cover" />
+                {theme === 'light' && (
+                  <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-lime border-2 border-sidebar" />
+                )}
+              </div>
               <button
                 onClick={toggleCollapsed}
+                title="Expandir menu"
                 className="p-1 rounded bg-base-850 hover:bg-base-800 text-base-400 hover:text-base-100 border border-base-700 transition"
               >
                 <ChevronRight className="w-3.5 h-3.5" />
@@ -150,9 +295,35 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 <Search className="w-3.5 h-3.5" />
               </button>
             </div>
+
+            <nav className="flex flex-col gap-1 w-full items-center overflow-y-auto flex-1">
+              {NAV_ITEMS.map((item) => (
+                <NavLink
+                  key={item.key}
+                  to={item.path}
+                  title={item.label}
+                  onClick={() => setPeeking(false)}
+                  className={({ isActive }) =>
+                    `relative w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition ${
+                      isActive
+                        ? 'bg-[var(--nav-active-bg)] text-accent-300 border border-[var(--nav-active-border)]'
+                        : 'text-base-400 hover:text-base-100 hover:bg-base-850 border border-transparent'
+                    }`
+                  }
+                >
+                  <item.icon className="w-4 h-4" />
+                  {item.key === 'central-prazos' && alertasUrgentes > 0 && (
+                    <span className="absolute -top-1 -right-1 text-[9px] font-bold bg-negative-500 text-white rounded-full min-w-[15px] h-[15px] px-0.5 flex items-center justify-center">
+                      {alertasUrgentes > 9 ? '9+' : alertasUrgentes}
+                    </span>
+                  )}
+                </NavLink>
+              ))}
+            </nav>
+
             <div
               onClick={() => setPatrimonioVisible((v) => !v)}
-              className="bg-base-900/60 border border-base-700/50 rounded-xl p-2.5 text-center cursor-pointer hover:bg-base-900 transition w-full flex flex-col items-center gap-1 shadow-sm"
+              className="bg-base-900/60 border border-base-700/50 rounded-xl p-2.5 text-center cursor-pointer hover:bg-base-900 transition w-full flex flex-col items-center gap-1 shadow-sm shrink-0"
               title={`Patrimônio: ${patrimonioVisible ? formatBRL(patrimonioTotal) : '••••'}`}
             >
               <Wallet className="w-4 h-4 text-accent-400" />
@@ -160,12 +331,27 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 {patrimonioVisible ? (patrimonioTotal >= 0 ? '+' : '−') : '••'}
               </span>
             </div>
+
+            {/* "Espiada": ao passar o mouse com o menu recolhido, mostra o
+                painel completo flutuando por cima do conteúdo — sem alterar
+                o estado recolhido/expandido salvo (esse continua manual,
+                pelo botão de seta). */}
+            {peeking && (
+              <div className="absolute left-full top-0 ml-2 w-64 max-h-[calc(100vh-2rem)] bg-sidebar border border-base-700/50 rounded-xl shadow-2xl z-50 p-4 flex flex-col gap-5 overflow-y-auto animate-fade-in">
+                {sidebarBody}
+              </div>
+            )}
           </div>
         ) : (
           <div className="flex flex-col gap-5 flex-1 overflow-y-auto">
             <div className="pb-3 border-b border-base-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <img src="/logo-icon.png" alt="ConectaGov" className="w-8 h-8 rounded-lg object-cover" />
+                <div className="relative">
+                  <img src="/logo-icon.png" alt="ConectaGov" className="w-8 h-8 rounded-lg object-cover" />
+                  {theme === 'light' && (
+                    <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-lime border-2 border-sidebar" />
+                  )}
+                </div>
                 <span className="font-display font-bold text-sm tracking-tight">Conecta<span className="text-positive-400">Gov</span></span>
               </div>
               <div className="flex items-center gap-1">
@@ -178,6 +364,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 </button>
                 <button
                   onClick={toggleCollapsed}
+                  title="Recolher menu"
                   className="p-1 rounded bg-base-850 hover:bg-base-800 text-base-400 hover:text-base-100 border border-base-700 transition"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
@@ -185,119 +372,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
               </div>
             </div>
 
-            <button
-              onClick={() => setSearchOpen(true)}
-              className="flex items-center gap-2 px-3 py-2 bg-base-900/60 border border-base-700/50 rounded-lg text-base-500 hover:text-base-300 hover:border-base-600 transition text-left"
-            >
-              <Search className="w-3.5 h-3.5 shrink-0" />
-              <span className="text-[12px] flex-1">Buscar...</span>
-              <span className="text-[10px] font-mono border border-base-700 rounded px-1.5 py-0.5">Ctrl+K</span>
-            </button>
-
-            <div className="bg-base-900/60 border border-base-700/50 rounded-xl p-3 shadow-sm">
-              <div className="flex justify-between items-center text-base-400">
-                <span className="text-[9px] font-bold tracking-widest uppercase">Patrimônio Total</span>
-                <button onClick={() => setPatrimonioVisible((v) => !v)} className="text-base-500 hover:text-base-200 transition">
-                  {patrimonioVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                </button>
-              </div>
-              <div className={`text-xl font-extrabold mt-1 font-mono tabular-nums tracking-tight ${patrimonioTotal >= 0 ? 'text-positive-400' : 'text-negative-400'}`}>
-                {patrimonioVisible ? formatBRL(patrimonioTotal) : 'R$ ••••••'}
-              </div>
-              {unlinkedPaidCount > 0 && (
-                <p className="text-[9px] text-warning-400 mt-1.5 leading-tight">
-                  {unlinkedPaidCount} lançamento(s) pago(s) sem conta vinculada não entram nesse total.
-                </p>
-              )}
-            </div>
-
-            <NavSection
-              icon={<Wallet className="w-3.5 h-3.5 text-accent-400" />}
-              label="Contas"
-              empty="Nenhuma conta"
-              items={standardAccounts.map((a) => ({
-                key: a.id,
-                name: a.name,
-                value: balances.get(a.id) ?? 0,
-                positiveColor: 'text-positive-400',
-                negativeColor: 'text-negative-400',
-              }))}
-              visible={patrimonioVisible}
-            />
-
-            <NavSection
-              icon={<CreditCard className="w-3.5 h-3.5 text-accent-400" />}
-              label="Cartões"
-              empty="Nenhum cartão"
-              items={creditCards.map((a) => ({
-                key: a.id,
-                name: a.name,
-                value: -(balances.get(a.id) ?? 0),
-                positiveColor: 'text-negative-400',
-                negativeColor: 'text-negative-400',
-              }))}
-              visible={patrimonioVisible}
-            />
-
-            {accounts.filter((a) => a.type === 'INTERNO').length > 0 && (
-              <div className="mt-1">
-                <p className="px-2.5 text-[9px] font-bold uppercase tracking-widest text-base-600 mb-1">Caixa Interno</p>
-                {accounts.filter((a) => a.type === 'INTERNO').map((a) => {
-                  // Calcula o saldo desta conta interna isoladamente —
-                  // nunca entra no patrimônio nem em qualquer outro cálculo.
-                  const saldoInterno = transactions
-                    .filter((t) => t.status === 'Pago' && t.accountId === a.id)
-                    .reduce((s, t) => s + (t.type === 'Receber' ? t.value : -t.value), a.startingBalance)
-                  return (
-                    <div key={a.id} className="flex items-center justify-between px-2.5 py-1.5">
-                      <span className="text-[12px] text-base-500 truncate">{a.name}</span>
-                      <span className={`text-[12px] font-mono font-semibold ml-2 shrink-0 ${saldoInterno >= 0 ? 'text-base-400' : 'text-negative-400'}`}>
-                        {formatBRL(saldoInterno)}
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            <nav className="flex flex-col gap-3 mt-1">
-              {NAV_GROUPS.map((group) => {
-                const aberto = gruposAbertos[group.label] ?? true
-                return (
-                  <div key={group.label} className="flex flex-col gap-0.5">
-                    <button
-                      onClick={() => toggleGrupo(group.label)}
-                      className="flex items-center justify-between px-2.5 mb-0.5 text-[9px] font-bold uppercase tracking-widest text-base-600 hover:text-base-400 transition"
-                    >
-                      {group.label}
-                      <ChevronDown className={`w-3 h-3 shrink-0 transition-transform ${aberto ? '' : '-rotate-90'}`} />
-                    </button>
-                    {aberto && group.items.map((item) => (
-                      <NavLink
-                        key={item.key}
-                        to={item.path}
-                        onClick={() => setMobileOpen(false)}
-                        className={({ isActive }) =>
-                          `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium transition ${
-                            isActive
-                              ? 'bg-[var(--nav-active-bg)] text-accent-300 border border-[var(--nav-active-border)]'
-                              : 'text-base-400 hover:text-base-100 hover:bg-base-850 border border-transparent'
-                          }`
-                        }
-                      >
-                        <item.icon className="w-4 h-4 shrink-0" />
-                        {item.label}
-                        {item.key === 'central-prazos' && alertasUrgentes > 0 && (
-                          <span className="ml-auto text-[10px] font-bold bg-negative-500 text-white rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center shrink-0">
-                            {alertasUrgentes > 9 ? '9+' : alertasUrgentes}
-                          </span>
-                        )}
-                      </NavLink>
-                    ))}
-                  </div>
-                )
-              })}
-            </nav>
+            {sidebarBody}
           </div>
         )}
 
@@ -317,7 +392,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 <ShieldCheck className="w-4 h-4 text-positive-400 shrink-0" />
                 <div className="text-xs leading-tight min-w-0">
                   <div className="font-semibold text-base-200 truncate">{user?.email}</div>
-                  <p className="text-[10px] text-base-500 mt-0.5">Sessão segura e ativa</p>
+                  <p className="text-[10px] text-base-500 mt-0.5 flex items-center gap-1">
+                    {theme === 'light' && <span className="w-1.5 h-1.5 rounded-full bg-lime shrink-0" />}
+                    Sessão segura e ativa
+                  </p>
                 </div>
               </div>
               <div className="flex gap-2">

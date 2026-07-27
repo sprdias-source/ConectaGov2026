@@ -111,7 +111,7 @@ export default function FluxoCaixaPage() {
                       {m.label}
                     </td>
                     <td className="py-2 pr-3 text-right font-mono text-accent-300">{m.aReceber > 0 ? formatBRL(m.aReceber) : '—'}</td>
-                    <td className="py-2 pr-3 text-right font-mono text-base-400">{m.aPagar > 0 ? formatBRL(m.aPagar) : '—'}</td>
+                    <td className="py-2 pr-3 text-right font-mono text-negative-400">{m.aPagar > 0 ? formatBRL(m.aPagar) : '—'}</td>
                     <td className="py-2 pr-3 text-right font-mono text-positive-400">{m.entradas > 0 ? formatBRL(m.entradas) : '—'}</td>
                     <td className="py-2 pr-3 text-right font-mono text-negative-300">{m.saidas > 0 ? formatBRL(m.saidas) : '—'}</td>
                     <td className="py-2 text-right font-mono font-bold text-base-100">{formatBRL(m.saldo)}</td>

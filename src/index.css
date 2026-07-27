@@ -35,6 +35,16 @@
   --color-negative-400: #e07688;
   --color-negative-300: #f0a3b0;
 
+  /* Fundo da sidebar — variável própria (em vez de reaproveitar base-950)
+     porque no modo claro ela precisa de um sobretom sutil diferente do
+     fundo do conteúdo (ver [data-theme='light'] abaixo). No escuro é
+     idêntica a base-950 de propósito — não mexemos no visual do escuro. */
+  --color-sidebar: #0b0f16;
+
+  /* Verde-limão da logo — usado só em 1-2 detalhes bem pequenos (nunca
+     como cor dominante). Só aparece no modo claro por enquanto. */
+  --color-lime: #3ebd8c;
+
   /* Intensidade do "pill" do item de menu ativo — em variável separada
      porque o modo claro precisa de uma opacidade maior que o escuro pro
      mesmo destaque ficar visível (ver [data-theme='light'] abaixo). */
@@ -86,6 +96,11 @@
   --color-negative-500: #b8465a;
   --color-negative-400: #94374a;
   --color-negative-300: #6f2938;
+
+  /* Sobretom: um tom só de diferença do fundo do conteúdo (base-950), não
+     um bloco de cor — pedido explícito pra sidebar clara ficar "leve". */
+  --color-sidebar: #f8faf9;
+  --color-lime: #65a30d;
 
   --nav-active-bg: rgba(20, 110, 117, 0.16);
   --nav-active-border: rgba(20, 110, 117, 0.34);
