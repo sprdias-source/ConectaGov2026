@@ -99,7 +99,12 @@ export function useAnaliseJuridicaEdital(biddingId: string | undefined, tipo: Ti
       const { error } = await supabase.functions.invoke('Analisar-edital-juridico', { body: { biddingId, tipo } })
       if (error) throw error
     },
-    onSuccess: () => {
+    // onSettled (não só onSuccess): mesmo quando a function retorna um
+    // status de erro, ela já gravou status='erro' + a mensagem real do
+    // Gemini na linha antes de responder — sem reconsultar aqui, a tela só
+    // mostra o erro genérico do client ("Edge Function returned a non-2xx
+    // status code") em vez do motivo de verdade.
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey })
     },
   })
