@@ -275,6 +275,7 @@ export type Database = {
           created_at: string
           descricao: string
           id: string
+          numero_edital: string | null
           observacoes: string | null
           obrigatorio: boolean
           origem: string
@@ -292,6 +293,7 @@ export type Database = {
           created_at?: string
           descricao: string
           id?: string
+          numero_edital?: string | null
           observacoes?: string | null
           obrigatorio?: boolean
           origem?: string
@@ -309,6 +311,7 @@ export type Database = {
           created_at?: string
           descricao?: string
           id?: string
+          numero_edital?: string | null
           observacoes?: string | null
           obrigatorio?: boolean
           origem?: string

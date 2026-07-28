@@ -240,7 +240,7 @@ export interface Receipt {
   createdAt: string
 }
 
-export type FileCategory = 'Edital' | 'Termo de Referência' | 'Contrato' | 'Recibo' | 'Certidão' | 'Outro'
+export type FileCategory = 'Edital' | 'Termo de Referência' | 'Contrato' | 'Recibo' | 'Certidão' | 'Outro' | 'Checklist' | 'Proposta' | 'Proposta Readequada'
 export type FileEntityType = 'licitacao' | 'contrato' | 'recibo' | 'cliente' | 'funcionario' | 'empenho'
 
 export interface AttachedFile {
@@ -267,6 +267,7 @@ export interface BiddingChecklistItem {
   id: string
   userId: string
   biddingId: string
+  numeroEdital: string | null
   descricao: string
   categoria: string | null
   obrigatorio: boolean

@@ -105,7 +105,7 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
         setUploadProgress(null)
       }
 
-      const { error } = await supabase.from('attached_files').insert(
+      const { data, error } = await supabase.from('attached_files').insert(
         toFileInsert({
           name: file.name,
           sizeBytes: file.size,
@@ -115,9 +115,9 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
           entityType,
           entityId,
         }, user.id)
-      )
+      ).select('id').single()
       if (error) throw error
-      return path
+      return { path, id: data.id as string }
     },
     onSuccess: (_, variables) => {
       invalidate()

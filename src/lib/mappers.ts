@@ -407,6 +407,7 @@ export const fromBiddingChecklistItemRow = (r: Row<'bidding_checklist_items'>): 
   id: r.id,
   userId: r.user_id,
   biddingId: r.bidding_id,
+  numeroEdital: r.numero_edital,
   descricao: r.descricao,
   categoria: r.categoria,
   obrigatorio: r.obrigatorio,
@@ -426,6 +427,7 @@ export const toBiddingChecklistItemInsert = (
 ): Database['public']['Tables']['bidding_checklist_items']['Insert'] => ({
   user_id: userId,
   bidding_id: i.biddingId ?? '',
+  numero_edital: i.numeroEdital ?? null,
   descricao: i.descricao ?? '',
   categoria: i.categoria ?? null,
   obrigatorio: i.obrigatorio ?? true,
