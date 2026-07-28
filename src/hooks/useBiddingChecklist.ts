@@ -80,6 +80,21 @@ export function sugerirTipoDocumento(descricao: string): Exclude<DocumentTipo, '
   return null
 }
 
+// A Análise de Edital por IA já é instruída a começar cada item do
+// checklist pela numeração exata do próprio edital (ex: "5.2 a) Inscrição
+// no CNPJ"). Separa esse número num campo próprio em vez de deixar preso
+// dentro do texto, cobrindo os formatos mais comuns de numeração de edital
+// (com ou sem alínea). Só reconhece número com ponto ("5.2") ou número +
+// alínea ("5 a)") — evita casar um número solto no meio de uma frase comum
+// (ex: "24 horas de prazo") como se fosse numeração.
+const RE_NUMERO_EDITAL = /^(\d+(?:\.\d+)+\s*(?:[a-zà-ÿ]\))?|\d+\s*[a-zà-ÿ]\))\s+(.+)$/i
+
+export function extrairNumeroEdital(descricao: string): { numero: string | null; descricao: string } {
+  const m = descricao.match(RE_NUMERO_EDITAL)
+  if (!m) return { numero: null, descricao }
+  return { numero: m[1].trim(), descricao: m[2].trim() }
+}
+
 export function useBiddingChecklist(biddingId?: string) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -105,6 +120,7 @@ export function useBiddingChecklist(biddingId?: string) {
 
   const addItem = useMutation({
     mutationFn: async (item: {
+      numeroEdital?: string | null
       descricao: string
       categoria?: string | null
       obrigatorio?: boolean
@@ -117,6 +133,7 @@ export function useBiddingChecklist(biddingId?: string) {
       const { error } = await supabase.from('bidding_checklist_items').insert(
         toBiddingChecklistItemInsert({
           biddingId,
+          numeroEdital: item.numeroEdital ?? null,
           descricao: item.descricao,
           categoria: item.categoria ?? null,
           obrigatorio: item.obrigatorio ?? true,
@@ -135,17 +152,19 @@ export function useBiddingChecklist(biddingId?: string) {
   const addItensEmLote = useMutation({
     mutationFn: async (itens: { descricao: string; categoria?: string | null; obrigatorio?: boolean }[]) => {
       if (!user || !biddingId) throw new Error('Não autenticado')
-      const rows = itens.map((item) =>
-        toBiddingChecklistItemInsert({
+      const rows = itens.map((item) => {
+        const { numero, descricao } = extrairNumeroEdital(item.descricao)
+        return toBiddingChecklistItemInsert({
           biddingId,
-          descricao: item.descricao,
+          numeroEdital: numero,
+          descricao,
           categoria: item.categoria ?? null,
           obrigatorio: item.obrigatorio ?? true,
           origem: 'ia',
-          clientDocumentTipo: sugerirTipoDocumento(item.descricao),
+          clientDocumentTipo: sugerirTipoDocumento(descricao),
           atendido: false,
         }, user.id)
-      )
+      })
       const { error } = await supabase.from('bidding_checklist_items').insert(rows)
       if (error) throw error
     },
@@ -157,6 +176,7 @@ export function useBiddingChecklist(biddingId?: string) {
       const { error } = await supabase
         .from('bidding_checklist_items')
         .update({
+          numero_edital: item.numeroEdital,
           descricao: item.descricao,
           categoria: item.categoria,
           obrigatorio: item.obrigatorio,

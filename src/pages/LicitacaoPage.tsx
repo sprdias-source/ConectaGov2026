@@ -4,7 +4,7 @@ import {
   ArrowLeft, FileText, Upload, Plus, Trash2, CheckCircle2, Circle, Download, Eye,
   AlertCircle, Loader2, Sparkles, Award, Check, History, ChevronDown, ChevronUp,
   ClipboardList, Gavel, Wallet, Send, CircleDot, FileSignature, Info, Activity, RefreshCw, Wand2,
-  HelpCircle, Scale, ScanSearch,
+  HelpCircle, Scale, ScanSearch, Paperclip, FolderDown, X,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
@@ -18,6 +18,7 @@ import PdfViewerModal from '../components/ui/PdfViewerModal'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useAttachedFiles } from '../hooks/useAttachedFiles'
 import { useBiddingChecklist, calcularHabilitacao, statusItemChecklist } from '../hooks/useBiddingChecklist'
+import DownloadDocumentosModal from '../components/licitacao/DownloadDocumentosModal'
 import { useBiddingAnalysis } from '../hooks/useBiddingAnalysis'
 import { useAnaliseJuridicaEdital } from '../hooks/useAnaliseJuridicaEdital'
 import type { TipoAnaliseJuridica, PontoAnaliseJuridica } from '../hooks/useAnaliseJuridicaEdital'
@@ -30,7 +31,7 @@ import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import { useToast } from '../hooks/useToast'
 import { CERT_CONFIG } from '../types/domain'
-import type { Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingModalidade, BiddingStatus } from '../types/domain'
+import type { AttachedFile, Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingModalidade, BiddingStatus } from '../types/domain'
 
 const ETAPAS_TRILHA: BiddingEtapa[] = [
   'Análise de Edital',
@@ -55,7 +56,7 @@ const ABAS = [
   { key: 'edital', label: 'Edital & Análise', icon: FileText },
   { key: 'checklist', label: 'Checklist & Habilitação', icon: ClipboardList },
   { key: 'proposta', label: 'Proposta & Itens', icon: Wallet },
-  { key: 'documentos', label: 'Documentos', icon: FileSignature },
+  { key: 'documentos', label: 'Documentos Finais', icon: FileSignature },
   { key: 'sessao', label: 'Sessão Ao Vivo', icon: Activity },
 ] as const
 type AbaKey = typeof ABAS[number]['key']
@@ -986,15 +987,19 @@ export default function LicitacaoPage() {
 
   const { files: anexos, uploadFile: uploadAnexo, uploadProgress, deleteFile: deleteAnexo, getDownloadUrl: getAnexoUrl } = useAttachedFiles('licitacao', bidding?.id)
   const { items, addItem, updateItem, deleteItem } = useBiddingChecklist(bidding?.id)
-  const { documents: clientDocs } = useClientDocuments(bidding?.clientId)
+  const { documents: clientDocs, getDownloadUrl: getClientDocUrl } = useClientDocuments(bidding?.clientId)
   const { atestados } = useAtestados(bidding?.clientId)
   const { limparAnalise } = useBiddingAnalysis(bidding?.id)
 
   const [enviando, setEnviando] = useState<string | null>(null)
   const [showNovoItem, setShowNovoItem] = useState(false)
-  const [novoItem, setNovoItem] = useState({ descricao: '', categoria: CATEGORIAS_CHECKLIST[0], obrigatorio: true, prazo: '', responsavelNome: '' })
+  const [novoItem, setNovoItem] = useState({ numeroEdital: '', descricao: '', categoria: CATEGORIAS_CHECKLIST[0], obrigatorio: true, prazo: '', responsavelNome: '' })
   const [abrindo, setAbrindo] = useState<string | null>(null)
   const [visualizando, setVisualizando] = useState<{ nome: string; url: string | null } | null>(null)
+  const [anexandoItemId, setAnexandoItemId] = useState<string | null>(null)
+  const [mostrarDownloadModal, setMostrarDownloadModal] = useState(false)
+  const [gerandoReadequada, setGerandoReadequada] = useState(false)
+  const [erroReadequada, setErroReadequada] = useState<string | null>(null)
 
   if (!bidding) {
     return (
@@ -1007,8 +1012,10 @@ export default function LicitacaoPage() {
   const edital = anexos.find((f) => f.category === 'Edital')
   const termoReferencia = anexos.find((f) => f.category === 'Termo de Referência')
   const contrato = anexos.find((f) => f.category === 'Contrato')
+  const propostaEnviada = anexos.find((f) => f.category === 'Proposta')
+  const propostaReadequada = anexos.find((f) => f.category === 'Proposta Readequada')
 
-  const handleUploadAnexo = async (file: File, category: 'Edital' | 'Termo de Referência' | 'Contrato') => {
+  const handleUploadAnexo = async (file: File, category: 'Edital' | 'Termo de Referência' | 'Contrato' | 'Proposta') => {
     setEnviando(category)
     try {
       await uploadAnexo.mutateAsync({ file, category })
@@ -1016,6 +1023,82 @@ export default function LicitacaoPage() {
       showToast(`Erro ao enviar: ${err instanceof Error ? err.message : String(err)}`, 'error')
     } finally {
       setEnviando(null)
+    }
+  }
+
+  // Anexa (ou troca) o arquivo de um item do checklist — é uma FK própria
+  // desta licitação (attached_file_id), nunca o mesmo arquivo do cadastro
+  // do cliente, mesmo quando importado de lá (função abaixo): se a certidão
+  // do cliente for renovada depois, o que ficou anexado aqui não muda
+  // sozinho, continua sendo a prova do que foi entregue neste certame.
+  const handleAnexarItemChecklist = async (item: BiddingChecklistItem, file: File) => {
+    setAnexandoItemId(item.id)
+    try {
+      const antigo = item.attachedFileId ? anexos.find((a) => a.id === item.attachedFileId) : null
+      const { id: novoId } = await uploadAnexo.mutateAsync({ file, category: 'Checklist' })
+      await updateItem.mutateAsync({ ...item, attachedFileId: novoId })
+      if (antigo) await deleteAnexo.mutateAsync(antigo)
+    } catch (err) {
+      showToast(`Erro ao anexar documento: ${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setAnexandoItemId(null)
+    }
+  }
+
+  const handleImportarDoCliente = async (item: BiddingChecklistItem) => {
+    if (!item.clientDocumentTipo) return
+    const doc = clientDocs.find((d) => d.tipo === item.clientDocumentTipo)
+    if (!doc?.storagePath) return
+    setAnexandoItemId(item.id)
+    try {
+      const url = await getClientDocUrl(doc.storagePath)
+      const resposta = await fetch(url)
+      if (!resposta.ok) throw new Error('Falha ao baixar o documento do cliente')
+      const blob = await resposta.blob()
+      const nomeArquivo = doc.storagePath.split('/').pop() || `${doc.tipo}.pdf`
+      const file = new File([blob], nomeArquivo, { type: blob.type || 'application/pdf' })
+      await handleAnexarItemChecklist(item, file)
+    } catch (err) {
+      showToast(`Erro ao importar do cadastro do cliente: ${err instanceof Error ? err.message : String(err)}`, 'error')
+      setAnexandoItemId(null)
+    }
+  }
+
+  const handleRemoverAnexoItem = async (item: BiddingChecklistItem) => {
+    if (!item.attachedFileId) return
+    const arquivo = anexos.find((a) => a.id === item.attachedFileId)
+    await updateItem.mutateAsync({ ...item, attachedFileId: null })
+    if (arquivo) await deleteAnexo.mutateAsync(arquivo)
+  }
+
+  // Reaproveita a mesma function que já gera a Proposta Readequada em
+  // Cadastros → Licitações — só que aqui, além de baixar na hora, também
+  // guarda o resultado em Documentos Finais (categoria 'Proposta
+  // Readequada'), pra não precisar gerar de novo só pra ver/baixar depois.
+  const handleGerarPropostaReadequada = async () => {
+    setGerandoReadequada(true)
+    setErroReadequada(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/gerar-proposta`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ clientId: bidding.clientId, biddingId: bidding.id, tipo: 'readequada' }),
+      })
+      const resultado = await res.json()
+      if (!res.ok || resultado.error) throw new Error(resultado.error || 'Erro desconhecido ao gerar a proposta')
+
+      const bytes = Uint8Array.from(atob(resultado.fileBase64), (c) => c.charCodeAt(0))
+      const blob = new Blob([bytes], { type: resultado.mimeType })
+      const arquivoAntigo = propostaReadequada
+      const file = new File([blob], resultado.fileName || 'proposta-readequada.docx', { type: resultado.mimeType })
+      await uploadAnexo.mutateAsync({ file, category: 'Proposta Readequada' })
+      if (arquivoAntigo) await deleteAnexo.mutateAsync(arquivoAntigo)
+    } catch (err) {
+      setErroReadequada(err instanceof Error ? err.message : String(err))
+    } finally {
+      setGerandoReadequada(false)
     }
   }
 
@@ -1046,13 +1129,14 @@ export default function LicitacaoPage() {
     if (!novoItem.descricao.trim()) return
     addItem.mutate(
       {
+        numeroEdital: novoItem.numeroEdital.trim() || null,
         descricao: novoItem.descricao.trim(),
         categoria: novoItem.categoria,
         obrigatorio: novoItem.obrigatorio,
         prazo: novoItem.prazo || null,
         responsavelNome: novoItem.responsavelNome.trim() || null,
       },
-      { onSuccess: () => { setShowNovoItem(false); setNovoItem({ descricao: '', categoria: CATEGORIAS_CHECKLIST[0], obrigatorio: true, prazo: '', responsavelNome: '' }) } }
+      { onSuccess: () => { setShowNovoItem(false); setNovoItem({ numeroEdital: '', descricao: '', categoria: CATEGORIAS_CHECKLIST[0], obrigatorio: true, prazo: '', responsavelNome: '' }) } }
     )
   }
 
@@ -1070,6 +1154,10 @@ export default function LicitacaoPage() {
   const rankingAtestados = [...atestados]
     .map((a) => ({ atestado: a, similaridade: calcularSimilaridade(bidding.objeto, a.objeto) }))
     .sort((a, b) => b.similaridade - a.similaridade)
+
+  const itensComAnexo = items
+    .map((item) => ({ item, arquivo: item.attachedFileId ? anexos.find((a) => a.id === item.attachedFileId) : null }))
+    .filter((x): x is { item: BiddingChecklistItem; arquivo: AttachedFile } => !!x.arquivo)
 
   const PainelStatus = () => statusGeral && (
     <div className={`rounded-xl border p-4 flex items-center justify-between ${
@@ -1281,11 +1369,20 @@ export default function LicitacaoPage() {
 
               {showNovoItem && (
                 <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-3 flex flex-col gap-2 mb-2">
-                  <Input
-                    placeholder="Ex: Balanço Patrimonial 2025, Atestado de Capacidade Técnica..."
-                    value={novoItem.descricao}
-                    onChange={(e) => setNovoItem({ ...novoItem, descricao: e.target.value })}
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Nº edital (ex: 5.2 a)"
+                      value={novoItem.numeroEdital}
+                      onChange={(e) => setNovoItem({ ...novoItem, numeroEdital: e.target.value })}
+                      className="w-32 shrink-0 font-mono"
+                    />
+                    <Input
+                      placeholder="Ex: Balanço Patrimonial 2025, Atestado de Capacidade Técnica..."
+                      value={novoItem.descricao}
+                      onChange={(e) => setNovoItem({ ...novoItem, descricao: e.target.value })}
+                      className="flex-1"
+                    />
+                  </div>
                   <div className="flex gap-2">
                     <Select value={novoItem.categoria} onChange={(e) => setNovoItem({ ...novoItem, categoria: e.target.value })} className="flex-1">
                       {CATEGORIAS_CHECKLIST.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -1320,39 +1417,92 @@ export default function LicitacaoPage() {
                 <div className="flex flex-col gap-1.5">
                   {items.map((item) => {
                     const status = statusItem(item)
+                    const arquivoAnexado = item.attachedFileId ? anexos.find((a) => a.id === item.attachedFileId) : null
+                    const clienteTemDoc = item.clientDocumentTipo
+                      ? clientDocs.find((d) => d.tipo === item.clientDocumentTipo && d.storagePath)
+                      : null
+                    const anexando = anexandoItemId === item.id
                     return (
-                      <div key={item.id} className="flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-lg px-3 py-2.5">
-                        {status === 'atendido' && <CheckCircle2 className="w-4 h-4 text-positive-400 shrink-0" />}
-                        {status === 'vencendo' && <AlertCircle className="w-4 h-4 text-warning-400 shrink-0" />}
-                        {status === 'faltando' && (
-                          podeEditar ? (
-                            <button onClick={() => updateItem.mutate({ ...item, atendido: !item.atendido })} title="Marcar como atendido">
-                              <Circle className="w-4 h-4 text-base-600 hover:text-base-400 shrink-0 transition" />
-                            </button>
-                          ) : (
-                            <Circle className="w-4 h-4 text-base-700 shrink-0" />
-                          )
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[13px] text-base-200 truncate">{item.descricao}</p>
-                          <p className="text-[10px] text-base-500">
-                            {item.categoria}
-                            {item.obrigatorio && <span className="text-warning-400 ml-1.5">· obrigatório</span>}
-                            {item.clientDocumentTipo && status !== 'faltando' && (
-                              <span className="ml-1.5 text-accent-400">· vinculado à {CERT_CONFIG[item.clientDocumentTipo]?.label.split(' — ')[0]}</span>
+                      <div key={item.id} className="bg-base-850/60 border border-base-800 rounded-lg px-3 py-2.5">
+                        <div className="flex items-center gap-3">
+                          {status === 'atendido' && <CheckCircle2 className="w-4 h-4 text-positive-400 shrink-0" />}
+                          {status === 'vencendo' && <AlertCircle className="w-4 h-4 text-warning-400 shrink-0" />}
+                          {status === 'faltando' && (
+                            podeEditar ? (
+                              <button onClick={() => updateItem.mutate({ ...item, atendido: !item.atendido })} title="Marcar como atendido">
+                                <Circle className="w-4 h-4 text-base-600 hover:text-base-400 shrink-0 transition" />
+                              </button>
+                            ) : (
+                              <Circle className="w-4 h-4 text-base-700 shrink-0" />
+                            )
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[13px] text-base-200 truncate">
+                              {item.numeroEdital && (
+                                <span className="font-mono text-[10.5px] font-bold text-accent-300 bg-accent-500/10 rounded px-1.5 py-0.5 mr-1.5">
+                                  {item.numeroEdital}
+                                </span>
+                              )}
+                              {item.descricao}
+                            </p>
+                            <p className="text-[10px] text-base-500">
+                              {item.categoria}
+                              {item.obrigatorio && <span className="text-warning-400 ml-1.5">· obrigatório</span>}
+                              {item.clientDocumentTipo && status !== 'faltando' && !arquivoAnexado && (
+                                <span className="ml-1.5 text-accent-400">· vinculado à {CERT_CONFIG[item.clientDocumentTipo]?.label.split(' — ')[0]}</span>
+                              )}
+                              {item.prazo && (
+                                <span className="ml-1.5">· prazo {new Date(item.prazo + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+                              )}
+                              {item.responsavelNome && (
+                                <span className="ml-1.5">· {item.responsavelNome}</span>
+                              )}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {arquivoAnexado && (
+                              <button onClick={() => handleVisualizarAnexo(arquivoAnexado)} title="Ver documento anexado" className="p-1.5 text-accent-300 hover:text-accent-200 hover:bg-base-800 rounded transition">
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
                             )}
-                            {item.prazo && (
-                              <span className="ml-1.5">· prazo {new Date(item.prazo + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+                            {podeEditar && clienteTemDoc && (
+                              <button
+                                onClick={() => handleImportarDoCliente(item)}
+                                disabled={anexando}
+                                title={arquivoAnexado ? 'Atualizar com a certidão atual do cliente' : 'Importar do cadastro do cliente'}
+                                className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition disabled:opacity-50"
+                              >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                              </button>
                             )}
-                            {item.responsavelNome && (
-                              <span className="ml-1.5">· {item.responsavelNome}</span>
+                            {podeEditar && (
+                              <label
+                                title={arquivoAnexado ? 'Trocar anexo' : 'Anexar documento'}
+                                className={`p-1.5 rounded transition cursor-pointer ${anexando ? 'text-accent-300' : 'text-base-400 hover:text-accent-300 hover:bg-base-800'}`}
+                              >
+                                {anexando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Paperclip className="w-3.5 h-3.5" />}
+                                <input
+                                  type="file" accept=".pdf" className="hidden" disabled={anexando}
+                                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAnexarItemChecklist(item, f); e.target.value = '' }}
+                                />
+                              </label>
                             )}
-                          </p>
+                            {podeEditar && arquivoAnexado && (
+                              <button onClick={() => handleRemoverAnexoItem(item)} title="Remover anexo" className="p-1.5 text-base-500 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {podeEditar && (
+                              <button onClick={() => deleteItem.mutate(item)} title="Excluir item" className="p-1.5 text-base-500 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        {podeEditar && (
-                          <button onClick={() => deleteItem.mutate(item)} className="p-1 text-base-500 hover:text-negative-400 transition shrink-0">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                        {arquivoAnexado && (
+                          <p className="text-[10.5px] text-base-500 mt-1.5 pl-7 flex items-center gap-1 truncate">
+                            <FileText className="w-3 h-3 shrink-0" /> {arquivoAnexado.name}
+                          </p>
                         )}
                       </div>
                     )
@@ -1367,8 +1517,103 @@ export default function LicitacaoPage() {
 
         {aba === 'documentos' && (
           <>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-[12px] text-base-500">Pronto pra enviar pra plataforma? Baixe só o que precisa.</p>
+              <Button variant="secondary" onClick={() => setMostrarDownloadModal(true)}>
+                <FolderDown className="w-4 h-4" /> Baixar documentos
+              </Button>
+            </div>
+
             <div>
-              <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">Contrato Assinado</p>
+              <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">Documentação do Checklist</p>
+              {itensComAnexo.length === 0 ? (
+                <p className="text-[12px] text-base-500 italic py-2">
+                  Nenhum documento anexado no checklist ainda — anexe pela aba <strong className="text-base-300">Checklist &amp; Habilitação</strong>.
+                </p>
+              ) : (
+                <div className="bg-base-850/60 border border-base-800 rounded-xl p-3 flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-base-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-positive-500 rounded-full" style={{ width: `${Math.round((itensComAnexo.length / items.length) * 100)}%` }} />
+                    </div>
+                    <span className="text-[11px] font-bold text-positive-400 shrink-0">{itensComAnexo.length}/{items.length} anexados</span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    {itensComAnexo.map(({ item, arquivo }) => (
+                      <div key={item.id} className="flex items-center gap-2 text-[12px] text-base-300 py-1">
+                        {item.numeroEdital && <span className="font-mono text-[10px] font-bold text-accent-300 bg-accent-500/10 rounded px-1.5 py-0.5 shrink-0">{item.numeroEdital}</span>}
+                        <span className="flex-1 min-w-0 truncate">{item.descricao}</span>
+                        <button onClick={() => handleVisualizarAnexo(arquivo)} title="Ver PDF" className="p-1 text-base-400 hover:text-accent-300 transition shrink-0">
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">Proposta</p>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-xl px-4 py-3">
+                  <FileText className="w-5 h-5 text-accent-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] text-base-200 truncate">{propostaEnviada ? propostaEnviada.name : 'Proposta enviada na plataforma'}</p>
+                    {!propostaEnviada && <p className="text-[10.5px] text-base-500">o que você importou/enviou de volta pro portal</p>}
+                  </div>
+                  {propostaEnviada ? (
+                    <>
+                      <button onClick={() => handleVisualizarAnexo(propostaEnviada)} title="Visualizar" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      {podeEditar && (
+                        <label title="Trocar" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition cursor-pointer">
+                          {enviando === 'Proposta' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                          <input type="file" accept=".pdf,.doc,.docx" className="hidden" disabled={!!enviando} onChange={(e) => { const f = e.target.files?.[0]; if (f) { deleteAnexo.mutate(propostaEnviada); handleUploadAnexo(f, 'Proposta') } e.target.value = '' }} />
+                        </label>
+                      )}
+                      {podeEditar && (
+                        <button onClick={() => deleteAnexo.mutate(propostaEnviada)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </>
+                  ) : podeEditar ? (
+                    <label className="inline-flex items-center gap-1.5 shrink-0 bg-base-800 hover:bg-base-700 text-base-200 border border-base-700 font-semibold text-sm px-4 py-2 rounded-lg transition cursor-pointer">
+                      {enviando === 'Proposta' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                      {enviando === 'Proposta' ? `Enviando...${uploadProgress !== null ? ` ${uploadProgress}%` : ''}` : 'Enviar'}
+                      <input type="file" accept=".pdf,.doc,.docx" className="hidden" disabled={!!enviando} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadAnexo(f, 'Proposta'); e.target.value = '' }} />
+                    </label>
+                  ) : null}
+                </div>
+
+                <div className="flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-xl px-4 py-3">
+                  <Wand2 className="w-5 h-5 text-accent-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] text-base-200 truncate">{propostaReadequada ? propostaReadequada.name : 'Proposta Readequada'}</p>
+                    <p className="text-[10.5px] text-base-500">{propostaReadequada ? 'gerada a partir dos itens/valores atuais' : 'gerada a partir dos itens/valores atuais da licitação'}</p>
+                  </div>
+                  {propostaReadequada && (
+                    <button onClick={() => handleAbrirAnexo(propostaReadequada)} disabled={abrindo === propostaReadequada.id} title="Baixar" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {podeEditar && (
+                    <Button variant="secondary" onClick={handleGerarPropostaReadequada} disabled={gerandoReadequada} className="shrink-0">
+                      {gerandoReadequada ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                      {gerandoReadequada ? 'Gerando...' : propostaReadequada ? 'Gerar novamente' : 'Gerar'}
+                    </Button>
+                  )}
+                </div>
+                {erroReadequada && (
+                  <p className="text-[11.5px] text-negative-400">{erroReadequada}</p>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">Contrato Final</p>
               {contrato ? (
                 <div className="flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-xl px-4 py-3">
                   <FileSignature className="w-5 h-5 text-accent-400 shrink-0" />
@@ -1400,7 +1645,8 @@ export default function LicitacaoPage() {
               <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-base-500" />
               <span>
                 Documentos institucionais do cliente (contrato social, atestados, certidões) não ficam aqui — eles vivem na
-                pasta do próprio cliente, em <strong className="text-base-300">Cadastros → Documentos de Habilitação</strong>.
+                pasta do próprio cliente, em <strong className="text-base-300">Cadastros → Documentos de Habilitação</strong>. O envio pra
+                plataforma do órgão continua manual — cada portal de compras é diferente.
               </span>
             </div>
           </>
@@ -1414,6 +1660,18 @@ export default function LicitacaoPage() {
         onClose={() => setVisualizando(null)}
         nome={visualizando?.nome ?? ''}
         url={visualizando?.url ?? null}
+      />
+
+      <DownloadDocumentosModal
+        open={mostrarDownloadModal}
+        onClose={() => setMostrarDownloadModal(false)}
+        items={items}
+        anexos={anexos}
+        propostaEnviada={propostaEnviada ?? null}
+        propostaReadequada={propostaReadequada ?? null}
+        contrato={contrato ?? null}
+        getDownloadUrl={getAnexoUrl}
+        nomeLicitacao={bidding.numeroEdital || bidding.objeto}
       />
     </div>
   )
