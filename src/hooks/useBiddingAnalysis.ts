@@ -81,7 +81,13 @@ export function useBiddingAnalysis(biddingId?: string) {
       const { error } = await supabase.functions.invoke('Analisar-edital', { body: { biddingId } })
       if (error) throw error
     },
-    onSuccess: () => {
+    // onSettled (não só onSuccess): a function grava status='erro' + a
+    // mensagem real na linha antes de responder, mesmo quando retorna um
+    // status de erro pro client. Sem reconsultar aqui também nesse caso, um
+    // "Tentar novamente" que falha rápido deixa a tela presa mostrando pra
+    // sempre a mensagem antiga de "travado", mesmo com um resultado (ou erro
+    // de verdade) já disponível no banco.
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey })
     },
   })
