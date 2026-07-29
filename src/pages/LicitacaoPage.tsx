@@ -554,7 +554,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
       )}
 
       <div className="overflow-x-auto bg-base-850/60 border border-base-800 rounded-xl">
-        <table className="w-full text-[12px]">
+        <table className="w-full min-w-[1200px] text-[12px]">
           <thead>
             <tr className="text-base-500 border-b border-base-800">
               <th className="text-left font-semibold px-2 py-2 w-24">Processo</th>
