@@ -32,7 +32,7 @@ import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import BiddingItemsEditor from '../components/cadastros/BiddingItemsEditor'
-import { parseCsvPortal, stringifyCsvPortal, textoParaBlobLatin1, formatarNumeroPtBR, COL_QUANTIDADE, COL_MARCA, COL_DESCRICAO, COL_VALOR_UNITARIO, COL_VALOR_TOTAL, TOTAL_COLUNAS } from '../lib/csvPortalCompras'
+import { parseCsvPortal, stringifyCsvPortal, textoParaBlobLatin1, formatarNumeroPtBR, COL_QUANTIDADE, COL_MODELO, COL_MARCA, COL_ANVISA, COL_DESCRICAO, COL_VALOR_UNITARIO, COL_VALOR_TOTAL, TOTAL_COLUNAS } from '../lib/csvPortalCompras'
 import { parseFlexibleNumber } from '../lib/numberParsing'
 import { useToast } from '../hooks/useToast'
 import { CERT_CONFIG } from '../types/domain'
@@ -421,6 +421,8 @@ function HistoricoVersoes({ biddingId }: { biddingId: string }) {
 // preenchidos pelo portal) e precisa completar as últimas colunas antes
 // de subir de volta — essa aba automatiza esse preenchimento com os dados
 // já cadastrados na licitação.
+type LinhaProposta = { modelo: string; marca: string; anvisa: string; descricao: string; valorUnitario: string }
+
 function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
   const { items, isLoading } = useBiddingItemsDaLicitacao(bidding.id)
   const { nivel } = usePermissaoFerramenta('licitacoes')
@@ -435,9 +437,18 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
   const [csvNomeArquivo, setCsvNomeArquivo] = useState<string | null>(null)
   const [csvErro, setCsvErro] = useState<string | null>(null)
 
+  // Pré-preenchida a partir dos itens já cadastrados (mesmos da Proposta
+  // Readequada) assim que o CSV do Portal é reconhecido — descrição igual
+  // à do item, com "Conforme edital" no final, e valor pelo preço de
+  // referência do edital (valorUnitarioLicitado, não o ofertado — aqui é
+  // a proposta INICIAL, antes de qualquer lance). Fica editável linha a
+  // linha antes de gerar o arquivo final.
+  const [linhasProposta, setLinhasProposta] = useState<LinhaProposta[] | null>(null)
+
   const handleImportarCsvPortal = async (file: File) => {
     setCsvErro(null)
     setCsvLinhas(null)
+    setLinhasProposta(null)
     try {
       const buffer = await file.arrayBuffer()
       const texto = new TextDecoder('iso-8859-1').decode(buffer)
@@ -452,27 +463,40 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
       }
       setCsvLinhas(linhas)
       setCsvNomeArquivo(file.name)
+      setLinhasProposta(items.map((item) => ({
+        modelo: '',
+        marca: item.marca ?? '',
+        anvisa: '',
+        descricao: `${item.descricao} Conforme edital`,
+        valorUnitario: formatarNumeroPtBR(item.valorUnitarioLicitado),
+      })))
     } catch (err) {
       setCsvErro(err instanceof Error ? err.message : 'Não foi possível ler o arquivo.')
     }
   }
 
+  const atualizarLinhaProposta = (idx: number, patch: Partial<LinhaProposta>) => {
+    setLinhasProposta((prev) => prev?.map((l, i) => (i === idx ? { ...l, ...patch } : l)) ?? prev)
+  }
+
   const handleBaixarCsvPreenchido = () => {
-    if (!csvLinhas) return
+    if (!csvLinhas || !linhasProposta) return
     const [header, ...dados] = csvLinhas
     const linhasPreenchidas = dados.map((linha, idx) => {
-      const item = items[idx]
-      if (!item) return linha
+      const editavel = linhasProposta[idx]
+      if (!editavel) return linha
       const nova = [...linha]
       while (nova.length < TOTAL_COLUNAS) nova.push('')
       // Coluna F (Quantidade) é a autoridade — já veio certa do portal —
       // então o total é calculado a partir dela, não da quantidade
       // cadastrada aqui no sistema (que deveria bater, mas se não bater
       // por algum motivo, o portal é quem manda no arquivo dele).
-      const quantidadeDoPortal = parseFlexibleNumber(linha[COL_QUANTIDADE]) ?? item.quantidade
-      const valorUnitario = item.valorUnitarioOfertado ?? item.valorUnitarioLicitado
-      nova[COL_MARCA] = item.marca ?? ''
-      nova[COL_DESCRICAO] = item.descricao ?? ''
+      const quantidadeDoPortal = parseFlexibleNumber(linha[COL_QUANTIDADE]) ?? 0
+      const valorUnitario = parseFlexibleNumber(editavel.valorUnitario) ?? 0
+      nova[COL_MODELO] = editavel.modelo
+      nova[COL_MARCA] = editavel.marca
+      nova[COL_ANVISA] = editavel.anvisa
+      nova[COL_DESCRICAO] = editavel.descricao
       nova[COL_VALOR_UNITARIO] = formatarNumeroPtBR(valorUnitario)
       nova[COL_VALOR_TOTAL] = formatarNumeroPtBR(quantidadeDoPortal * valorUnitario)
       return nova
@@ -499,7 +523,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
       <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-4 flex flex-col gap-3">
         <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Exportar CSV para o Portal de Compras Públicas</p>
         <p className="text-[12px] text-base-400">
-          Envie aqui o modelo de planilha que você baixou do Portal (já vem com Processo/ID/Lote/Item/Produto/Quantidade preenchidos) — o sistema completa Marca, Descrição e Valores usando os dados desta licitação e devolve o arquivo pronto pra subir de volta no Portal.
+          Envie aqui o modelo de planilha que você baixou do Portal (já vem com Processo/ID/Lote/Item/Produto/Quantidade preenchidos). O sistema já sugere Marca, Descrição ("Conforme edital") e Valor Unitário (preço de referência do edital) a partir dos itens desta licitação — confira e ajuste o que precisar antes de gerar o arquivo.
         </p>
 
         {podeEditar && (
@@ -532,9 +556,84 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
         )}
 
         <p className="text-[10.5px] text-base-500">
-          Colunas Processo/ID/Lote/Item/Produto/Quantidade nunca são alteradas — só Marca/Fabricante, Descrição detalhada, Valor Unitário e Valor Total são preenchidos (Modelo e ANVISA ficam em branco, sem campo equivalente aqui). O pareamento é pela ordem das linhas do arquivo com a ordem dos itens cadastrados na aba Proposta Readequada.
+          Colunas Processo/ID/Lote/Item/Produto/Quantidade nunca são alteradas. O pareamento é pela ordem das linhas do arquivo com a ordem dos itens cadastrados na aba Proposta Readequada.
         </p>
       </div>
+
+      {csvLinhas && linhasProposta && (
+        <div className="overflow-x-auto bg-base-850/60 border border-base-800 rounded-xl">
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr className="text-base-500 border-b border-base-800">
+                <th className="text-left font-semibold px-3 py-2 w-14">Item</th>
+                <th className="text-left font-semibold px-3 py-2">Produto (Portal)</th>
+                <th className="text-left font-semibold px-3 py-2 w-24">Modelo</th>
+                <th className="text-left font-semibold px-3 py-2 w-32">Marca/Fabricante</th>
+                <th className="text-left font-semibold px-3 py-2 w-24">ANVISA</th>
+                <th className="text-left font-semibold px-3 py-2 min-w-[220px]">Descrição detalhada</th>
+                <th className="text-right font-semibold px-3 py-2 w-28">Vl. Unitário</th>
+                <th className="text-right font-semibold px-3 py-2 w-28">Vl. Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {csvLinhas.slice(1).map((linha, idx) => {
+                const editavel = linhasProposta[idx]
+                if (!editavel) return null
+                const quantidadeDoPortal = parseFlexibleNumber(linha[COL_QUANTIDADE]) ?? 0
+                const valorUnitarioNum = parseFlexibleNumber(editavel.valorUnitario) ?? 0
+                return (
+                  <tr key={idx} className="border-t border-base-800/60">
+                    <td className="px-3 py-1.5 text-base-400">{linha[3]}</td>
+                    <td className="px-3 py-1.5 text-base-300 max-w-[200px] truncate">{linha[4]}</td>
+                    <td className="px-2 py-1.5">
+                      <input
+                        value={editavel.modelo}
+                        onChange={(e) => atualizarLinhaProposta(idx, { modelo: e.target.value })}
+                        disabled={!podeEditar}
+                        className="w-full bg-base-900 border border-base-700 rounded px-1.5 py-1 text-[12px] text-base-100 focus:border-accent-400 outline-none disabled:opacity-60"
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input
+                        value={editavel.marca}
+                        onChange={(e) => atualizarLinhaProposta(idx, { marca: e.target.value })}
+                        disabled={!podeEditar}
+                        className="w-full bg-base-900 border border-base-700 rounded px-1.5 py-1 text-[12px] text-base-100 focus:border-accent-400 outline-none disabled:opacity-60"
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input
+                        value={editavel.anvisa}
+                        onChange={(e) => atualizarLinhaProposta(idx, { anvisa: e.target.value })}
+                        disabled={!podeEditar}
+                        className="w-full bg-base-900 border border-base-700 rounded px-1.5 py-1 text-[12px] text-base-100 focus:border-accent-400 outline-none disabled:opacity-60"
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input
+                        value={editavel.descricao}
+                        onChange={(e) => atualizarLinhaProposta(idx, { descricao: e.target.value })}
+                        disabled={!podeEditar}
+                        className="w-full bg-base-900 border border-base-700 rounded px-1.5 py-1 text-[12px] text-base-100 focus:border-accent-400 outline-none disabled:opacity-60"
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input
+                        value={editavel.valorUnitario}
+                        inputMode="decimal"
+                        onChange={(e) => atualizarLinhaProposta(idx, { valorUnitario: e.target.value })}
+                        disabled={!podeEditar}
+                        className="w-full bg-base-900 border border-base-700 rounded px-1.5 py-1 text-right text-[12px] font-mono text-base-100 focus:border-accent-400 outline-none disabled:opacity-60"
+                      />
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono text-base-300">{formatarNumeroPtBR(quantidadeDoPortal * valorUnitarioNum)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
