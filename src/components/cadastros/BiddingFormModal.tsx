@@ -98,12 +98,12 @@ export default function BiddingFormModal({
               </Select>
             </Field>
 
-            <Field label="Objeto da Licitação" required>
-              <Textarea required rows={2} value={form.objeto ?? ''} onChange={(e) => setForm({ ...form, objeto: e.target.value })} placeholder="Descrição detalhada do objeto licitado" />
+            <Field label="Objeto da Licitação">
+              <Textarea rows={2} value={form.objeto ?? ''} onChange={(e) => setForm({ ...form, objeto: e.target.value })} placeholder="Descrição detalhada do objeto licitado (ou deixe em branco — a Análise de Edital por IA preenche depois)" />
             </Field>
 
-            <Field label="Órgão Licitante" required>
-              <Input required value={form.orgao ?? ''} onChange={(e) => setForm({ ...form, orgao: e.target.value })} placeholder="Ex: Prefeitura Municipal de Sorocaba" />
+            <Field label="Órgão Licitante">
+              <Input value={form.orgao ?? ''} onChange={(e) => setForm({ ...form, orgao: e.target.value })} placeholder="Ex: Prefeitura Municipal de Sorocaba (ou deixe em branco — a IA preenche depois)" />
             </Field>
 
             <div className="grid grid-cols-[1fr_100px] gap-4">
@@ -116,13 +116,13 @@ export default function BiddingFormModal({
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Modalidade" required>
-                <Select required value={form.modalidade} onChange={(e) => setForm({ ...form, modalidade: e.target.value as BiddingModalidade })}>
+              <Field label="Modalidade">
+                <Select value={form.modalidade} onChange={(e) => setForm({ ...form, modalidade: e.target.value as BiddingModalidade })}>
                   {MODALIDADES.map((m) => <option key={m} value={m}>{m}</option>)}
                 </Select>
               </Field>
-              <Field label="Tipo de Julgamento" required>
-                <Select required value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value as BiddingTipo })}>
+              <Field label="Tipo de Julgamento">
+                <Select value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value as BiddingTipo })}>
                   {TIPOS.map((t) => <option key={t} value={t}>{t}</option>)}
                 </Select>
               </Field>
@@ -144,7 +144,7 @@ export default function BiddingFormModal({
             </Field>
 
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Valor Licitado / Estimado (R$)" required>
+              <Field label="Valor Licitado / Estimado (R$)">
                 <CurrencyInput value={form.valorLicitado ?? 0} onChange={(v) => setForm({ ...form, valorLicitado: v })} />
               </Field>
               <Field label="Valor Ofertado (vencedor, R$)">
