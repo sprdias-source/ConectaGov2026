@@ -58,7 +58,7 @@ const ABAS = [
   { key: 'visao', label: 'Visão Geral', icon: Gavel },
   { key: 'edital', label: 'Edital & Análise', icon: FileText },
   { key: 'checklist', label: 'Checklist & Habilitação', icon: ClipboardList },
-  { key: 'proposta', label: 'Proposta & Itens', icon: Wallet },
+  { key: 'proposta', label: 'Proposta Readequada', icon: Wallet },
   { key: 'documentos', label: 'Documentos Finais', icon: FileSignature },
   { key: 'sessao', label: 'Sessão Ao Vivo', icon: Activity },
 ] as const

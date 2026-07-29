@@ -13,6 +13,8 @@ import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import { useToast } from '../hooks/useToast'
 import { formatBRL } from '../hooks/useAccountBalances'
+import { useEmpenhos } from '../hooks/useEmpenhos'
+import { useBiddingIdsComPropostaReadequada } from '../hooks/useAttachedFiles'
 import type { Bidding, BiddingEtapa, BiddingItem } from '../types/domain'
 
 const ETAPAS: BiddingEtapa[] = [
@@ -112,6 +114,27 @@ function CardLicitacao({
   )
 }
 
+// Card das licitações "Ganhou" que ainda têm pendência — sem arrastar (não
+// faz sentido mover etapa de algo que já saiu da disputa), só mostrando o
+// que falta fechar pra ela sumir de vista de vez.
+function CardLicitacaoGanha({ b, clienteNome, faltando }: { b: Bidding; clienteNome: string; faltando: string[] }) {
+  return (
+    <Link
+      to={`/licitacoes/${b.id}`}
+      className="relative bg-base-900 border border-positive-500/25 rounded-lg p-3 flex flex-col gap-1.5 transition hover:border-positive-500/50"
+    >
+      <p className="text-[12px] font-semibold text-base-100 line-clamp-2">{b.objeto}</p>
+      <p className="text-[11px] text-base-500 truncate">{clienteNome} — {b.orgao}</p>
+      <span className="text-[11px] font-mono font-semibold text-positive-400 mt-1">{formatBRL(b.valorOfertadoReal ?? b.valorLicitado)}</span>
+      <div className="flex flex-wrap gap-1 mt-1">
+        {faltando.map((f) => (
+          <span key={f} className="text-[9.5px] font-bold px-1.5 py-0.5 rounded-full bg-warning-500/15 text-warning-400">Falta: {f}</span>
+        ))}
+      </div>
+    </Link>
+  )
+}
+
 function ColunaKanban({ id, titulo, cor, itens, children }: { id: string; titulo: string; cor?: string; itens: number; children: React.ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({ id })
   return (
@@ -133,6 +156,8 @@ function ColunaKanban({ id, titulo, cor, itens, children }: { id: string; titulo
 export default function KanbanLicitacoesPage() {
   const { biddings, updateEtapa, updateBidding } = useBiddings()
   const { clients } = useClients()
+  const { empenhos } = useEmpenhos()
+  const { biddingIdsComPropostaReadequada } = useBiddingIdsComPropostaReadequada()
   const { nivel: nivelLicitacoes } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivelLicitacoes === 'edicao'
   const { showToast } = useToast()
@@ -175,6 +200,23 @@ export default function KanbanLicitacoesPage() {
     () => biddings.filter((b) => b.isActive && b.status === 'Em Andamento'),
     [biddings]
   )
+
+  // Licitações "Ganhou" continuam fora do funil de etapas, mas não somem
+  // de vista enquanto ainda falta fechar o ciclo — Empenho registrado e
+  // Proposta Readequada gerada. Só desaparece do Kanban de vez quando os
+  // dois já foram feitos (aí sim vira só histórico, em Cadastros/Relatórios).
+  const biddingIdsComEmpenho = useMemo(() => new Set(empenhos.map((e) => e.biddingId)), [empenhos])
+  const ganhasComPendencia = useMemo(() => {
+    return biddings
+      .filter((b) => b.isActive && b.status === 'Ganhou')
+      .map((b) => {
+        const faltando: string[] = []
+        if (!biddingIdsComPropostaReadequada.has(b.id)) faltando.push('Proposta Readequada')
+        if (!biddingIdsComEmpenho.has(b.id)) faltando.push('Empenho')
+        return { bidding: b, faltando }
+      })
+      .filter((x) => x.faltando.length > 0)
+  }, [biddings, biddingIdsComPropostaReadequada, biddingIdsComEmpenho])
 
   const colunas = useMemo(() => {
     const semEtapa = ativas.filter((b) => !b.etapa)
@@ -285,6 +327,14 @@ export default function KanbanLicitacoesPage() {
                   )}
                 </ColunaKanban>
               ))}
+
+              {ganhasComPendencia.length > 0 && (
+                <ColunaKanban id="ganhas-pendencia" titulo="Ganhas — Pendência" cor="border-t-positive-500" itens={ganhasComPendencia.length}>
+                  {ganhasComPendencia.map(({ bidding, faltando }) => (
+                    <CardLicitacaoGanha key={bidding.id} b={bidding} clienteNome={clientName(bidding.clientId)} faltando={faltando} />
+                  ))}
+                </ColunaKanban>
+              )}
             </div>
           </div>
 

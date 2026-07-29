@@ -154,3 +154,27 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
     getDownloadUrl,
   }
 }
+
+// Busca de uma vez só quais licitações já têm a Proposta Readequada
+// gerada — usado no Kanban pra saber quais licitações "Ganhou" ainda têm
+// pendência (ver useSessoesGanhasComPendencia, KanbanLicitacoesPage.tsx)
+// sem precisar de uma consulta por licitação.
+export function useBiddingIdsComPropostaReadequada() {
+  const { user } = useAuth()
+
+  const query = useQuery({
+    queryKey: [...QUERY_KEY, 'proposta-readequada-gerada'],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('attached_files')
+        .select('entity_id')
+        .eq('entity_type', 'licitacao')
+        .eq('category', 'Proposta Readequada')
+      if (error) throw error
+      return new Set(data.map((r) => r.entity_id as string))
+    },
+  })
+
+  return { biddingIdsComPropostaReadequada: query.data ?? new Set<string>(), isLoading: query.isLoading }
+}
