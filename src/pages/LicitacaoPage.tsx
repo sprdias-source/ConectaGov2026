@@ -989,6 +989,7 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
             <CampoResumo label="Objeto" valor={analise.objeto} />
             <CampoResumo label="Modalidade / SRP" valor={[analise.modalidade, analise.srp ? 'SRP' : null].filter(Boolean).join(' — ')} />
             <CampoResumo label="Data / Horário / Portal" valor={[analise.data, analise.horario, analise.portal].filter(Boolean).join(' — ')} />
+            <CampoResumo label="Intervalo Mínimo entre Lances" valor={analise.intervaloLances} />
             <CampoResumo label="Validade da Proposta" valor={analise.validadeProposta} />
             <CampoResumo label="Catálogo" valor={analise.catalogo} />
             <CampoResumo label="Forma / Local de Entrega" valor={localOuFormaEntrega} />
