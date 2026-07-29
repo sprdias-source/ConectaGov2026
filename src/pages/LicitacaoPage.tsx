@@ -32,6 +32,8 @@ import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import BiddingItemsEditor from '../components/cadastros/BiddingItemsEditor'
+import { parseCsvPortal, stringifyCsvPortal, textoParaBlobLatin1, formatarNumeroPtBR, COL_QUANTIDADE, COL_MARCA, COL_DESCRICAO, COL_VALOR_UNITARIO, COL_VALOR_TOTAL, TOTAL_COLUNAS } from '../lib/csvPortalCompras'
+import { parseFlexibleNumber } from '../lib/numberParsing'
 import { useToast } from '../hooks/useToast'
 import { CERT_CONFIG } from '../types/domain'
 import type { Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingModalidade, BiddingStatus } from '../types/domain'
@@ -494,6 +496,71 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
     )
   }
 
+  // Exportação do CSV de propostas do Portal de Compras Públicas: o
+  // fornecedor baixa lá o modelo já preenchido com Processo/ID/Lote/Item/
+  // Produto/Quantidade (colunas A-F) e precisa completar Modelo/Marca/
+  // ANVISA/Descrição/Valores (G-L) antes de subir de volta. As linhas de
+  // dados são pareadas com os itens desta licitação NA ORDEM em que
+  // aparecem — por isso a checagem de quantidade de linhas abaixo: uma
+  // ordem diferente preencheria o item errado sem nenhum aviso.
+  const { showToast } = useToast()
+  const [csvLinhas, setCsvLinhas] = useState<string[][] | null>(null)
+  const [csvNomeArquivo, setCsvNomeArquivo] = useState<string | null>(null)
+  const [csvErro, setCsvErro] = useState<string | null>(null)
+
+  const handleImportarCsvPortal = async (file: File) => {
+    setCsvErro(null)
+    setCsvLinhas(null)
+    try {
+      const buffer = await file.arrayBuffer()
+      const texto = new TextDecoder('iso-8859-1').decode(buffer)
+      const linhas = parseCsvPortal(texto)
+      if (linhas.length < 2) throw new Error('Arquivo vazio ou sem linhas de item.')
+      const dados = linhas.slice(1)
+      if (dados.length !== items.length) {
+        throw new Error(
+          `O arquivo tem ${dados.length} linha(s) de item, mas esta licitação tem ${items.length} item(ns) cadastrado(s) acima. ` +
+          'Confira se é o arquivo certo antes de continuar — o preenchimento é pareado pela ordem das linhas, uma diferença aqui preenche tudo errado.'
+        )
+      }
+      setCsvLinhas(linhas)
+      setCsvNomeArquivo(file.name)
+    } catch (err) {
+      setCsvErro(err instanceof Error ? err.message : 'Não foi possível ler o arquivo.')
+    }
+  }
+
+  const handleBaixarCsvPreenchido = () => {
+    if (!csvLinhas) return
+    const [header, ...dados] = csvLinhas
+    const linhasPreenchidas = dados.map((linha, idx) => {
+      const item = items[idx]
+      if (!item) return linha
+      const nova = [...linha]
+      while (nova.length < TOTAL_COLUNAS) nova.push('')
+      // Coluna F (Quantidade) é a autoridade — já veio certa do portal —
+      // então o total é calculado a partir dela, não da quantidade
+      // cadastrada aqui no sistema (que deveria bater, mas se não bater
+      // por algum motivo, o portal é quem manda no arquivo dele).
+      const quantidadeDoPortal = parseFlexibleNumber(linha[COL_QUANTIDADE]) ?? item.quantidade
+      const valorUnitario = item.valorUnitarioOfertado ?? item.valorUnitarioLicitado
+      nova[COL_MARCA] = item.marca ?? ''
+      nova[COL_DESCRICAO] = item.descricao ?? ''
+      nova[COL_VALOR_UNITARIO] = formatarNumeroPtBR(valorUnitario)
+      nova[COL_VALOR_TOTAL] = formatarNumeroPtBR(quantidadeDoPortal * valorUnitario)
+      return nova
+    })
+    const texto = stringifyCsvPortal([header, ...linhasPreenchidas])
+    const blob = textoParaBlobLatin1(texto)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = csvNomeArquivo ? csvNomeArquivo.replace(/\.csv$/i, '_preenchido.csv') : 'proposta_preenchida.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+    showToast('CSV preenchido gerado — confira antes de subir no portal.')
+  }
+
   if (isLoading) return <SkeletonTableRows linhas={4} colunas={5} />
 
   if (!podeEditar && items.length === 0) {
@@ -636,6 +703,46 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
           {metodo === 'percentual' && (
             <p className="text-[11px] text-base-500">Os percentuais não precisam somar 100 — o sistema normaliza entre os itens preenchidos.</p>
           )}
+        </div>
+      )}
+
+      {podeEditar && items.length > 0 && (
+        <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-4 flex flex-col gap-3">
+          <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Exportar CSV para o Portal de Compras Públicas</p>
+          <p className="text-[12px] text-base-400">
+            Envie aqui o modelo de planilha que você baixou do Portal (já vem com Processo/ID/Lote/Item/Produto/Quantidade preenchidos) — o sistema completa Marca, Descrição e Valores usando os dados desta licitação e devolve o arquivo pronto pra subir de volta no Portal.
+          </p>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-base-950 bg-accent-500 hover:bg-accent-400 rounded-lg px-3 py-1.5 cursor-pointer transition shrink-0">
+              <Upload className="w-3.5 h-3.5" /> Enviar modelo do Portal (.csv)
+              <input
+                type="file" accept=".csv" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImportarCsvPortal(f); e.target.value = '' }}
+              />
+            </label>
+            {csvLinhas && (
+              <>
+                <span className="text-[12px] text-positive-400 flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5" /> {csvNomeArquivo} — {csvLinhas.length - 1} linha(s) reconhecida(s)
+                </span>
+                <Button onClick={handleBaixarCsvPreenchido}>
+                  <Download className="w-3.5 h-3.5" /> Baixar CSV Preenchido
+                </Button>
+              </>
+            )}
+          </div>
+
+          {csvErro && (
+            <div className="bg-negative-500/10 border border-negative-500/25 rounded-lg p-2.5 flex items-start gap-2">
+              <AlertCircle className="w-3.5 h-3.5 text-negative-400 shrink-0 mt-0.5" />
+              <p className="text-[11.5px] text-negative-300 flex-1">{csvErro}</p>
+            </div>
+          )}
+
+          <p className="text-[10.5px] text-base-500">
+            Colunas Processo/ID/Lote/Item/Produto/Quantidade nunca são alteradas — só Marca/Fabricante, Descrição detalhada, Valor Unitário e Valor Total são preenchidos (Modelo e ANVISA ficam em branco, sem campo equivalente aqui). O pareamento é pela ordem das linhas do arquivo com a ordem dos itens na tabela acima.
+          </p>
         </div>
       )}
 
