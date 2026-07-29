@@ -81,10 +81,11 @@ export function useClientDocuments(clientId?: string) {
       // isso, 'manual' sempre gera uma linha nova (insert simples); só as 7
       // certidões automáticas (uma por tipo por cliente, de verdade) usam o
       // upsert, pra sobrescrever a certidão anterior ao renovar.
-      const { error } = doc.tipo === 'manual'
-        ? await supabase.from('client_documents').insert(payload)
-        : await supabase.from('client_documents').upsert(payload, { onConflict: 'user_id,client_id,tipo' })
+      const { data, error } = doc.tipo === 'manual'
+        ? await supabase.from('client_documents').insert(payload).select('id').single()
+        : await supabase.from('client_documents').upsert(payload, { onConflict: 'user_id,client_id,tipo' }).select('id').single()
       if (error) throw error
+      return data.id as string
     },
     onSuccess: invalidate,
   })
@@ -116,11 +117,11 @@ export function useClientDocuments(clientId?: string) {
         .from('client-documents')
         .upload(path, file, { upsert: true })
       if (uploadError) throw uploadError
-      await upsertDocument.mutateAsync({
+      const id = await upsertDocument.mutateAsync({
         tipo, nome, storagePath: path, dataEmissao, dataValidade,
         autoRenovavel: false, observacoes, pasta,
       })
-      return path
+      return { path, id }
     },
     onSuccess: invalidate,
   })

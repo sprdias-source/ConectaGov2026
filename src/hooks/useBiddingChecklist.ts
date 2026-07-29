@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { fromBiddingChecklistItemRow, toBiddingChecklistItemInsert } from '../lib/mappers'
 import { useAuth } from './useAuth'
 import { calcDocStatus } from './useClientDocuments'
-import type { BiddingChecklistItem, ClientDocument, DocumentTipo } from '../types/domain'
+import type { AtestadoTecnico, AttachedFile, BiddingChecklistItem, ClientDocument, DocumentTipo } from '../types/domain'
 
 const QUERY_KEY = ['bidding_checklist_items']
 
@@ -18,11 +18,24 @@ export interface HabilitacaoResumo {
   percentual: number | null
 }
 
-// Um item do checklist está "atendido" se foi marcado manualmente, OU tem
-// um documento anexado específico, OU aponta pra um tipo de certidão que o
-// cliente já tem válida (ou vencendo — melhor avisar que esconder).
+// Um item do checklist está "atendido" se: aponta pra um documento
+// específico do repositório do cliente (clientDocumentId — caso de um
+// documento manual reaproveitável), OU aponta pra um tipo de certidão que
+// o cliente já tem válida (clientDocumentTipo — as 7 certidões padrão, sem
+// precisar de vínculo por item, casa sozinho), OU foi marcado manualmente
+// (atendido — inclui o caso de Atestado Técnico, ligado por atestadoId).
+// attachedFileId é só o campo legado (PR anterior a mover tudo pro
+// repositório do cliente) — mantido só pra não quebrar itens já anexados
+// daquele jeito.
 export function statusItemChecklist(item: BiddingChecklistItem, clientDocs: ClientDocument[]): 'atendido' | 'vencendo' | 'faltando' {
-  if (item.attachedFileId) return 'atendido'
+  if (item.clientDocumentId) {
+    const doc = clientDocs.find((d) => d.id === item.clientDocumentId)
+    if (doc?.storagePath) {
+      const status = calcDocStatus(doc.dataValidade)
+      if (status === 'valido') return 'atendido'
+      if (status === 'vencendo') return 'vencendo'
+    }
+  }
   if (item.clientDocumentTipo) {
     const doc = clientDocs.find((d) => d.tipo === item.clientDocumentTipo)
     if (doc?.storagePath) {
@@ -31,7 +44,36 @@ export function statusItemChecklist(item: BiddingChecklistItem, clientDocs: Clie
       if (status === 'vencendo') return 'vencendo'
     }
   }
+  if (item.attachedFileId) return 'atendido'
   return item.atendido ? 'atendido' : 'faltando'
+}
+
+// Acha o arquivo de verdade que satisfaz um item — pra "Ver PDF" e pro
+// resumo em Documentos Finais. Prioriza os vínculos com o repositório do
+// cliente (reaproveitáveis); attachedFileId é só o fallback legado.
+export function arquivoResolvidoDoItem(
+  item: BiddingChecklistItem,
+  clientDocs: ClientDocument[],
+  atestados: AtestadoTecnico[],
+  anexosLegado: AttachedFile[]
+): { nome: string; storagePath: string } | null {
+  if (item.clientDocumentId) {
+    const doc = clientDocs.find((d) => d.id === item.clientDocumentId)
+    if (doc?.storagePath) return { nome: doc.nome, storagePath: doc.storagePath }
+  }
+  if (item.clientDocumentTipo) {
+    const doc = clientDocs.find((d) => d.tipo === item.clientDocumentTipo)
+    if (doc?.storagePath) return { nome: doc.nome, storagePath: doc.storagePath }
+  }
+  if (item.atestadoId) {
+    const a = atestados.find((x) => x.id === item.atestadoId)
+    if (a?.storagePath) return { nome: a.nome, storagePath: a.storagePath }
+  }
+  if (item.attachedFileId) {
+    const f = anexosLegado.find((x) => x.id === item.attachedFileId)
+    if (f) return { nome: f.name, storagePath: f.storagePath }
+  }
+  return null
 }
 
 // "Motor de Compliance" — cruza o que o edital exige (itens obrigatórios
@@ -183,6 +225,8 @@ export function useBiddingChecklist(biddingId?: string) {
           atendido: item.atendido,
           client_document_tipo: item.clientDocumentTipo,
           attached_file_id: item.attachedFileId,
+          client_document_id: item.clientDocumentId,
+          atestado_id: item.atestadoId,
           observacoes: item.observacoes,
           prazo: item.prazo,
           responsavel_nome: item.responsavelNome,
@@ -259,6 +303,8 @@ export function usePendenciasChecklist() {
         .select('*, biddings(objeto, orgao, client_id, clients(name))')
         .eq('atendido', false)
         .is('attached_file_id', null)
+        .is('client_document_id', null)
+        .is('atestado_id', null)
         .order('prazo', { ascending: true, nullsFirst: false })
       if (error) throw error
       return (data ?? []).map((row: any) => ({

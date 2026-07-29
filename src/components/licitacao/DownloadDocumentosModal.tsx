@@ -3,7 +3,8 @@ import JSZip from 'jszip'
 import { Loader2, Download } from 'lucide-react'
 import Modal from '../ui/Modal'
 import { Button } from '../ui/FormControls'
-import type { AttachedFile, BiddingChecklistItem } from '../../types/domain'
+import { arquivoResolvidoDoItem } from '../../hooks/useBiddingChecklist'
+import type { AtestadoTecnico, AttachedFile, BiddingChecklistItem, ClientDocument } from '../../types/domain'
 
 type Escopo = 'checklist' | 'proposta' | 'contrato'
 
@@ -32,12 +33,14 @@ const FILTROS: { key: string; label: string }[] = [
 const sanitizar = (nome: string) => nome.replace(/[\\/:*?"<>|]/g, '-')
 
 export default function DownloadDocumentosModal({
-  open, onClose, items, anexos, propostaEnviada, propostaReadequada, contrato, getDownloadUrl, nomeLicitacao,
+  open, onClose, items, anexos, clientDocs, atestados, propostaEnviada, propostaReadequada, contrato, getDownloadUrl, nomeLicitacao,
 }: {
   open: boolean
   onClose: () => void
   items: BiddingChecklistItem[]
   anexos: AttachedFile[]
+  clientDocs: ClientDocument[]
+  atestados: AtestadoTecnico[]
   propostaEnviada: AttachedFile | null
   propostaReadequada: AttachedFile | null
   contrato: AttachedFile | null
@@ -46,14 +49,13 @@ export default function DownloadDocumentosModal({
 }) {
   const gruposChecklist = new Map<string, Entrada[]>()
   for (const item of items) {
-    if (!item.attachedFileId) continue
-    const arquivo = anexos.find((a) => a.id === item.attachedFileId)
+    const arquivo = arquivoResolvidoDoItem(item, clientDocs, atestados, anexos)
     if (!arquivo) continue
     const categoria = item.categoria || 'Outro'
     const entrada: Entrada = {
-      fileId: arquivo.id,
+      fileId: item.id,
       storagePath: arquivo.storagePath,
-      nomeArquivo: arquivo.name,
+      nomeArquivo: arquivo.nome,
       label: item.numeroEdital ? `${item.numeroEdital} ${item.descricao}` : item.descricao,
       escopo: 'checklist',
       obrigatorio: item.obrigatorio,

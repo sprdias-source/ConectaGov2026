@@ -82,7 +82,7 @@ export function useAtestados(clientId?: string) {
         if (uploadError) throw uploadError
         storagePath = path
       }
-      const { error } = await supabase.from('atestados_tecnicos').insert(
+      const { data, error } = await supabase.from('atestados_tecnicos').insert(
         toAtestadoInsert({
           clientId,
           nome: atestado.nome,
@@ -93,8 +93,9 @@ export function useAtestados(clientId?: string) {
           storagePath,
           observacoes: atestado.observacoes ?? null,
         }, user.id)
-      )
+      ).select('id').single()
       if (error) throw error
+      return data.id as string
     },
     onSuccess: invalidate,
   })

@@ -268,9 +268,11 @@ export type Database = {
       bidding_checklist_items: {
         Row: {
           atendido: boolean
+          atestado_id: string | null
           attached_file_id: string | null
           bidding_id: string
           categoria: string | null
+          client_document_id: string | null
           client_document_tipo: string | null
           created_at: string
           descricao: string
@@ -286,9 +288,11 @@ export type Database = {
         }
         Insert: {
           atendido?: boolean
+          atestado_id?: string | null
           attached_file_id?: string | null
           bidding_id: string
           categoria?: string | null
+          client_document_id?: string | null
           client_document_tipo?: string | null
           created_at?: string
           descricao: string
@@ -304,9 +308,11 @@ export type Database = {
         }
         Update: {
           atendido?: boolean
+          atestado_id?: string | null
           attached_file_id?: string | null
           bidding_id?: string
           categoria?: string | null
+          client_document_id?: string | null
           client_document_tipo?: string | null
           created_at?: string
           descricao?: string
@@ -333,6 +339,20 @@ export type Database = {
             columns: ["attached_file_id"]
             isOneToOne: false
             referencedRelation: "attached_files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bidding_checklist_items_client_document_id_fkey"
+            columns: ["client_document_id"]
+            isOneToOne: false
+            referencedRelation: "client_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bidding_checklist_items_atestado_id_fkey"
+            columns: ["atestado_id"]
+            isOneToOne: false
+            referencedRelation: "atestados_tecnicos"
             referencedColumns: ["id"]
           },
         ]
