@@ -19,6 +19,25 @@ export const COL_VALOR_UNITARIO = 10
 export const COL_VALOR_TOTAL = 11
 export const TOTAL_COLUNAS = 12
 
+// Cabeçalho fixo exigido pelo Portal — confirmado num arquivo de exemplo
+// real, caractere por caractere. O próprio Portal instrui "não modifique
+// os títulos da linha 1", então é seguro deixar fixo aqui em vez de
+// depender de sempre ter um arquivo-modelo pra copiar dele.
+export const HEADER_PORTAL_COMPRAS = [
+  'Número do Processo (Não edite)',
+  'ID (Não edite)',
+  'Lote (Não edite)',
+  'Item (Não edite)',
+  'Produto (Não edite)',
+  'Quantidade (Não edite)',
+  'Modelo (Insira as informações quando aplicável)',
+  'Marca/Fabricante (Insira as informações quando aplicável)',
+  'Código de Registro na ANVISA (Insira as informações quando aplicável)',
+  'Descrição detalhada do Item (Insira as informações)',
+  'Valor unitário (Insira as informações)',
+  'Valor total (Insira as informações)',
+]
+
 export function parseCsvPortal(texto: string): string[][] {
   const linhas: string[][] = []
   let campo = ''

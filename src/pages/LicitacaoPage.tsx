@@ -32,7 +32,7 @@ import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import BiddingItemsEditor from '../components/cadastros/BiddingItemsEditor'
-import { parseCsvPortal, stringifyCsvPortal, textoParaBlobLatin1, formatarNumeroPtBR, COL_QUANTIDADE, COL_MARCA, COL_DESCRICAO, COL_VALOR_UNITARIO, COL_VALOR_TOTAL, TOTAL_COLUNAS } from '../lib/csvPortalCompras'
+import { stringifyCsvPortal, textoParaBlobLatin1, formatarNumeroPtBR, HEADER_PORTAL_COMPRAS } from '../lib/csvPortalCompras'
 import { parseFlexibleNumber } from '../lib/numberParsing'
 import { useToast } from '../hooks/useToast'
 import { CERT_CONFIG } from '../types/domain'
@@ -416,124 +416,227 @@ function HistoricoVersoes({ biddingId }: { biddingId: string }) {
 // Cadastro da PROPOSTA INICIAL — a que sobe no Portal de Compras Públicas
 // ANTES da sessão de disputa começar, diferente da Proposta Readequada
 // (AbaProposta logo abaixo), que é o valor final depois de ganhar. O
-// Portal disponibiliza um modelo de planilha CSV pra isso: o fornecedor
-// baixa o arquivo (já vem com Processo/ID/Lote/Item/Produto/Quantidade
-// preenchidos pelo portal) e precisa completar as últimas colunas antes
-// de subir de volta — essa aba automatiza esse preenchimento com os dados
-// já cadastrados na licitação.
+// cabeçalho exigido pelo Portal (HEADER_PORTAL_COMPRAS) é fixo e já
+// conhecido — não depende de enviar nenhum arquivo-modelo: a tabela é
+// digitada direto aqui, pré-preenchida com o que o sistema já sabe da
+// licitação (Item/Produto/Quantidade/Descrição/Valor de referência), e o
+// que só o Portal sabe (ID, Lote) fica em branco pro usuário digitar.
+type LinhaProposta = {
+  processo: string
+  id: string
+  lote: string
+  item: string
+  produto: string
+  quantidade: string
+  modelo: string
+  marca: string
+  anvisa: string
+  descricao: string
+  valorUnitario: string
+}
+
+function linhaPropostaDoItem(bidding: Bidding, item: BiddingItem, doPortal?: { id: string; lote: string }): LinhaProposta {
+  return {
+    processo: bidding.processo ?? bidding.numeroEdital ?? '',
+    id: doPortal?.id ?? '',
+    lote: doPortal?.lote ?? '',
+    item: item.numeroItem,
+    produto: item.descricao,
+    quantidade: String(item.quantidade),
+    modelo: '',
+    marca: item.marca ?? '',
+    anvisa: '',
+    descricao: `${item.descricao} Conforme edital`,
+    valorUnitario: formatarNumeroPtBR(item.valorUnitarioLicitado),
+  }
+}
+
 function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
   const { items, isLoading } = useBiddingItemsDaLicitacao(bidding.id)
+  const { analysis } = useBiddingAnalysis(bidding.id)
   const { nivel } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivel === 'edicao'
-  const { showToast } = useToast()
 
-  // Exportação do CSV de propostas do Portal de Compras Públicas. As
-  // linhas de dados são pareadas com os itens desta licitação NA ORDEM em
-  // que aparecem — por isso a checagem de quantidade de linhas abaixo: uma
-  // ordem diferente preencheria o item errado sem nenhum aviso.
-  const [csvLinhas, setCsvLinhas] = useState<string[][] | null>(null)
-  const [csvNomeArquivo, setCsvNomeArquivo] = useState<string | null>(null)
-  const [csvErro, setCsvErro] = useState<string | null>(null)
+  // ID e Lote geralmente já aparecem na própria tabela de itens do edital
+  // (o Portal costuma gerar o PDF do edital com os mesmos números que
+  // depois aparecem no CSV de proposta) — quando a Análise de Edital por
+  // IA identificou isso, cruza pelo número do item pra pré-preencher em
+  // vez de deixar em branco.
+  const analise = (analysis?.analise ?? null) as AnaliseEdital | null
+  const portalPorNumeroItem = useMemo(() => {
+    const mapa = new Map<string, { id: string; lote: string }>()
+    analise?.itens?.forEach((it) => {
+      const numero = it.numero != null ? String(it.numero) : null
+      if (!numero) return
+      mapa.set(numero, {
+        id: it.idPortal != null ? String(it.idPortal) : '',
+        lote: it.lote != null ? String(it.lote) : '',
+      })
+    })
+    return mapa
+  }, [analise])
 
-  const handleImportarCsvPortal = async (file: File) => {
-    setCsvErro(null)
-    setCsvLinhas(null)
-    try {
-      const buffer = await file.arrayBuffer()
-      const texto = new TextDecoder('iso-8859-1').decode(buffer)
-      const linhas = parseCsvPortal(texto)
-      if (linhas.length < 2) throw new Error('Arquivo vazio ou sem linhas de item.')
-      const dados = linhas.slice(1)
-      if (dados.length !== items.length) {
-        throw new Error(
-          `O arquivo tem ${dados.length} linha(s) de item, mas esta licitação tem ${items.length} item(ns) cadastrado(s) na aba Proposta Readequada. ` +
-          'Confira se é o arquivo certo antes de continuar — o preenchimento é pareado pela ordem das linhas, uma diferença aqui preenche tudo errado.'
-        )
-      }
-      setCsvLinhas(linhas)
-      setCsvNomeArquivo(file.name)
-    } catch (err) {
-      setCsvErro(err instanceof Error ? err.message : 'Não foi possível ler o arquivo.')
-    }
+  const [linhasProposta, setLinhasProposta] = useState<LinhaProposta[]>([])
+  // Preenche a tabela sozinha com os itens da licitação assim que eles
+  // carregam — só uma vez por licitação, pra não sobrescrever edições já
+  // feitas em toda atualização da tela (ajuste de estado durante o
+  // render, comparando com um marcador, em vez de useEffect).
+  const [carregadaPara, setCarregadaPara] = useState<string | null>(null)
+  if (!isLoading && carregadaPara !== bidding.id) {
+    setLinhasProposta(items.map((item) => linhaPropostaDoItem(bidding, item, portalPorNumeroItem.get(item.numeroItem))))
+    setCarregadaPara(bidding.id)
   }
 
-  const handleBaixarCsvPreenchido = () => {
-    if (!csvLinhas) return
-    const [header, ...dados] = csvLinhas
-    const linhasPreenchidas = dados.map((linha, idx) => {
-      const item = items[idx]
-      if (!item) return linha
-      const nova = [...linha]
-      while (nova.length < TOTAL_COLUNAS) nova.push('')
-      // Coluna F (Quantidade) é a autoridade — já veio certa do portal —
-      // então o total é calculado a partir dela, não da quantidade
-      // cadastrada aqui no sistema (que deveria bater, mas se não bater
-      // por algum motivo, o portal é quem manda no arquivo dele).
-      const quantidadeDoPortal = parseFlexibleNumber(linha[COL_QUANTIDADE]) ?? item.quantidade
-      const valorUnitario = item.valorUnitarioOfertado ?? item.valorUnitarioLicitado
-      nova[COL_MARCA] = item.marca ?? ''
-      nova[COL_DESCRICAO] = item.descricao ?? ''
-      nova[COL_VALOR_UNITARIO] = formatarNumeroPtBR(valorUnitario)
-      nova[COL_VALOR_TOTAL] = formatarNumeroPtBR(quantidadeDoPortal * valorUnitario)
-      return nova
+  const atualizarLinha = (idx: number, patch: Partial<LinhaProposta>) => {
+    setLinhasProposta((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)))
+  }
+
+  const adicionarLinha = () => {
+    setLinhasProposta((prev) => [...prev, {
+      processo: bidding.processo ?? bidding.numeroEdital ?? '',
+      id: '', lote: '', item: '', produto: '', quantidade: '',
+      modelo: '', marca: '', anvisa: '', descricao: '', valorUnitario: '',
+    }])
+  }
+
+  const removerLinha = (idx: number) => {
+    setLinhasProposta((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  const handleExportarCsv = () => {
+    const linhas = linhasProposta.map((l) => {
+      const quantidade = parseFlexibleNumber(l.quantidade) ?? 0
+      const valorUnitario = parseFlexibleNumber(l.valorUnitario) ?? 0
+      return [
+        l.processo, l.id, l.lote, l.item, l.produto, l.quantidade,
+        l.modelo, l.marca, l.anvisa, l.descricao,
+        formatarNumeroPtBR(valorUnitario), formatarNumeroPtBR(quantidade * valorUnitario),
+      ]
     })
-    const texto = stringifyCsvPortal([header, ...linhasPreenchidas])
+    const texto = stringifyCsvPortal([HEADER_PORTAL_COMPRAS, ...linhas])
     const blob = textoParaBlobLatin1(texto)
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = csvNomeArquivo ? csvNomeArquivo.replace(/\.csv$/i, '_preenchido.csv') : 'proposta_preenchida.csv'
+    const nomeBase = (bidding.numeroEdital ?? bidding.id).replace(/[^\w-]+/g, '_')
+    a.download = `Proposta_Inicial_${nomeBase}.csv`
     a.click()
     URL.revokeObjectURL(url)
-    showToast('CSV preenchido gerado — confira antes de subir no portal.')
   }
 
   if (isLoading) return <SkeletonTableRows linhas={4} colunas={5} />
 
-  if (items.length === 0) {
-    return <p className="text-[13px] text-base-500 italic py-4">Nenhum item cadastrado nesta licitação ainda — cadastre os itens na aba Proposta Readequada antes de exportar a proposta pro Portal.</p>
-  }
-
   return (
     <div className="flex flex-col gap-4">
       <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-4 flex flex-col gap-3">
-        <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Exportar CSV para o Portal de Compras Públicas</p>
+        <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Proposta Inicial — Modelo do Portal de Compras Públicas</p>
         <p className="text-[12px] text-base-400">
-          Envie aqui o modelo de planilha que você baixou do Portal (já vem com Processo/ID/Lote/Item/Produto/Quantidade preenchidos) — o sistema completa Marca, Descrição e Valores usando os dados desta licitação e devolve o arquivo pronto pra subir de volta no Portal.
+          A tabela abaixo já vem preenchida com os itens desta licitação — Item, Produto, Quantidade, Descrição ("Conforme edital") e Valor Unitário pelo preço de referência do edital. ID e Lote também vêm preenchidos quando a Análise de Edital já os identificou na tabela do edital; confira e complete o que faltar antes de exportar. O cabeçalho e o formato do arquivo já seguem exatamente o que o Portal exige.
         </p>
-
-        {podeEditar && (
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-base-950 bg-accent-500 hover:bg-accent-400 rounded-lg px-3 py-1.5 cursor-pointer transition shrink-0">
-              <Upload className="w-3.5 h-3.5" /> Enviar modelo do Portal (.csv)
-              <input
-                type="file" accept=".csv" className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImportarCsvPortal(f); e.target.value = '' }}
-              />
-            </label>
-            {csvLinhas && (
-              <>
-                <span className="text-[12px] text-positive-400 flex items-center gap-1.5">
-                  <FileText className="w-3.5 h-3.5" /> {csvNomeArquivo} — {csvLinhas.length - 1} linha(s) reconhecida(s)
-                </span>
-                <Button onClick={handleBaixarCsvPreenchido}>
-                  <Download className="w-3.5 h-3.5" /> Baixar CSV Preenchido
-                </Button>
-              </>
-            )}
-          </div>
+        {items.length === 0 && (
+          <p className="text-[11px] text-warning-400">Nenhum item cadastrado ainda na aba Proposta Readequada — a tabela começou vazia, use "Adicionar Linha" pra montar manualmente ou cadastre os itens lá primeiro.</p>
         )}
+      </div>
 
-        {csvErro && (
-          <div className="bg-negative-500/10 border border-negative-500/25 rounded-lg p-2.5 flex items-start gap-2">
-            <AlertCircle className="w-3.5 h-3.5 text-negative-400 shrink-0 mt-0.5" />
-            <p className="text-[11.5px] text-negative-300 flex-1">{csvErro}</p>
-          </div>
-        )}
+      {podeEditar && (
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={adicionarLinha}
+            className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-accent-300 bg-base-850 border border-base-700 rounded-lg px-3 py-1.5 transition"
+          >
+            <Plus className="w-3.5 h-3.5" /> Adicionar Linha
+          </button>
+          <Button onClick={handleExportarCsv} disabled={linhasProposta.length === 0}>
+            <Download className="w-3.5 h-3.5" /> Exportar CSV pro Portal
+          </Button>
+        </div>
+      )}
 
-        <p className="text-[10.5px] text-base-500">
-          Colunas Processo/ID/Lote/Item/Produto/Quantidade nunca são alteradas — só Marca/Fabricante, Descrição detalhada, Valor Unitário e Valor Total são preenchidos (Modelo e ANVISA ficam em branco, sem campo equivalente aqui). O pareamento é pela ordem das linhas do arquivo com a ordem dos itens cadastrados na aba Proposta Readequada.
-        </p>
+      <div className="overflow-x-auto bg-base-850/60 border border-base-800 rounded-xl">
+        <table className="w-full text-[12px]">
+          <thead>
+            <tr className="text-base-500 border-b border-base-800">
+              <th className="text-left font-semibold px-2 py-2 w-24">Processo</th>
+              <th className="text-left font-semibold px-2 py-2 w-24">ID (Portal)</th>
+              <th className="text-left font-semibold px-2 py-2 w-20">Lote</th>
+              <th className="text-left font-semibold px-2 py-2 w-16">Item</th>
+              <th className="text-left font-semibold px-2 py-2 min-w-[160px]">Produto</th>
+              <th className="text-right font-semibold px-2 py-2 w-20">Qtd.</th>
+              <th className="text-left font-semibold px-2 py-2 w-24">Modelo</th>
+              <th className="text-left font-semibold px-2 py-2 w-28">Marca/Fabricante</th>
+              <th className="text-left font-semibold px-2 py-2 w-24">ANVISA</th>
+              <th className="text-left font-semibold px-2 py-2 min-w-[220px]">Descrição detalhada</th>
+              <th className="text-right font-semibold px-2 py-2 w-28">Vl. Unitário</th>
+              <th className="text-right font-semibold px-2 py-2 w-28">Vl. Total</th>
+              {podeEditar && <th className="px-2 py-2 w-8" />}
+            </tr>
+          </thead>
+          <tbody>
+            {linhasProposta.map((l, idx) => {
+              const quantidadeNum = parseFlexibleNumber(l.quantidade) ?? 0
+              const valorUnitarioNum = parseFlexibleNumber(l.valorUnitario) ?? 0
+              return (
+                <tr key={idx} className="border-t border-base-800/60">
+                  {(['processo', 'id', 'lote', 'item'] as const).map((campo) => (
+                    <td key={campo} className="px-1.5 py-1.5">
+                      <input
+                        value={l[campo]}
+                        onChange={(e) => atualizarLinha(idx, { [campo]: e.target.value })}
+                        disabled={!podeEditar}
+                        className="w-full bg-base-900 border border-base-700 rounded px-1.5 py-1 text-[12px] text-base-100 focus:border-accent-400 outline-none disabled:opacity-60"
+                      />
+                    </td>
+                  ))}
+                  <td className="px-1.5 py-1.5">
+                    <input
+                      value={l.produto}
+                      onChange={(e) => atualizarLinha(idx, { produto: e.target.value })}
+                      disabled={!podeEditar}
+                      className="w-full bg-base-900 border border-base-700 rounded px-1.5 py-1 text-[12px] text-base-100 focus:border-accent-400 outline-none disabled:opacity-60"
+                    />
+                  </td>
+                  <td className="px-1.5 py-1.5">
+                    <input
+                      value={l.quantidade}
+                      inputMode="decimal"
+                      onChange={(e) => atualizarLinha(idx, { quantidade: e.target.value })}
+                      disabled={!podeEditar}
+                      className="w-full bg-base-900 border border-base-700 rounded px-1.5 py-1 text-right text-[12px] font-mono text-base-100 focus:border-accent-400 outline-none disabled:opacity-60"
+                    />
+                  </td>
+                  {(['modelo', 'marca', 'anvisa', 'descricao'] as const).map((campo) => (
+                    <td key={campo} className="px-1.5 py-1.5">
+                      <input
+                        value={l[campo]}
+                        onChange={(e) => atualizarLinha(idx, { [campo]: e.target.value })}
+                        disabled={!podeEditar}
+                        className="w-full bg-base-900 border border-base-700 rounded px-1.5 py-1 text-[12px] text-base-100 focus:border-accent-400 outline-none disabled:opacity-60"
+                      />
+                    </td>
+                  ))}
+                  <td className="px-1.5 py-1.5">
+                    <input
+                      value={l.valorUnitario}
+                      inputMode="decimal"
+                      onChange={(e) => atualizarLinha(idx, { valorUnitario: e.target.value })}
+                      disabled={!podeEditar}
+                      className="w-full bg-base-900 border border-base-700 rounded px-1.5 py-1 text-right text-[12px] font-mono text-base-100 focus:border-accent-400 outline-none disabled:opacity-60"
+                    />
+                  </td>
+                  <td className="px-2 py-1.5 text-right font-mono text-base-300">{formatarNumeroPtBR(quantidadeNum * valorUnitarioNum)}</td>
+                  {podeEditar && (
+                    <td className="px-1.5 py-1.5 text-center">
+                      <button type="button" onClick={() => removerLinha(idx)} className="text-base-500 hover:text-negative-400 transition">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   )
@@ -912,7 +1015,7 @@ interface AnaliseEdital {
   portal?: string
   intervaloLances?: string
   resumoTecnico?: string
-  itens?: { numero?: string | number; descricao: string; unidade?: string; quantidade?: number; valorReferencia?: number }[]
+  itens?: { numero?: string | number; idPortal?: string | number; lote?: string | number; descricao: string; unidade?: string; quantidade?: number; valorReferencia?: number }[]
   validadeProposta?: string
   catalogo?: string
   garantias?: string
