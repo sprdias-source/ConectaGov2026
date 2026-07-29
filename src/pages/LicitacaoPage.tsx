@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, FileText, Upload, Plus, Trash2, CheckCircle2, Circle, Download, Eye,
@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
-import { fromBiddingItemRow } from '../lib/mappers'
+import { fromBiddingItemRow, toBiddingItemInsert } from '../lib/mappers'
 import { useAuth } from '../hooks/useAuth'
 import { Button, Input, Select } from '../components/ui/FormControls'
 import { PageHeader, Card } from '../components/ui/Primitives'
@@ -31,6 +31,7 @@ import { useAtestados, calcularSimilaridade } from '../hooks/useAtestados'
 import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
+import BiddingItemsEditor from '../components/cadastros/BiddingItemsEditor'
 import { useToast } from '../hooks/useToast'
 import { CERT_CONFIG } from '../types/domain'
 import type { Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingModalidade, BiddingStatus } from '../types/domain'
@@ -137,7 +138,82 @@ function useBiddingItemsDaLicitacao(biddingId?: string) {
     },
   })
 
-  return { items: query.data ?? [], isLoading: query.isLoading, salvarRateio }
+  // Sincroniza a lista de itens inteira (usada pelo editor completo — Nº,
+  // Descrição, Unid., Qtd., Marca, Modelo, valores e Ganhou? — reaproveitado
+  // aqui no Kanban, plano B pra quando a importação automática do edital
+  // falhar ou vier incompleta). Diferente de Cadastros, que apaga tudo e
+  // reinsere ao salvar o formulário inteiro de uma vez, aqui não existe um
+  // botão de "Salvar" — cada mudança precisa ir sozinha pro banco (ver
+  // handleItemsChange, que debounça e chama isto). Por isso o sincronismo
+  // é por diff (insere só o que é novo, atualiza só o que mudou, apaga só o
+  // que sumiu) em vez de apagar tudo — apagar tudo a cada poucos segundos
+  // arriscaria a licitação ficar momentaneamente sem nenhum item se uma
+  // sincronização caísse no meio.
+  const sincronizarItens = useMutation({
+    mutationFn: async (novosItems: Partial<BiddingItem>[]) => {
+      if (!user || !biddingId) throw new Error('Dados insuficientes')
+      const { data: itensAtuaisRows, error: fetchError } = await supabase.from('bidding_items').select('*').eq('bidding_id', biddingId)
+      if (fetchError) throw fetchError
+      const itensAtuais = (itensAtuaisRows ?? []).map(fromBiddingItemRow)
+      const atuaisPorId = new Map(itensAtuais.map((i) => [i.id, i]))
+      const idsNovos = new Set(novosItems.filter((i) => i.id).map((i) => i.id as string))
+
+      const paraExcluir = itensAtuais.filter((i) => !idsNovos.has(i.id))
+      if (paraExcluir.length > 0) {
+        const { error } = await supabase.from('bidding_items').delete().in('id', paraExcluir.map((i) => i.id))
+        if (error) throw error
+      }
+
+      for (const novo of novosItems) {
+        if (!novo.id) continue
+        const original = atuaisPorId.get(novo.id)
+        if (!original) continue
+        const mudou = novo.numeroItem !== original.numeroItem
+          || novo.descricao !== original.descricao
+          || (novo.unidade ?? null) !== (original.unidade ?? null)
+          || novo.quantidade !== original.quantidade
+          || (novo.marca ?? null) !== (original.marca ?? null)
+          || (novo.referencia ?? null) !== (original.referencia ?? null)
+          || novo.valorUnitarioLicitado !== original.valorUnitarioLicitado
+          || (novo.valorUnitarioOfertado ?? null) !== (original.valorUnitarioOfertado ?? null)
+          || (novo.ganhou ?? false) !== original.ganhou
+        if (!mudou) continue
+        const { error } = await supabase.from('bidding_items').update({
+          numero_item: novo.numeroItem ?? '',
+          descricao: novo.descricao ?? '',
+          unidade: novo.unidade ?? null,
+          quantidade: novo.quantidade ?? 0,
+          marca: novo.marca ?? null,
+          referencia: novo.referencia ?? null,
+          valor_unitario_licitado: novo.valorUnitarioLicitado ?? 0,
+          valor_unitario_ofertado: novo.valorUnitarioOfertado ?? null,
+          ganhou: novo.ganhou ?? false,
+        }).eq('id', novo.id)
+        if (error) throw error
+      }
+
+      const paraInserir = novosItems.filter((i) => !i.id)
+      if (paraInserir.length > 0) {
+        const rows = paraInserir.map((i) => toBiddingItemInsert({ ...i, biddingId }, user.id))
+        const { error } = await supabase.from('bidding_items').insert(rows)
+        if (error) throw error
+      }
+
+      // Só precisa reconsultar quando algo foi inserido — as linhas novas
+      // não tinham "id" ainda no editor, e o próximo diff (próxima edição)
+      // precisa desse id de verdade pra saber que a linha já existe (senão
+      // seria inserida de novo). Atualizações/exclusões não mudam o
+      // conjunto de ids, então o estado local do editor já está correto
+      // sem precisar buscar de novo — evita resetar o que o usuário está
+      // digitando no meio de uma sincronização em segundo plano.
+      return { precisaResincronizar: paraInserir.length > 0 }
+    },
+    onSuccess: ({ precisaResincronizar }) => {
+      if (precisaResincronizar) queryClient.invalidateQueries({ queryKey: ['bidding_items', biddingId] })
+    },
+  })
+
+  return { items: query.data ?? [], isLoading: query.isLoading, salvarRateio, sincronizarItens }
 }
 
 // Rateio pelo método do "maior resto": distribui o valor final proporcional
@@ -335,9 +411,48 @@ function HistoricoVersoes({ biddingId }: { biddingId: string }) {
 }
 
 function AbaProposta({ bidding }: { bidding: Bidding }) {
-  const { items, isLoading, salvarRateio } = useBiddingItemsDaLicitacao(bidding.id)
+  const { items, isLoading, salvarRateio, sincronizarItens } = useBiddingItemsDaLicitacao(bidding.id)
   const { nivel } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivel === 'edicao'
+
+  // Autosave debounçado: o editor completo (Nº, Descrição, Ganhou?, Excel,
+  // Adicionar Item...) não tem botão de "Salvar" aqui — cada mudança
+  // dispara uma sincronização 1,2s depois da última tecla, pra não gravar
+  // a cada dígito. Se uma sincronização ainda estiver em andamento quando
+  // o timer estoura, espera ela terminar antes de mandar a próxima (evita
+  // duas gravações correndo ao mesmo tempo e inserindo a mesma linha nova
+  // duas vezes). Ao sair da aba/página com uma mudança pendente, força a
+  // gravação na hora em vez de deixar perder.
+  const pendenteRef = useRef<Partial<BiddingItem>[] | null>(null)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [statusSalvamento, setStatusSalvamento] = useState<'idle' | 'pendente' | 'salvando'>('idle')
+
+  const dispararSincronizacao = () => {
+    if (sincronizarItens.isPending) {
+      timeoutRef.current = setTimeout(dispararSincronizacao, 300)
+      return
+    }
+    const dados = pendenteRef.current
+    if (!dados) { setStatusSalvamento('idle'); return }
+    pendenteRef.current = null
+    setStatusSalvamento('salvando')
+    sincronizarItens.mutate(dados, { onSettled: () => setStatusSalvamento((s) => (s === 'salvando' ? 'idle' : s)) })
+  }
+
+  const handleItemsChange = (novosItems: Partial<BiddingItem>[]) => {
+    pendenteRef.current = novosItems
+    setStatusSalvamento('pendente')
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    timeoutRef.current = setTimeout(dispararSincronizacao, 1200)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+      if (pendenteRef.current) sincronizarItens.mutate(pendenteRef.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const [valorFinal, setValorFinal] = useState('')
   const [metodo, setMetodo] = useState<'proporcional' | 'percentual'>('proporcional')
@@ -381,46 +496,83 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
 
   if (isLoading) return <SkeletonTableRows linhas={4} colunas={5} />
 
-  if (items.length === 0) {
-    return <p className="text-[13px] text-base-500 italic py-4">Nenhum item cadastrado nesta licitação ainda — os itens entram pela tela de edição da licitação.</p>
+  if (!podeEditar && items.length === 0) {
+    return <p className="text-[13px] text-base-500 italic py-4">Nenhum item cadastrado nesta licitação ainda.</p>
   }
 
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">Itens da Licitação</p>
-        <div className="overflow-x-auto bg-base-850/60 border border-base-800 rounded-xl">
-          <table className="w-full text-[12px]">
-            <thead>
-              <tr className="text-base-500 border-b border-base-800">
-                <th className="text-left font-semibold px-3 py-2">Item</th>
-                <th className="text-left font-semibold px-3 py-2">Descrição</th>
-                <th className="text-right font-semibold px-3 py-2">Qtd.</th>
-                <th className="text-right font-semibold px-3 py-2">Vl. Unit. Licitado</th>
-                <th className="text-right font-semibold px-3 py-2">Vl. Unit. Ofertado</th>
-                <th className="text-center font-semibold px-3 py-2">Ganhou?</th>
-                {metodo === 'percentual' && <th className="text-right font-semibold px-3 py-2">% do Rateio</th>}
-                {rateio && <th className="text-right font-semibold px-3 py-2 bg-base-800/40">Novo Vl. Unit.</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((i) => {
-                const entraNoRateio = itensGanhos.includes(i)
-                return (
-                <tr key={i.id} className={`border-t border-base-800/60 ${!entraNoRateio && rateio ? 'opacity-50' : ''}`}>
-                  <td className="px-3 py-2 text-base-300">{i.numeroItem}</td>
-                  <td className="px-3 py-2 text-base-300 max-w-[220px] truncate">{i.descricao}</td>
-                  <td className="px-3 py-2 text-right text-base-400">{i.quantidade}</td>
-                  <td className="px-3 py-2 text-right font-mono text-base-400">{formatBRL(i.valorUnitarioLicitado)}</td>
-                  <td className="px-3 py-2 text-right font-mono text-base-400">{i.valorUnitarioOfertado ? formatBRL(i.valorUnitarioOfertado) : '—'}</td>
-                  <td className="px-3 py-2 text-center">
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${i.ganhou ? 'bg-positive-500/15 text-positive-400' : 'bg-base-700/40 text-base-500'}`}>
-                      {i.ganhou ? 'Sim' : 'Não'}
-                    </span>
-                  </td>
-                  {metodo === 'percentual' && (
-                    <td className="px-3 py-2 text-right">
-                      {entraNoRateio && (
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Itens da Licitação</p>
+          {podeEditar && statusSalvamento !== 'idle' && (
+            <span className="text-[10px] text-base-500 flex items-center gap-1">
+              {statusSalvamento === 'salvando' ? (<><Loader2 className="w-3 h-3 animate-spin" /> Salvando...</>) : 'Alteração pendente...'}
+            </span>
+          )}
+        </div>
+
+        {podeEditar ? (
+          <>
+            <p className="text-[11px] text-base-500 mb-2">
+              Confira e corrija aqui se a importação automática do edital vier incompleta ou errada — "Adicionar Item" e "Importar Excel" são o plano B pra montar a lista na mão quando for preciso. Cada mudança grava sozinha, não precisa de botão de salvar.
+            </p>
+            <BiddingItemsEditor items={items} onChange={handleItemsChange} tipoDisputa={bidding.tipoDisputa} />
+          </>
+        ) : (
+          <div className="overflow-x-auto bg-base-850/60 border border-base-800 rounded-xl">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="text-base-500 border-b border-base-800">
+                  <th className="text-left font-semibold px-3 py-2">Item</th>
+                  <th className="text-left font-semibold px-3 py-2">Descrição</th>
+                  <th className="text-right font-semibold px-3 py-2">Qtd.</th>
+                  <th className="text-right font-semibold px-3 py-2">Vl. Unit. Licitado</th>
+                  <th className="text-right font-semibold px-3 py-2">Vl. Unit. Ofertado</th>
+                  <th className="text-center font-semibold px-3 py-2">Ganhou?</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((i) => (
+                  <tr key={i.id} className="border-t border-base-800/60">
+                    <td className="px-3 py-2 text-base-300">{i.numeroItem}</td>
+                    <td className="px-3 py-2 text-base-300 max-w-[220px] truncate">{i.descricao}</td>
+                    <td className="px-3 py-2 text-right text-base-400">{i.quantidade}</td>
+                    <td className="px-3 py-2 text-right font-mono text-base-400">{formatBRL(i.valorUnitarioLicitado)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-base-400">{i.valorUnitarioOfertado ? formatBRL(i.valorUnitarioOfertado) : '—'}</td>
+                    <td className="px-3 py-2 text-center">
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${i.ganhou ? 'bg-positive-500/15 text-positive-400' : 'bg-base-700/40 text-base-500'}`}>
+                        {i.ganhou ? 'Sim' : 'Não'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {podeEditar && items.length > 0 && rateio && (
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">Prévia do Rateio</p>
+          <div className="overflow-x-auto bg-base-850/60 border border-base-800 rounded-xl">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="text-base-500 border-b border-base-800">
+                  <th className="text-left font-semibold px-3 py-2">Item</th>
+                  <th className="text-left font-semibold px-3 py-2">Descrição</th>
+                  {metodo === 'percentual' && <th className="text-right font-semibold px-3 py-2">% do Rateio</th>}
+                  <th className="text-right font-semibold px-3 py-2 bg-base-800/40">Novo Vl. Unit.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {itensGanhos.map((i) => (
+                  <tr key={i.id} className="border-t border-base-800/60">
+                    <td className="px-3 py-2 text-base-300">{i.numeroItem}</td>
+                    <td className="px-3 py-2 text-base-300 max-w-[220px] truncate">{i.descricao}</td>
+                    {metodo === 'percentual' && (
+                      <td className="px-3 py-2 text-right">
                         <input
                           type="text"
                           inputMode="decimal"
@@ -429,33 +581,28 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
                           onChange={(e) => setPercentuais({ ...percentuais, [i.id]: e.target.value })}
                           className="w-16 bg-base-900 border border-base-700 rounded px-1.5 py-1 text-right text-[12px] text-base-100"
                         />
-                      )}
-                    </td>
-                  )}
-                  {rateio && (
+                      </td>
+                    )}
                     <td className="px-3 py-2 text-right font-mono font-semibold text-accent-300 bg-base-800/20">
-                      {entraNoRateio ? formatBRL((rateio[i.id] ?? 0) / (i.quantidade || 1)) : '—'}
+                      {formatBRL((rateio[i.id] ?? 0) / (i.quantidade || 1))}
                     </td>
-                  )}
-                </tr>
-                )
-              })}
-            </tbody>
-            {rateio && (
+                  </tr>
+                ))}
+              </tbody>
               <tfoot>
                 <tr className="border-t border-base-700">
-                  <td colSpan={metodo === 'percentual' ? 7 : 6} className="px-3 py-2 text-right text-[11px] text-base-500">Soma do rateio</td>
+                  <td colSpan={metodo === 'percentual' ? 3 : 2} className="px-3 py-2 text-right text-[11px] text-base-500">Soma do rateio</td>
                   <td className="px-3 py-2 text-right font-mono font-bold text-positive-400 bg-base-800/40">
                     {formatBRL(Object.values(rateio).reduce((s, v) => s + v, 0))}
                   </td>
                 </tr>
               </tfoot>
-            )}
-          </table>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
-      {podeEditar && (
+      {podeEditar && items.length > 0 && (
         <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-4 flex flex-col gap-3">
           <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Rateio da Proposta Readequada</p>
           <p className="text-[12px] text-base-400">
@@ -464,7 +611,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
           {items.some((i) => i.ganhou) ? (
             <p className="text-[11px] text-accent-300">O rateio considera só os {itensGanhos.length} item(ns) marcado(s) como "Ganhou" — os demais ficam de fora da proposta reajustada.</p>
           ) : (
-            <p className="text-[11px] text-warning-400">Nenhum item foi marcado como "Ganhou" ainda — o rateio abaixo está considerando todos os itens. Marque os itens ganhos na aba Itens/Lotes (Cadastros → Licitações → Editar) pra restringir o rateio só a eles.</p>
+            <p className="text-[11px] text-warning-400">Nenhum item foi marcado como "Ganhou" ainda — o rateio abaixo está considerando todos os itens. Marque na coluna "Ganhou?" da tabela acima pra restringir o rateio só a eles.</p>
           )}
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-44">
