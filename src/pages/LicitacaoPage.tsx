@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, FileText, Upload, Plus, Trash2, CheckCircle2, Circle, Download, Eye,
@@ -58,7 +58,7 @@ const ABAS = [
   { key: 'visao', label: 'Visão Geral', icon: Gavel },
   { key: 'edital', label: 'Edital & Análise', icon: FileText },
   { key: 'checklist', label: 'Checklist & Habilitação', icon: ClipboardList },
-  { key: 'proposta', label: 'Proposta & Itens', icon: Wallet },
+  { key: 'proposta', label: 'Proposta Readequada', icon: Wallet },
   { key: 'documentos', label: 'Documentos Finais', icon: FileSignature },
   { key: 'sessao', label: 'Sessão Ao Vivo', icon: Activity },
 ] as const
@@ -645,12 +645,53 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
 }
 
 // Tela enxuta pensada pra ficar aberta numa aba do navegador durante o
-// pregão — só os itens (número, descrição, valor de referência) em fonte
-// grande pra consulta rápida no meio da disputa, sem os outros elementos
-// da página (checklist, edital, etc). Reaproveita o mesmo hook local de
-// itens já usado pela AbaProposta — mesma query, sem refazer o fetch.
+// pregão — os itens em fonte grande pra consulta rápida no meio da
+// disputa, mais uma calculadora de apoio: informa o último lance de cada
+// item e o intervalo mínimo exigido pelo edital entre lances (sugerido
+// pela IA, sempre editável) e o sistema calcula o próximo lance sugerido.
+// Nada aqui grava sozinho no banco — é só calculadora de apoio durante a
+// sessão — exceto o botão opcional "Usar na Proposta Readequada", que
+// aplica o último lance digitado como Vl. Unit. Ofertado daquele item
+// (reaproveita o mesmo sincronizarItens por diff já usado na AbaProposta).
 function AbaSessaoAoVivo({ bidding }: { bidding: Bidding }) {
-  const { items, isLoading } = useBiddingItemsDaLicitacao(bidding.id)
+  const { items, isLoading, sincronizarItens } = useBiddingItemsDaLicitacao(bidding.id)
+  const { analysis } = useBiddingAnalysis(bidding.id)
+  const { nivel } = usePermissaoFerramenta('licitacoes')
+  const podeEditar = nivel === 'edicao'
+  const { showToast } = useToast()
+
+  const analise = (analysis?.analise ?? null) as AnaliseEdital | null
+
+  // Pega só o primeiro número do texto que a IA extraiu (ex: "1% (um por
+  // cento) do valor do lance anterior" -> 1) pra sugerir um ponto de
+  // partida — nunca assume sozinho, é só uma sugestão editável.
+  const percentualSugeridoIA = useMemo(() => {
+    const texto = analise?.intervaloLances
+    if (!texto) return null
+    const match = texto.match(/(\d+(?:[.,]\d+)?)/)
+    return match ? parseFloat(match[1].replace(',', '.')) : null
+  }, [analise])
+
+  const [percentual, setPercentual] = useState('')
+  const [sugestaoAplicadaPara, setSugestaoAplicadaPara] = useState<string | null>(null)
+  const [ultimosLances, setUltimosLances] = useState<Record<string, string>>({})
+
+  // Aplica a sugestão da IA assim que ela chegar, só uma vez por licitação
+  // — se o usuário já editou o campo manualmente depois, não sobrescreve.
+  if (percentualSugeridoIA !== null && sugestaoAplicadaPara !== bidding.id) {
+    setPercentual(String(percentualSugeridoIA))
+    setSugestaoAplicadaPara(bidding.id)
+  }
+
+  const pct = parseFloat(percentual.replace(',', '.')) || 0
+
+  const usarValorNaProposta = (itemId: string, valor: number) => {
+    const novosItems = items.map((it) => (it.id === itemId ? { ...it, valorUnitarioOfertado: valor } : it))
+    sincronizarItens.mutate(novosItems, {
+      onSuccess: () => showToast('Valor aplicado na Proposta Readequada.'),
+      onError: (err) => showToast(`Erro ao aplicar o valor: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+    })
+  }
 
   if (isLoading) return <SkeletonList itens={3} />
 
@@ -659,16 +700,66 @@ function AbaSessaoAoVivo({ bidding }: { bidding: Bidding }) {
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      {items.map((i) => (
-        <div key={i.id} className="flex items-center justify-between gap-4 bg-base-850/60 border border-base-800 rounded-xl px-5 py-4">
-          <div className="flex items-center gap-4 min-w-0">
-            <span className="text-xl font-extrabold font-mono text-accent-300 shrink-0 w-14 text-center">{i.numeroItem}</span>
-            <p className="text-base font-semibold text-base-100">{i.descricao}</p>
-          </div>
-          <span className="text-lg font-extrabold font-mono text-base-100 shrink-0">{formatBRL(i.valorUnitarioLicitado)}</span>
+    <div className="flex flex-col gap-4">
+      <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-4 flex flex-wrap items-end gap-3">
+        <div className="w-40">
+          <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Intervalo entre lances (%)</label>
+          <Input placeholder="Ex: 1" value={percentual} onChange={(e) => setPercentual(e.target.value)} />
         </div>
-      ))}
+        <p className="text-[11px] text-base-500 flex-1 min-w-[220px]">
+          {percentualSugeridoIA !== null
+            ? 'Sugerido pela Análise de Edital — confira contra o edital e ajuste se precisar.'
+            : 'A Análise de Edital ainda não identificou esse intervalo — informe manualmente conforme o edital.'}
+          {' '}Calculadora de apoio: nada aqui é salvo, exceto se você usar o botão "Usar na Proposta Readequada" em algum item.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        {items.map((i) => {
+          const ultimoLanceTexto = ultimosLances[i.id] ?? ''
+          const ultimoLance = parseFloat(ultimoLanceTexto.replace(',', '.')) || 0
+          const proximoLance = ultimoLance > 0 && pct > 0 ? ultimoLance * (1 - pct / 100) : null
+          return (
+            <div key={i.id} className="bg-base-850/60 border border-base-800 rounded-xl px-5 py-4 flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-4 min-w-0 flex-1">
+                <span className="text-xl font-extrabold font-mono text-accent-300 shrink-0 w-14 text-center">{i.numeroItem}</span>
+                <div className="min-w-0">
+                  <p className="text-base font-semibold text-base-100">{i.descricao}</p>
+                  <p className="text-[11px] text-base-500">Referência: {formatBRL(i.valorUnitarioLicitado)}</p>
+                </div>
+              </div>
+
+              <div className="w-36 shrink-0">
+                <label className="text-[9px] uppercase tracking-wider text-base-500 font-bold block mb-1">Último Lance</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="0,00"
+                  value={ultimoLanceTexto}
+                  onChange={(e) => setUltimosLances({ ...ultimosLances, [i.id]: e.target.value })}
+                  className="w-full bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 text-right text-sm font-mono text-base-100 focus:border-accent-400 outline-none"
+                />
+              </div>
+
+              <div className="w-36 shrink-0 text-right">
+                <p className="text-[9px] uppercase tracking-wider text-base-500 font-bold mb-1">Próximo Sugerido</p>
+                <p className="text-lg font-extrabold font-mono text-positive-400">{proximoLance !== null ? formatBRL(proximoLance) : '—'}</p>
+              </div>
+
+              {podeEditar && (
+                <button
+                  onClick={() => usarValorNaProposta(i.id, ultimoLance)}
+                  disabled={ultimoLance <= 0 || sincronizarItens.isPending}
+                  title="Usar o Último Lance como Vl. Unit. Ofertado na Proposta Readequada"
+                  className="text-[11px] font-semibold text-accent-300 hover:text-accent-200 disabled:opacity-30 disabled:cursor-not-allowed border border-accent-500/30 hover:border-accent-500/50 rounded-lg px-2.5 py-1.5 transition shrink-0"
+                >
+                  Usar na Proposta Readequada
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -683,11 +774,14 @@ interface AnaliseEdital {
   municipio?: string
   orgao?: string
   objeto?: string
+  numeroEdital?: string
+  numeroProcesso?: string
   modalidade?: string
   srp?: boolean
   data?: string
   horario?: string
   portal?: string
+  intervaloLances?: string
   resumoTecnico?: string
   itens?: { numero?: string | number; descricao: string; unidade?: string; quantidade?: number; valorReferencia?: number }[]
   validadeProposta?: string
@@ -763,6 +857,9 @@ function construirPreenchimento(analise: AnaliseEdital, itensAtuais: BiddingItem
   if (analise.municipio) { campos.municipio = analise.municipio; resumo.push('Município') }
   if (analise.orgao) { campos.orgao = analise.orgao; resumo.push('Órgão') }
   if (analise.objeto) { campos.objeto = analise.objeto; resumo.push('Objeto') }
+  if (analise.numeroEdital) { campos.numeroEdital = analise.numeroEdital; resumo.push('Nº Edital') }
+  if (analise.numeroProcesso) { campos.processo = analise.numeroProcesso; resumo.push('Processo') }
+  if (analise.portal) { campos.portal = analise.portal; resumo.push('Portal') }
   const modalidade = encontrarModalidade(analise.modalidade)
   if (modalidade) { campos.modalidade = modalidade; resumo.push('Modalidade') }
   const dataISO = converterDataParaISO(analise.data)
@@ -888,9 +985,11 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <CampoResumo label="Município / Órgão" valor={[analise.municipio, analise.orgao].filter(Boolean).join(' — ')} />
+            <CampoResumo label="Nº Edital / Processo" valor={[analise.numeroEdital, analise.numeroProcesso].filter(Boolean).join(' — ')} />
             <CampoResumo label="Objeto" valor={analise.objeto} />
             <CampoResumo label="Modalidade / SRP" valor={[analise.modalidade, analise.srp ? 'SRP' : null].filter(Boolean).join(' — ')} />
             <CampoResumo label="Data / Horário / Portal" valor={[analise.data, analise.horario, analise.portal].filter(Boolean).join(' — ')} />
+            <CampoResumo label="Intervalo Mínimo entre Lances" valor={analise.intervaloLances} />
             <CampoResumo label="Validade da Proposta" valor={analise.validadeProposta} />
             <CampoResumo label="Catálogo" valor={analise.catalogo} />
             <CampoResumo label="Forma / Local de Entrega" valor={localOuFormaEntrega} />

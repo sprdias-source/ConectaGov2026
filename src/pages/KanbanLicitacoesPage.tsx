@@ -13,6 +13,8 @@ import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import { useToast } from '../hooks/useToast'
 import { formatBRL } from '../hooks/useAccountBalances'
+import { useEmpenhos } from '../hooks/useEmpenhos'
+import { useBiddingIdsComDocumentosFinais } from '../hooks/useAttachedFiles'
 import type { Bidding, BiddingEtapa, BiddingItem } from '../types/domain'
 
 const ETAPAS: BiddingEtapa[] = [
@@ -112,6 +114,35 @@ function CardLicitacao({
   )
 }
 
+// Card das licitações "Ganhou" que ainda têm pendência — sem arrastar (não
+// faz sentido mover etapa de algo que já saiu da disputa), só mostrando o
+// que falta fechar pra ela sumir de vista de vez.
+type BadgePendencia = { label: string; bloqueante: boolean }
+
+function CardLicitacaoGanha({ b, clienteNome, badges }: { b: Bidding; clienteNome: string; badges: BadgePendencia[] }) {
+  return (
+    <Link
+      to={`/licitacoes/${b.id}`}
+      className="relative bg-base-900 border border-positive-500/25 rounded-lg p-3 flex flex-col gap-1.5 transition hover:border-positive-500/50"
+    >
+      <p className="text-[12px] font-semibold text-base-100 line-clamp-2">{b.objeto}</p>
+      <p className="text-[11px] text-base-500 truncate">{clienteNome} — {b.orgao}</p>
+      <span className="text-[11px] font-mono font-semibold text-positive-400 mt-1">{formatBRL(b.valorOfertadoReal ?? b.valorLicitado)}</span>
+      <div className="flex flex-wrap gap-1 mt-1">
+        {badges.map((bd) => (
+          <span
+            key={bd.label}
+            title={bd.bloqueante ? undefined : 'Informativo — nem toda licitação chega a ter empenho, ou pode demorar meses. Não impede a licitação de sair desta coluna.'}
+            className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-full ${bd.bloqueante ? 'bg-warning-500/15 text-warning-400' : 'bg-base-700/40 text-base-500'}`}
+          >
+            {bd.bloqueante ? `Falta: ${bd.label}` : `${bd.label} pendente`}
+          </span>
+        ))}
+      </div>
+    </Link>
+  )
+}
+
 function ColunaKanban({ id, titulo, cor, itens, children }: { id: string; titulo: string; cor?: string; itens: number; children: React.ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({ id })
   return (
@@ -133,6 +164,8 @@ function ColunaKanban({ id, titulo, cor, itens, children }: { id: string; titulo
 export default function KanbanLicitacoesPage() {
   const { biddings, updateEtapa, updateBidding } = useBiddings()
   const { clients } = useClients()
+  const { empenhos } = useEmpenhos()
+  const { biddingIdsComPropostaReadequada, biddingIdsComContrato } = useBiddingIdsComDocumentosFinais()
   const { nivel: nivelLicitacoes } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivelLicitacoes === 'edicao'
   const { showToast } = useToast()
@@ -175,6 +208,26 @@ export default function KanbanLicitacoesPage() {
     () => biddings.filter((b) => b.isActive && b.status === 'Em Andamento'),
     [biddings]
   )
+
+  // Licitações "Ganhou" continuam fora do funil de etapas, mas não somem
+  // de vista enquanto ainda falta fechar o ciclo. Só Proposta Readequada
+  // gerada e Contrato assinado anexado TRAVAM a saída do Kanban — Empenho
+  // não é regra (nem toda prefeitura empenha de fato, ou pode levar meses),
+  // então aparece só como aviso informativo, nunca segurando o card aqui
+  // pra sempre esperando algo que talvez nunca aconteça.
+  const biddingIdsComEmpenho = useMemo(() => new Set(empenhos.map((e) => e.biddingId)), [empenhos])
+  const ganhasComPendencia = useMemo(() => {
+    return biddings
+      .filter((b) => b.isActive && b.status === 'Ganhou')
+      .map((b) => {
+        const badges: BadgePendencia[] = []
+        if (!biddingIdsComPropostaReadequada.has(b.id)) badges.push({ label: 'Proposta Readequada', bloqueante: true })
+        if (!biddingIdsComContrato.has(b.id)) badges.push({ label: 'Contrato', bloqueante: true })
+        if (!biddingIdsComEmpenho.has(b.id)) badges.push({ label: 'Empenho', bloqueante: false })
+        return { bidding: b, badges }
+      })
+      .filter((x) => x.badges.some((bd) => bd.bloqueante))
+  }, [biddings, biddingIdsComPropostaReadequada, biddingIdsComEmpenho, biddingIdsComContrato])
 
   const colunas = useMemo(() => {
     const semEtapa = ativas.filter((b) => !b.etapa)
@@ -285,6 +338,14 @@ export default function KanbanLicitacoesPage() {
                   )}
                 </ColunaKanban>
               ))}
+
+              {ganhasComPendencia.length > 0 && (
+                <ColunaKanban id="ganhas-pendencia" titulo="Ganhas — Pendência" cor="border-t-positive-500" itens={ganhasComPendencia.length}>
+                  {ganhasComPendencia.map(({ bidding, badges }) => (
+                    <CardLicitacaoGanha key={bidding.id} b={bidding} clienteNome={clientName(bidding.clientId)} badges={badges} />
+                  ))}
+                </ColunaKanban>
+              )}
             </div>
           </div>
 

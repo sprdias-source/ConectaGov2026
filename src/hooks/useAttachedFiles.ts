@@ -154,3 +154,38 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
     getDownloadUrl,
   }
 }
+
+// Busca de uma vez só quais licitações já têm Proposta Readequada e/ou
+// Contrato assinado anexados — usado no Kanban pra saber quais licitações
+// "Ganhou" ainda têm pendência (ver ganhasComPendencia em
+// KanbanLicitacoesPage.tsx) sem precisar de uma consulta por licitação.
+export function useBiddingIdsComDocumentosFinais() {
+  const { user } = useAuth()
+
+  const query = useQuery({
+    queryKey: [...QUERY_KEY, 'documentos-finais-por-licitacao'],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('attached_files')
+        .select('entity_id, category')
+        .eq('entity_type', 'licitacao')
+        .in('category', ['Proposta Readequada', 'Contrato'])
+      if (error) throw error
+      const comPropostaReadequada = new Set<string>()
+      const comContrato = new Set<string>()
+      for (const row of data) {
+        if (!row.entity_id) continue
+        if (row.category === 'Proposta Readequada') comPropostaReadequada.add(row.entity_id)
+        if (row.category === 'Contrato') comContrato.add(row.entity_id)
+      }
+      return { comPropostaReadequada, comContrato }
+    },
+  })
+
+  return {
+    biddingIdsComPropostaReadequada: query.data?.comPropostaReadequada ?? new Set<string>(),
+    biddingIdsComContrato: query.data?.comContrato ?? new Set<string>(),
+    isLoading: query.isLoading,
+  }
+}
