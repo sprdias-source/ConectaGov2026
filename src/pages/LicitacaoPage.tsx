@@ -1478,17 +1478,29 @@ export default function LicitacaoPage() {
                     const temVinculoProprio = !!(item.clientDocumentId || item.atestadoId || item.attachedFileId)
                     const tipoConhecido = item.clientDocumentTipo
                     const ehAtestado = ehAtestadoTecnico(item)
+                    // Só dá pra desmarcar de volta quando "atendido" foi um clique manual
+                    // (sem nenhum documento vinculado por trás) — pros outros casos,
+                    // desfazer é via "Desvincular" (X), que também limpa o vínculo real.
+                    const somenteManual = !tipoConhecido && !ehAtestado && !temVinculoProprio
                     const aberto = itemAbertoId === item.id
                     const enviandoEste = enviandoItemId === item.id
                     return (
                       <div key={item.id} className="bg-base-850/60 border border-base-800 rounded-lg px-3 py-2.5">
                         <div className="flex items-start gap-3">
                           <div className="pt-0.5 shrink-0 flex">
-                            {status === 'atendido' && <CheckCircle2 className="w-4 h-4 text-positive-400" />}
+                            {status === 'atendido' && (
+                              podeEditar && somenteManual ? (
+                                <button onClick={() => updateItem.mutate({ ...item, atendido: false })} title="Marcar como pendente">
+                                  <CheckCircle2 className="w-4 h-4 text-positive-400 hover:text-positive-300 transition" />
+                                </button>
+                              ) : (
+                                <CheckCircle2 className="w-4 h-4 text-positive-400" />
+                              )
+                            )}
                             {status === 'vencendo' && <AlertCircle className="w-4 h-4 text-warning-400" />}
                             {status === 'faltando' && (
-                              podeEditar && !tipoConhecido && !ehAtestado ? (
-                                <button onClick={() => updateItem.mutate({ ...item, atendido: !item.atendido })} title="Marcar como atendido">
+                              podeEditar && somenteManual ? (
+                                <button onClick={() => updateItem.mutate({ ...item, atendido: true })} title="Marcar como atendido">
                                   <Circle className="w-4 h-4 text-base-600 hover:text-base-400 transition" />
                                 </button>
                               ) : (
