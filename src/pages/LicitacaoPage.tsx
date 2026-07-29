@@ -683,6 +683,8 @@ interface AnaliseEdital {
   municipio?: string
   orgao?: string
   objeto?: string
+  numeroEdital?: string
+  numeroProcesso?: string
   modalidade?: string
   srp?: boolean
   data?: string
@@ -763,6 +765,9 @@ function construirPreenchimento(analise: AnaliseEdital, itensAtuais: BiddingItem
   if (analise.municipio) { campos.municipio = analise.municipio; resumo.push('Município') }
   if (analise.orgao) { campos.orgao = analise.orgao; resumo.push('Órgão') }
   if (analise.objeto) { campos.objeto = analise.objeto; resumo.push('Objeto') }
+  if (analise.numeroEdital) { campos.numeroEdital = analise.numeroEdital; resumo.push('Nº Edital') }
+  if (analise.numeroProcesso) { campos.processo = analise.numeroProcesso; resumo.push('Processo') }
+  if (analise.portal) { campos.portal = analise.portal; resumo.push('Portal') }
   const modalidade = encontrarModalidade(analise.modalidade)
   if (modalidade) { campos.modalidade = modalidade; resumo.push('Modalidade') }
   const dataISO = converterDataParaISO(analise.data)
@@ -888,6 +893,7 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <CampoResumo label="Município / Órgão" valor={[analise.municipio, analise.orgao].filter(Boolean).join(' — ')} />
+            <CampoResumo label="Nº Edital / Processo" valor={[analise.numeroEdital, analise.numeroProcesso].filter(Boolean).join(' — ')} />
             <CampoResumo label="Objeto" valor={analise.objeto} />
             <CampoResumo label="Modalidade / SRP" valor={[analise.modalidade, analise.srp ? 'SRP' : null].filter(Boolean).join(' — ')} />
             <CampoResumo label="Data / Horário / Portal" valor={[analise.data, analise.horario, analise.portal].filter(Boolean).join(' — ')} />
