@@ -14,7 +14,7 @@ import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import { useToast } from '../hooks/useToast'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useEmpenhos } from '../hooks/useEmpenhos'
-import { useBiddingIdsComPropostaReadequada } from '../hooks/useAttachedFiles'
+import { useBiddingIdsComDocumentosFinais } from '../hooks/useAttachedFiles'
 import type { Bidding, BiddingEtapa, BiddingItem } from '../types/domain'
 
 const ETAPAS: BiddingEtapa[] = [
@@ -157,7 +157,7 @@ export default function KanbanLicitacoesPage() {
   const { biddings, updateEtapa, updateBidding } = useBiddings()
   const { clients } = useClients()
   const { empenhos } = useEmpenhos()
-  const { biddingIdsComPropostaReadequada } = useBiddingIdsComPropostaReadequada()
+  const { biddingIdsComPropostaReadequada, biddingIdsComContrato } = useBiddingIdsComDocumentosFinais()
   const { nivel: nivelLicitacoes } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivelLicitacoes === 'edicao'
   const { showToast } = useToast()
@@ -202,9 +202,10 @@ export default function KanbanLicitacoesPage() {
   )
 
   // Licitações "Ganhou" continuam fora do funil de etapas, mas não somem
-  // de vista enquanto ainda falta fechar o ciclo — Empenho registrado e
-  // Proposta Readequada gerada. Só desaparece do Kanban de vez quando os
-  // dois já foram feitos (aí sim vira só histórico, em Cadastros/Relatórios).
+  // de vista enquanto ainda falta fechar o ciclo — Proposta Readequada
+  // gerada, Empenho registrado e Contrato assinado anexado. Só desaparece
+  // do Kanban de vez quando os três já foram feitos (aí sim vira só
+  // histórico, em Cadastros/Relatórios).
   const biddingIdsComEmpenho = useMemo(() => new Set(empenhos.map((e) => e.biddingId)), [empenhos])
   const ganhasComPendencia = useMemo(() => {
     return biddings
@@ -213,10 +214,11 @@ export default function KanbanLicitacoesPage() {
         const faltando: string[] = []
         if (!biddingIdsComPropostaReadequada.has(b.id)) faltando.push('Proposta Readequada')
         if (!biddingIdsComEmpenho.has(b.id)) faltando.push('Empenho')
+        if (!biddingIdsComContrato.has(b.id)) faltando.push('Contrato')
         return { bidding: b, faltando }
       })
       .filter((x) => x.faltando.length > 0)
-  }, [biddings, biddingIdsComPropostaReadequada, biddingIdsComEmpenho])
+  }, [biddings, biddingIdsComPropostaReadequada, biddingIdsComEmpenho, biddingIdsComContrato])
 
   const colunas = useMemo(() => {
     const semEtapa = ativas.filter((b) => !b.etapa)
