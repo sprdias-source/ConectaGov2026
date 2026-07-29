@@ -1481,20 +1481,22 @@ export default function LicitacaoPage() {
                     const enviandoEste = enviandoItemId === item.id
                     return (
                       <div key={item.id} className="bg-base-850/60 border border-base-800 rounded-lg px-3 py-2.5">
-                        <div className="flex items-center gap-3">
-                          {status === 'atendido' && <CheckCircle2 className="w-4 h-4 text-positive-400 shrink-0" />}
-                          {status === 'vencendo' && <AlertCircle className="w-4 h-4 text-warning-400 shrink-0" />}
-                          {status === 'faltando' && (
-                            podeEditar && !tipoConhecido && !ehAtestado ? (
-                              <button onClick={() => updateItem.mutate({ ...item, atendido: !item.atendido })} title="Marcar como atendido">
-                                <Circle className="w-4 h-4 text-base-600 hover:text-base-400 shrink-0 transition" />
-                              </button>
-                            ) : (
-                              <Circle className="w-4 h-4 text-base-700 shrink-0" />
-                            )
-                          )}
+                        <div className="flex items-start gap-3">
+                          <div className="pt-0.5 shrink-0 flex">
+                            {status === 'atendido' && <CheckCircle2 className="w-4 h-4 text-positive-400" />}
+                            {status === 'vencendo' && <AlertCircle className="w-4 h-4 text-warning-400" />}
+                            {status === 'faltando' && (
+                              podeEditar && !tipoConhecido && !ehAtestado ? (
+                                <button onClick={() => updateItem.mutate({ ...item, atendido: !item.atendido })} title="Marcar como atendido">
+                                  <Circle className="w-4 h-4 text-base-600 hover:text-base-400 transition" />
+                                </button>
+                              ) : (
+                                <Circle className="w-4 h-4 text-base-700" />
+                              )
+                            )}
+                          </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-[13px] text-base-200 truncate">
+                            <p className="text-[13px] text-base-200">
                               {item.numeroEdital && (
                                 <span className="font-mono text-[10.5px] font-bold text-accent-300 bg-accent-500/10 rounded px-1.5 py-0.5 mr-1.5">
                                   {item.numeroEdital}
@@ -1689,10 +1691,10 @@ export default function LicitacaoPage() {
                   </div>
                   <div className="flex flex-col gap-1">
                     {itensComAnexo.map(({ item, arquivo }) => (
-                      <div key={item.id} className="flex items-center gap-2 text-[12px] text-base-300 py-1">
-                        {item.numeroEdital && <span className="font-mono text-[10px] font-bold text-accent-300 bg-accent-500/10 rounded px-1.5 py-0.5 shrink-0">{item.numeroEdital}</span>}
-                        <span className="flex-1 min-w-0 truncate">{item.descricao}</span>
-                        <button onClick={() => handleVisualizarAnexo({ id: item.id, name: arquivo.nome, storagePath: arquivo.storagePath })} title="Ver PDF" className="p-1 text-base-400 hover:text-accent-300 transition shrink-0">
+                      <div key={item.id} className="flex items-start gap-2 text-[12px] text-base-300 py-1">
+                        {item.numeroEdital && <span className="font-mono text-[10px] font-bold text-accent-300 bg-accent-500/10 rounded px-1.5 py-0.5 shrink-0 mt-0.5">{item.numeroEdital}</span>}
+                        <span className="flex-1 min-w-0">{item.descricao}</span>
+                        <button onClick={() => handleVisualizarAnexo({ id: item.id, name: arquivo.nome, storagePath: arquivo.storagePath })} title="Ver PDF" className="p-1 text-base-400 hover:text-accent-300 transition shrink-0 mt-0.5">
                           <Eye className="w-3.5 h-3.5" />
                         </button>
                       </div>
