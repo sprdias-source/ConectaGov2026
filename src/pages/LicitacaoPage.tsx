@@ -137,7 +137,25 @@ function useBiddingItemsDaLicitacao(biddingId?: string) {
     },
   })
 
-  return { items: query.data ?? [], isLoading: query.isLoading, salvarRateio }
+  // Edição pontual de "Ganhou?" e "Vl. Unit. Ofertado" direto na aba
+  // Proposta & Itens do Kanban — antes só dava pra ajustar voltando em
+  // Cadastros → Licitações → Editar, quebrando o fluxo de trabalhar tudo
+  // numa tela só. Os demais campos (descrição, quantidade, vl. licitado)
+  // continuam só editáveis lá, por virem do edital.
+  const updateItem = useMutation({
+    mutationFn: async ({ id, ganhou, valorUnitarioOfertado }: { id: string; ganhou?: boolean; valorUnitarioOfertado?: number | null }) => {
+      const patch: { ganhou?: boolean; valor_unitario_ofertado?: number | null } = {}
+      if (ganhou !== undefined) patch.ganhou = ganhou
+      if (valorUnitarioOfertado !== undefined) patch.valor_unitario_ofertado = valorUnitarioOfertado
+      const { error } = await supabase.from('bidding_items').update(patch).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bidding_items', biddingId] })
+    },
+  })
+
+  return { items: query.data ?? [], isLoading: query.isLoading, salvarRateio, updateItem }
 }
 
 // Rateio pelo método do "maior resto": distribui o valor final proporcional
@@ -334,8 +352,31 @@ function HistoricoVersoes({ biddingId }: { biddingId: string }) {
   )
 }
 
+// Input do "Vl. Unit. Ofertado" guarda o texto digitado em estado local
+// (pra aceitar vírgula/ponto e não perder o cursor a cada tecla) e só
+// grava no banco quando o campo perde o foco — evita disparar uma
+// mutation a cada dígito.
+function CelulaValorOfertado({ valor, onSalvar }: { valor: number | null; onSalvar: (novoValor: number | null) => void }) {
+  const [texto, setTexto] = useState(valor !== null ? String(valor).replace('.', ',') : '')
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      placeholder="—"
+      value={texto}
+      onChange={(e) => setTexto(e.target.value)}
+      onBlur={() => {
+        const num = parseFloat(texto.replace(',', '.'))
+        onSalvar(Number.isFinite(num) ? num : null)
+      }}
+      className="w-24 bg-base-900 border border-base-700 rounded px-1.5 py-1 text-right text-[12px] text-base-100 font-mono focus:border-accent-400 outline-none"
+    />
+  )
+}
+
 function AbaProposta({ bidding }: { bidding: Bidding }) {
-  const { items, isLoading, salvarRateio } = useBiddingItemsDaLicitacao(bidding.id)
+  const { items, isLoading, salvarRateio, updateItem } = useBiddingItemsDaLicitacao(bidding.id)
   const { nivel } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivel === 'edicao'
 
@@ -412,11 +453,30 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
                   <td className="px-3 py-2 text-base-300 max-w-[220px] truncate">{i.descricao}</td>
                   <td className="px-3 py-2 text-right text-base-400">{i.quantidade}</td>
                   <td className="px-3 py-2 text-right font-mono text-base-400">{formatBRL(i.valorUnitarioLicitado)}</td>
-                  <td className="px-3 py-2 text-right font-mono text-base-400">{i.valorUnitarioOfertado ? formatBRL(i.valorUnitarioOfertado) : '—'}</td>
+                  <td className="px-3 py-2 text-right">
+                    {podeEditar ? (
+                      <CelulaValorOfertado
+                        valor={i.valorUnitarioOfertado}
+                        onSalvar={(novoValor) => updateItem.mutate({ id: i.id, valorUnitarioOfertado: novoValor })}
+                      />
+                    ) : (
+                      <span className="font-mono text-base-400">{i.valorUnitarioOfertado ? formatBRL(i.valorUnitarioOfertado) : '—'}</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-center">
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${i.ganhou ? 'bg-positive-500/15 text-positive-400' : 'bg-base-700/40 text-base-500'}`}>
-                      {i.ganhou ? 'Sim' : 'Não'}
-                    </span>
+                    {podeEditar ? (
+                      <input
+                        type="checkbox"
+                        checked={i.ganhou}
+                        onChange={(e) => updateItem.mutate({ id: i.id, ganhou: e.target.checked })}
+                        title="Marcar se este item foi ganho nesta disputa"
+                        className="w-4 h-4 accent-accent-500 cursor-pointer"
+                      />
+                    ) : (
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${i.ganhou ? 'bg-positive-500/15 text-positive-400' : 'bg-base-700/40 text-base-500'}`}>
+                        {i.ganhou ? 'Sim' : 'Não'}
+                      </span>
+                    )}
                   </td>
                   {metodo === 'percentual' && (
                     <td className="px-3 py-2 text-right">
@@ -464,7 +524,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
           {items.some((i) => i.ganhou) ? (
             <p className="text-[11px] text-accent-300">O rateio considera só os {itensGanhos.length} item(ns) marcado(s) como "Ganhou" — os demais ficam de fora da proposta reajustada.</p>
           ) : (
-            <p className="text-[11px] text-warning-400">Nenhum item foi marcado como "Ganhou" ainda — o rateio abaixo está considerando todos os itens. Marque os itens ganhos na aba Itens/Lotes (Cadastros → Licitações → Editar) pra restringir o rateio só a eles.</p>
+            <p className="text-[11px] text-warning-400">Nenhum item foi marcado como "Ganhou" ainda — o rateio abaixo está considerando todos os itens. Marque na coluna "Ganhou?" da tabela acima pra restringir o rateio só a eles.</p>
           )}
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-44">
