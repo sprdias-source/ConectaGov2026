@@ -102,13 +102,30 @@ export function useAtestados(clientId?: string) {
 
   const deleteAtestado = useMutation({
     mutationFn: async (atestado: AtestadoTecnico) => {
+      // Desvincula qualquer item de checklist que dependia deste atestado
+      // ANTES de apagar — a FK (atestado_id) zera sozinha via ON DELETE SET
+      // NULL, mas só ela não bastaria: a flag "atendido" (setada quando o
+      // atestado foi vinculado) ficaria presa em true pra sempre, e o item
+      // continuaria aparecendo como resolvido mesmo sem nenhum arquivo por
+      // trás. Precisa rodar antes do delete, enquanto ainda dá pra achar
+      // essas linhas pelo atestado_id (depois a FK já zerou e não tem mais
+      // como filtrar por ele).
+      await supabase
+        .from('bidding_checklist_items')
+        .update({ atestado_id: null, atendido: false })
+        .eq('atestado_id', atestado.id)
+
       if (atestado.storagePath) {
         await supabase.storage.from('client-documents').remove([atestado.storagePath])
       }
       const { error } = await supabase.from('atestados_tecnicos').delete().eq('id', atestado.id)
       if (error) throw error
     },
-    onSuccess: invalidate,
+    onSuccess: () => {
+      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['bidding_checklist_items'] })
+      queryClient.invalidateQueries({ queryKey: ['bidding_checklist_pendencias'] })
+    },
   })
 
   const getDownloadUrl = async (storagePath: string) => {
