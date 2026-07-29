@@ -1098,7 +1098,12 @@ export default function LicitacaoPage() {
       const { id: novoId } = await uploadClientDoc.mutateAsync({
         file, tipo: 'manual', nome: file.name, pasta: item.categoria || 'Documentos Gerais',
       })
-      await updateItem.mutateAsync({ ...item, clientDocumentId: novoId })
+      // CORREÇÃO DE BUG: documento manual (CNPJ, Contrato Social...) não
+      // tem data de validade, então a checagem de status pelo
+      // clientDocumentId (statusItemChecklist) nunca bate 'válido' e cai
+      // sem marcar nada — sem esse atendido:true explícito o item ficava
+      // preso em "faltando" pra sempre, mesmo com o arquivo já salvo.
+      await updateItem.mutateAsync({ ...item, clientDocumentId: novoId, atendido: true })
       setItemAbertoId(null)
     } catch (err) {
       showToast(`Erro ao enviar documento: ${err instanceof Error ? err.message : String(err)}`, 'error')
