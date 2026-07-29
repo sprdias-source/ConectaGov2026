@@ -17,7 +17,9 @@ import ConfirmDialog from '../components/ui/ConfirmDialog'
 import PdfViewerModal from '../components/ui/PdfViewerModal'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useAttachedFiles } from '../hooks/useAttachedFiles'
-import { useBiddingChecklist, calcularHabilitacao, statusItemChecklist } from '../hooks/useBiddingChecklist'
+import { useBiddingChecklist, calcularHabilitacao, statusItemChecklist, arquivoResolvidoDoItem } from '../hooks/useBiddingChecklist'
+import { useBuscaCertidaoAutomatica } from '../hooks/useBuscaCertidaoAutomatica'
+import AcoesDocumentoManual from '../components/documentos/AcoesDocumentoManual'
 import DownloadDocumentosModal from '../components/licitacao/DownloadDocumentosModal'
 import { useBiddingAnalysis } from '../hooks/useBiddingAnalysis'
 import { useAnaliseJuridicaEdital } from '../hooks/useAnaliseJuridicaEdital'
@@ -31,7 +33,7 @@ import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import { useToast } from '../hooks/useToast'
 import { CERT_CONFIG } from '../types/domain'
-import type { AttachedFile, Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingModalidade, BiddingStatus } from '../types/domain'
+import type { Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingModalidade, BiddingStatus } from '../types/domain'
 
 const ETAPAS_TRILHA: BiddingEtapa[] = [
   'Análise de Edital',
@@ -987,8 +989,10 @@ export default function LicitacaoPage() {
 
   const { files: anexos, uploadFile: uploadAnexo, uploadProgress, deleteFile: deleteAnexo, getDownloadUrl: getAnexoUrl } = useAttachedFiles('licitacao', bidding?.id)
   const { items, addItem, updateItem, deleteItem } = useBiddingChecklist(bidding?.id)
-  const { documents: clientDocs, getDownloadUrl: getClientDocUrl } = useClientDocuments(bidding?.clientId)
-  const { atestados } = useAtestados(bidding?.clientId)
+  const { documents: clientDocs, uploadAndSave: uploadClientDoc } = useClientDocuments(bidding?.clientId)
+  const { atestados, addAtestado } = useAtestados(bidding?.clientId)
+  const clienteDaLicitacao = clients.find((c) => c.id === bidding?.clientId)
+  const { buscando, errosBusca, avisosBusca, buscarAutomatico, limparAviso, limparErro } = useBuscaCertidaoAutomatica(bidding?.clientId, clienteDaLicitacao?.cnpj ?? undefined, podeEditar)
   const { limparAnalise } = useBiddingAnalysis(bidding?.id)
 
   const [enviando, setEnviando] = useState<string | null>(null)
@@ -996,7 +1000,12 @@ export default function LicitacaoPage() {
   const [novoItem, setNovoItem] = useState({ numeroEdital: '', descricao: '', categoria: CATEGORIAS_CHECKLIST[0], obrigatorio: true, prazo: '', responsavelNome: '' })
   const [abrindo, setAbrindo] = useState<string | null>(null)
   const [visualizando, setVisualizando] = useState<{ nome: string; url: string | null } | null>(null)
-  const [anexandoItemId, setAnexandoItemId] = useState<string | null>(null)
+  const [itemAbertoId, setItemAbertoId] = useState<string | null>(null)
+  const [enviandoItemId, setEnviandoItemId] = useState<string | null>(null)
+  const [dataValidadeCert, setDataValidadeCert] = useState('')
+  const [certFileSelecionado, setCertFileSelecionado] = useState<File | null>(null)
+  const [atestadoForm, setAtestadoForm] = useState({ nome: '', objeto: '', orgaoEmissor: '', valor: '', dataEmissao: '' })
+  const [atestadoFileSelecionado, setAtestadoFileSelecionado] = useState<File | null>(null)
   const [mostrarDownloadModal, setMostrarDownloadModal] = useState(false)
   const [gerandoReadequada, setGerandoReadequada] = useState(false)
   const [erroReadequada, setErroReadequada] = useState<string | null>(null)
@@ -1026,49 +1035,96 @@ export default function LicitacaoPage() {
     }
   }
 
-  // Anexa (ou troca) o arquivo de um item do checklist — é uma FK própria
-  // desta licitação (attached_file_id), nunca o mesmo arquivo do cadastro
-  // do cliente, mesmo quando importado de lá (função abaixo): se a certidão
-  // do cliente for renovada depois, o que ficou anexado aqui não muda
-  // sozinho, continua sendo a prova do que foi entregue neste certame.
-  const handleAnexarItemChecklist = async (item: BiddingChecklistItem, file: File) => {
-    setAnexandoItemId(item.id)
-    try {
-      const antigo = item.attachedFileId ? anexos.find((a) => a.id === item.attachedFileId) : null
-      const { id: novoId } = await uploadAnexo.mutateAsync({ file, category: 'Checklist' })
-      await updateItem.mutateAsync({ ...item, attachedFileId: novoId })
-      if (antigo) await deleteAnexo.mutateAsync(antigo)
-    } catch (err) {
-      showToast(`Erro ao anexar documento: ${err instanceof Error ? err.message : String(err)}`, 'error')
-    } finally {
-      setAnexandoItemId(null)
-    }
-  }
+  // Detecta um item de "Atestado de Capacidade Técnica" pela descrição —
+  // esses não têm um clientDocumentTipo fixo (cada edital pede um atestado
+  // diferente), mas ainda assim são reaproveitáveis: gravam na mesma seção
+  // de Atestados do cliente que já alimenta o Ranking de Compatibilidade.
+  const ehAtestadoTecnico = (item: BiddingChecklistItem) => !item.clientDocumentTipo && /atestado/i.test(item.descricao)
 
-  const handleImportarDoCliente = async (item: BiddingChecklistItem) => {
+  // Enviar/renovar uma das 7 certidões padrão — grava direto no repositório
+  // do cliente (client_documents). O item do checklist nem precisa de
+  // vínculo próprio: já casa sozinho por clientDocumentTipo, então o mesmo
+  // envio também resolve esse item em qualquer outra licitação do cliente.
+  const handleEnviarCertidao = async (item: BiddingChecklistItem, file: File) => {
     if (!item.clientDocumentTipo) return
-    const doc = clientDocs.find((d) => d.tipo === item.clientDocumentTipo)
-    if (!doc?.storagePath) return
-    setAnexandoItemId(item.id)
+    setEnviandoItemId(item.id)
     try {
-      const url = await getClientDocUrl(doc.storagePath)
-      const resposta = await fetch(url)
-      if (!resposta.ok) throw new Error('Falha ao baixar o documento do cliente')
-      const blob = await resposta.blob()
-      const nomeArquivo = doc.storagePath.split('/').pop() || `${doc.tipo}.pdf`
-      const file = new File([blob], nomeArquivo, { type: blob.type || 'application/pdf' })
-      await handleAnexarItemChecklist(item, file)
+      await uploadClientDoc.mutateAsync({
+        file,
+        tipo: item.clientDocumentTipo,
+        nome: CERT_CONFIG[item.clientDocumentTipo].label.split(' — ')[0],
+        dataEmissao: new Date().toISOString().split('T')[0],
+        dataValidade: dataValidadeCert || null,
+      })
+      setItemAbertoId(null)
+      setDataValidadeCert('')
     } catch (err) {
-      showToast(`Erro ao importar do cadastro do cliente: ${err instanceof Error ? err.message : String(err)}`, 'error')
-      setAnexandoItemId(null)
+      showToast(`Erro ao enviar: ${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setEnviandoItemId(null)
     }
   }
 
-  const handleRemoverAnexoItem = async (item: BiddingChecklistItem) => {
-    if (!item.attachedFileId) return
-    const arquivo = anexos.find((a) => a.id === item.attachedFileId)
-    await updateItem.mutateAsync({ ...item, attachedFileId: null })
-    if (arquivo) await deleteAnexo.mutateAsync(arquivo)
+  const handleSalvarAtestadoDoItem = async (item: BiddingChecklistItem, file: File | null) => {
+    if (!atestadoForm.nome.trim() || !atestadoForm.objeto.trim()) return
+    setEnviandoItemId(item.id)
+    try {
+      const novoId = await addAtestado.mutateAsync({
+        nome: atestadoForm.nome.trim(),
+        objeto: atestadoForm.objeto.trim(),
+        orgaoEmissor: atestadoForm.orgaoEmissor.trim() || null,
+        valor: atestadoForm.valor ? parseFloat(atestadoForm.valor) : null,
+        dataEmissao: atestadoForm.dataEmissao || null,
+        file,
+      })
+      await updateItem.mutateAsync({ ...item, atestadoId: novoId, atendido: true })
+      setItemAbertoId(null)
+      setAtestadoForm({ nome: '', objeto: '', orgaoEmissor: '', valor: '', dataEmissao: '' })
+    } catch (err) {
+      showToast(`Erro ao salvar atestado: ${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setEnviandoItemId(null)
+    }
+  }
+
+  // Item genérico (nem certidão padrão, nem atestado) — ainda assim grava
+  // no repositório do cliente como documento manual, numa pasta com o
+  // nome da categoria, pra ficar disponível se aparecer de novo em outra
+  // licitação parecida, em vez de ficar preso só aqui.
+  const handleEnviarDocumentoGenerico = async (item: BiddingChecklistItem, file: File) => {
+    setEnviandoItemId(item.id)
+    try {
+      const { id: novoId } = await uploadClientDoc.mutateAsync({
+        file, tipo: 'manual', nome: file.name, pasta: item.categoria || 'Documentos Gerais',
+      })
+      await updateItem.mutateAsync({ ...item, clientDocumentId: novoId })
+      setItemAbertoId(null)
+    } catch (err) {
+      showToast(`Erro ao enviar documento: ${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setEnviandoItemId(null)
+    }
+  }
+
+  // Só desfaz o vínculo deste item com o documento — o arquivo continua no
+  // repositório do cliente (pode estar servindo outra licitação).
+  const handleDesvincularItem = (item: BiddingChecklistItem) => {
+    updateItem.mutate({ ...item, clientDocumentId: null, atestadoId: null, attachedFileId: null, atendido: false })
+  }
+
+  const handleVerArquivoDoItem = async (item: BiddingChecklistItem) => {
+    const arquivo = arquivoResolvidoDoItem(item, clientDocs, atestados, anexos)
+    if (!arquivo) return
+    await handleVisualizarAnexo({ id: item.id, name: arquivo.nome, storagePath: arquivo.storagePath })
+  }
+
+  const handleAbrirItem = (item: BiddingChecklistItem) => {
+    if (itemAbertoId === item.id) { setItemAbertoId(null); return }
+    setItemAbertoId(item.id)
+    setDataValidadeCert('')
+    setCertFileSelecionado(null)
+    setAtestadoFileSelecionado(null)
+    setAtestadoForm({ nome: item.descricao, objeto: bidding.objeto, orgaoEmissor: '', valor: '', dataEmissao: new Date().toISOString().split('T')[0] })
   }
 
   // Reaproveita a mesma function que já gera a Proposta Readequada em
@@ -1156,8 +1212,8 @@ export default function LicitacaoPage() {
     .sort((a, b) => b.similaridade - a.similaridade)
 
   const itensComAnexo = items
-    .map((item) => ({ item, arquivo: item.attachedFileId ? anexos.find((a) => a.id === item.attachedFileId) : null }))
-    .filter((x): x is { item: BiddingChecklistItem; arquivo: AttachedFile } => !!x.arquivo)
+    .map((item) => ({ item, arquivo: arquivoResolvidoDoItem(item, clientDocs, atestados, anexos) }))
+    .filter((x): x is { item: BiddingChecklistItem; arquivo: { nome: string; storagePath: string } } => !!x.arquivo)
 
   const PainelStatus = () => statusGeral && (
     <div className={`rounded-xl border p-4 flex items-center justify-between ${
@@ -1417,18 +1473,19 @@ export default function LicitacaoPage() {
                 <div className="flex flex-col gap-1.5">
                   {items.map((item) => {
                     const status = statusItem(item)
-                    const arquivoAnexado = item.attachedFileId ? anexos.find((a) => a.id === item.attachedFileId) : null
-                    const clienteTemDoc = item.clientDocumentTipo
-                      ? clientDocs.find((d) => d.tipo === item.clientDocumentTipo && d.storagePath)
-                      : null
-                    const anexando = anexandoItemId === item.id
+                    const arquivo = arquivoResolvidoDoItem(item, clientDocs, atestados, anexos)
+                    const temVinculoProprio = !!(item.clientDocumentId || item.atestadoId || item.attachedFileId)
+                    const tipoConhecido = item.clientDocumentTipo
+                    const ehAtestado = ehAtestadoTecnico(item)
+                    const aberto = itemAbertoId === item.id
+                    const enviandoEste = enviandoItemId === item.id
                     return (
                       <div key={item.id} className="bg-base-850/60 border border-base-800 rounded-lg px-3 py-2.5">
                         <div className="flex items-center gap-3">
                           {status === 'atendido' && <CheckCircle2 className="w-4 h-4 text-positive-400 shrink-0" />}
                           {status === 'vencendo' && <AlertCircle className="w-4 h-4 text-warning-400 shrink-0" />}
                           {status === 'faltando' && (
-                            podeEditar ? (
+                            podeEditar && !tipoConhecido && !ehAtestado ? (
                               <button onClick={() => updateItem.mutate({ ...item, atendido: !item.atendido })} title="Marcar como atendido">
                                 <Circle className="w-4 h-4 text-base-600 hover:text-base-400 shrink-0 transition" />
                               </button>
@@ -1448,8 +1505,8 @@ export default function LicitacaoPage() {
                             <p className="text-[10px] text-base-500">
                               {item.categoria}
                               {item.obrigatorio && <span className="text-warning-400 ml-1.5">· obrigatório</span>}
-                              {item.clientDocumentTipo && status !== 'faltando' && !arquivoAnexado && (
-                                <span className="ml-1.5 text-accent-400">· vinculado à {CERT_CONFIG[item.clientDocumentTipo]?.label.split(' — ')[0]}</span>
+                              {tipoConhecido && (
+                                <span className="ml-1.5 text-accent-400">· certidão {CERT_CONFIG[tipoConhecido]?.label.split(' — ')[0]}</span>
                               )}
                               {item.prazo && (
                                 <span className="ml-1.5">· prazo {new Date(item.prazo + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
@@ -1460,35 +1517,22 @@ export default function LicitacaoPage() {
                             </p>
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
-                            {arquivoAnexado && (
-                              <button onClick={() => handleVisualizarAnexo(arquivoAnexado)} title="Ver documento anexado" className="p-1.5 text-accent-300 hover:text-accent-200 hover:bg-base-800 rounded transition">
+                            {arquivo && (
+                              <button onClick={() => handleVerArquivoDoItem(item)} title="Ver PDF" className="p-1.5 text-accent-300 hover:text-accent-200 hover:bg-base-800 rounded transition">
                                 <Eye className="w-3.5 h-3.5" />
                               </button>
                             )}
-                            {podeEditar && clienteTemDoc && (
+                            {podeEditar && (
                               <button
-                                onClick={() => handleImportarDoCliente(item)}
-                                disabled={anexando}
-                                title={arquivoAnexado ? 'Atualizar com a certidão atual do cliente' : 'Importar do cadastro do cliente'}
-                                className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition disabled:opacity-50"
+                                onClick={() => handleAbrirItem(item)}
+                                title={tipoConhecido ? 'Buscar / enviar certidão' : ehAtestado ? 'Salvar atestado' : 'Enviar documento'}
+                                className={`p-1.5 rounded transition ${aberto ? 'text-accent-300 bg-accent-500/10' : 'text-base-400 hover:text-accent-300 hover:bg-base-800'}`}
                               >
-                                <RefreshCw className="w-3.5 h-3.5" />
+                                <Paperclip className="w-3.5 h-3.5" />
                               </button>
                             )}
-                            {podeEditar && (
-                              <label
-                                title={arquivoAnexado ? 'Trocar anexo' : 'Anexar documento'}
-                                className={`p-1.5 rounded transition cursor-pointer ${anexando ? 'text-accent-300' : 'text-base-400 hover:text-accent-300 hover:bg-base-800'}`}
-                              >
-                                {anexando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Paperclip className="w-3.5 h-3.5" />}
-                                <input
-                                  type="file" accept=".pdf" className="hidden" disabled={anexando}
-                                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAnexarItemChecklist(item, f); e.target.value = '' }}
-                                />
-                              </label>
-                            )}
-                            {podeEditar && arquivoAnexado && (
-                              <button onClick={() => handleRemoverAnexoItem(item)} title="Remover anexo" className="p-1.5 text-base-500 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                            {podeEditar && temVinculoProprio && (
+                              <button onClick={() => handleDesvincularItem(item)} title="Desvincular (o arquivo continua no repositório do cliente)" className="p-1.5 text-base-500 hover:text-negative-400 hover:bg-base-800 rounded transition">
                                 <X className="w-3.5 h-3.5" />
                               </button>
                             )}
@@ -1499,10 +1543,115 @@ export default function LicitacaoPage() {
                             )}
                           </div>
                         </div>
-                        {arquivoAnexado && (
+
+                        {arquivo && (
                           <p className="text-[10.5px] text-base-500 mt-1.5 pl-7 flex items-center gap-1 truncate">
-                            <FileText className="w-3 h-3 shrink-0" /> {arquivoAnexado.name}
+                            <FileText className="w-3 h-3 shrink-0" /> {arquivo.nome}
                           </p>
+                        )}
+
+                        {aberto && podeEditar && (
+                          <div className="mt-2.5 pt-2.5 border-t border-dashed border-base-700/60 flex flex-col gap-2.5">
+                            {tipoConhecido && (
+                              <>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <Button
+                                    variant="secondary"
+                                    onClick={() => buscarAutomatico(tipoConhecido)}
+                                    disabled={!clienteDaLicitacao?.cnpj || buscando === tipoConhecido}
+                                  >
+                                    {buscando === tipoConhecido ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                                    {buscando === tipoConhecido ? 'Disparando...' : 'Buscar auto'}
+                                  </Button>
+                                  {!clienteDaLicitacao?.cnpj && <span className="text-[11px] text-base-500 italic">CNPJ do cliente necessário pra busca automática</span>}
+                                </div>
+
+                                {avisosBusca[tipoConhecido] && (
+                                  <div className="bg-accent-500/10 border border-accent-500/25 rounded-lg p-2.5 flex items-start gap-2">
+                                    <Info className="w-3.5 h-3.5 text-accent-400 shrink-0 mt-0.5" />
+                                    <p className="text-[11px] text-accent-300 flex-1">{avisosBusca[tipoConhecido]}</p>
+                                    <button onClick={() => limparAviso(tipoConhecido)} className="text-base-500 hover:text-base-300"><X className="w-3 h-3" /></button>
+                                  </div>
+                                )}
+                                {errosBusca[tipoConhecido] && (
+                                  <div className="bg-negative-500/10 border border-negative-500/25 rounded-lg p-2.5 flex items-start gap-2">
+                                    <AlertCircle className="w-3.5 h-3.5 text-negative-400 shrink-0 mt-0.5" />
+                                    <p className="text-[11px] text-negative-400 flex-1">{errosBusca[tipoConhecido]}</p>
+                                    <button onClick={() => limparErro(tipoConhecido)} className="text-base-500 hover:text-base-300"><X className="w-3 h-3" /></button>
+                                  </div>
+                                )}
+
+                                <AcoesDocumentoManual
+                                  clientId={bidding.clientId}
+                                  tipo={tipoConhecido}
+                                  nomeDocumento={CERT_CONFIG[tipoConhecido].label}
+                                  uploadAndSave={uploadClientDoc.mutateAsync}
+                                />
+
+                                <div className="flex items-center gap-2 flex-wrap bg-base-900/40 border border-base-800 rounded-lg p-2.5">
+                                  <span className="text-[11px] text-base-400 shrink-0">Enviar PDF já em mãos:</span>
+                                  <input
+                                    type="date" value={dataValidadeCert} onChange={(e) => setDataValidadeCert(e.target.value)}
+                                    className="bg-base-850 border border-base-700 rounded-lg px-2 py-1 text-[12px] text-base-100 focus:border-accent-400 outline-none"
+                                  />
+                                  <input
+                                    type="file" accept=".pdf,.png,.jpg" onChange={(e) => setCertFileSelecionado(e.target.files?.[0] ?? null)}
+                                    className="text-[11px] text-base-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:bg-accent-500 file:text-base-950 file:font-semibold file:text-[11px] hover:file:bg-accent-400 file:cursor-pointer"
+                                  />
+                                  <Button
+                                    onClick={() => certFileSelecionado && handleEnviarCertidao(item, certFileSelecionado)}
+                                    disabled={!certFileSelecionado || !dataValidadeCert || enviandoEste}
+                                  >
+                                    {enviandoEste ? 'Salvando...' : 'Salvar'}
+                                  </Button>
+                                </div>
+                              </>
+                            )}
+
+                            {ehAtestado && (
+                              <div className="bg-base-900/40 border border-base-800 rounded-lg p-2.5 flex flex-col gap-2">
+                                <p className="text-[11px] text-accent-300 font-semibold">Salvar como Atestado de Capacidade Técnica (fica no repositório do cliente, reaproveitável em outras licitações)</p>
+                                <Input placeholder="Nome / identificação do atestado" value={atestadoForm.nome} onChange={(e) => setAtestadoForm({ ...atestadoForm, nome: e.target.value })} />
+                                <textarea
+                                  value={atestadoForm.objeto}
+                                  onChange={(e) => setAtestadoForm({ ...atestadoForm, objeto: e.target.value })}
+                                  rows={2}
+                                  placeholder="Objeto do atestado (usado pra comparar com outros editais)"
+                                  className="w-full bg-base-850 border border-base-700 rounded-lg px-3 py-2 text-[13px] text-base-100 placeholder:text-base-500 focus:border-accent-400 outline-none"
+                                />
+                                <div className="grid grid-cols-3 gap-2">
+                                  <Input placeholder="Órgão emissor" value={atestadoForm.orgaoEmissor} onChange={(e) => setAtestadoForm({ ...atestadoForm, orgaoEmissor: e.target.value })} />
+                                  <Input type="number" step="0.01" placeholder="Valor (R$)" value={atestadoForm.valor} onChange={(e) => setAtestadoForm({ ...atestadoForm, valor: e.target.value })} />
+                                  <Input type="date" value={atestadoForm.dataEmissao} onChange={(e) => setAtestadoForm({ ...atestadoForm, dataEmissao: e.target.value })} />
+                                </div>
+                                <input
+                                  type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={(e) => setAtestadoFileSelecionado(e.target.files?.[0] ?? null)}
+                                  className="text-[11px] text-base-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:bg-accent-500 file:text-base-950 file:font-semibold file:text-[11px] hover:file:bg-accent-400 file:cursor-pointer"
+                                />
+                                <div className="flex justify-end">
+                                  <Button
+                                    onClick={() => handleSalvarAtestadoDoItem(item, atestadoFileSelecionado)}
+                                    disabled={!atestadoForm.nome.trim() || !atestadoForm.objeto.trim() || enviandoEste}
+                                  >
+                                    {enviandoEste ? 'Salvando...' : 'Salvar Atestado'}
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+
+                            {!tipoConhecido && !ehAtestado && (
+                              <div className="flex items-center gap-2 flex-wrap bg-base-900/40 border border-base-800 rounded-lg p-2.5">
+                                <span className="text-[11px] text-base-400">Enviar documento (fica salvo no repositório do cliente, pasta "{item.categoria || 'Documentos Gerais'}"):</span>
+                                <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-base-950 bg-accent-500 hover:bg-accent-400 rounded-lg px-3 py-1.5 cursor-pointer transition">
+                                  {enviandoEste ? 'Enviando...' : 'Escolher arquivo'}
+                                  <input
+                                    type="file" accept=".pdf,.png,.jpg,.jpeg" className="hidden" disabled={enviandoEste}
+                                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleEnviarDocumentoGenerico(item, f); e.target.value = '' }}
+                                  />
+                                </label>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     )
@@ -1543,7 +1692,7 @@ export default function LicitacaoPage() {
                       <div key={item.id} className="flex items-center gap-2 text-[12px] text-base-300 py-1">
                         {item.numeroEdital && <span className="font-mono text-[10px] font-bold text-accent-300 bg-accent-500/10 rounded px-1.5 py-0.5 shrink-0">{item.numeroEdital}</span>}
                         <span className="flex-1 min-w-0 truncate">{item.descricao}</span>
-                        <button onClick={() => handleVisualizarAnexo(arquivo)} title="Ver PDF" className="p-1 text-base-400 hover:text-accent-300 transition shrink-0">
+                        <button onClick={() => handleVisualizarAnexo({ id: item.id, name: arquivo.nome, storagePath: arquivo.storagePath })} title="Ver PDF" className="p-1 text-base-400 hover:text-accent-300 transition shrink-0">
                           <Eye className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -1667,6 +1816,8 @@ export default function LicitacaoPage() {
         onClose={() => setMostrarDownloadModal(false)}
         items={items}
         anexos={anexos}
+        clientDocs={clientDocs}
+        atestados={atestados}
         propostaEnviada={propostaEnviada ?? null}
         propostaReadequada={propostaReadequada ?? null}
         contrato={contrato ?? null}

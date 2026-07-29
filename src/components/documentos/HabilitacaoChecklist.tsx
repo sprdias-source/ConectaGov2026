@@ -6,9 +6,9 @@ import {
 } from 'lucide-react'
 import { Button, Input } from '../ui/FormControls'
 import ErrorAlert from '../ui/ErrorAlert'
-import { supabase } from '../../lib/supabase'
 import { useClientDocuments, calcDocStatus, diasRestantes } from '../../hooks/useClientDocuments'
 import { useAtestados } from '../../hooks/useAtestados'
+import { useBuscaCertidaoAutomatica } from '../../hooks/useBuscaCertidaoAutomatica'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import { useToast } from '../../hooks/useToast'
 import AcoesDocumentoManual from './AcoesDocumentoManual'
@@ -56,29 +56,6 @@ interface Props {
   clientId: string
   clientName: string
   cnpj?: string
-}
-
-// Mapa de tipo de certidão → nome da Edge Function correspondente.
-// 'cndt' aponta pra `disparar-robo-cndt` (dispara o robô no GitHub Actions,
-// que vai gerar uma sessão de captcha pro usuário resolver no modal global)
-// em vez de `buscar-cndt` (fluxo antigo via Browserless) — os outros 6
-// continuam no Browserless até serem portados também.
-const EDGE_FUNCTIONS: Record<Exclude<DocumentTipo, 'manual'>, string> = {
-  cndt: 'disparar-robo-cndt',
-  cnd_federal: 'buscar-cnd-federal',
-  cnd_estadual_rs: 'buscar-cnd-estadual-rs',
-  fgts: 'buscar-fgts',
-  cnd_municipal: 'buscar-cnd-municipal-vacaria',
-  certidao_falencia_rs: 'buscar-certidao-falencia-rs',
-  cnpj_cartao: 'buscar-cnpj-cartao',
-}
-
-// Tipos que agora rodam via GitHub Actions — o retorno da Edge Function
-// só confirma que o robô foi DISPARADO, não que já terminou. O resultado
-// real chega minutos depois (captcha + automação), por isso mostramos um
-// aviso diferente do erro, em vez de tratar como concluído.
-const TIPOS_VIA_GITHUB_ACTIONS: Partial<Record<DocumentTipo, boolean>> = {
-  cndt: true,
 }
 
 // Cadastro de Atestados de Capacidade Técnica do cliente — reutilizável em
@@ -220,9 +197,7 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
   const podeEditar = nivelCadastros === 'edicao'
   const { showToast } = useToast()
 
-  const [buscando, setBuscando] = useState<DocumentTipo | null>(null)
-  const [errosBusca, setErrosBusca] = useState<Partial<Record<DocumentTipo, string>>>({})
-  const [avisosBusca, setAvisosBusca] = useState<Partial<Record<DocumentTipo, string>>>({})
+  const { buscando, errosBusca, avisosBusca, buscarAutomatico, limparAviso, limparErro } = useBuscaCertidaoAutomatica(clientId, cnpj, podeEditar)
   const [abertoKey, setAbertoKey] = useState<string | null>(null)
   const [abrindo, setAbrindo] = useState<string | null>(null)
 
@@ -239,41 +214,6 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
   const [enviandoArquivoPasta, setEnviandoArquivoPasta] = useState(false)
 
   const getDoc = (tipo: DocumentTipo) => documents.find((d) => d.tipo === tipo)
-
-  const handleBuscarAutomatico = async (tipo: Exclude<DocumentTipo, 'manual'>) => {
-    if (!cnpj || !podeEditar) return
-    setBuscando(tipo)
-    setErrosBusca((prev) => { const n = { ...prev }; delete n[tipo]; return n })
-    setAvisosBusca((prev) => { const n = { ...prev }; delete n[tipo]; return n })
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-      const res = await fetch(
-        `${SUPABASE_URL}/functions/v1/${EDGE_FUNCTIONS[tipo]}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token}`,
-          },
-          body: JSON.stringify({ cnpj, clientId }),
-        }
-      )
-      const data = await res.json()
-      if (!res.ok || data.error) {
-        setErrosBusca((prev) => ({ ...prev, [tipo]: data.error || 'Erro desconhecido' }))
-      } else if (TIPOS_VIA_GITHUB_ACTIONS[tipo]) {
-        setAvisosBusca((prev) => ({
-          ...prev,
-          [tipo]: 'Robô disparado! Isso roda em segundo plano e pode levar alguns minutos — quando o captcha aparecer, você será avisado numa tela pra digitar a resposta.',
-        }))
-      }
-    } catch (err) {
-      setErrosBusca((prev) => ({ ...prev, [tipo]: String(err) }))
-    } finally {
-      setBuscando(null)
-    }
-  }
 
   const handleDownload = async (doc: ClientDocument) => {
     if (!doc.storagePath) return
@@ -515,7 +455,7 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
               <div className="flex items-center gap-1.5 shrink-0">
                 {cnpj && podeEditar && (
                   <button
-                    onClick={() => handleBuscarAutomatico(c.tipo)}
+                    onClick={() => buscarAutomatico(c.tipo)}
                     disabled={buscando === c.tipo}
                     title="Buscar automaticamente via portal oficial"
                     className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition border ${
@@ -554,7 +494,7 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
               <div className="border-t border-base-800 px-4 py-2 bg-accent-500/5 flex items-start gap-2">
                 <Info className="w-3.5 h-3.5 text-accent-400 shrink-0 mt-0.5" />
                 <p className="text-[11px] text-accent-300">{avisosBusca[c.tipo]}</p>
-                <button onClick={() => setAvisosBusca((p) => { const n = { ...p }; delete n[c.tipo]; return n })} className="ml-auto text-base-500 hover:text-base-300">
+                <button onClick={() => limparAviso(c.tipo)} className="ml-auto text-base-500 hover:text-base-300">
                   <X className="w-3 h-3" />
                 </button>
               </div>
@@ -564,7 +504,7 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
               <div className="border-t border-base-800 px-4 py-2 bg-negative-500/5 flex items-start gap-2">
                 <AlertCircle className="w-3.5 h-3.5 text-negative-400 shrink-0 mt-0.5" />
                 <p className="text-[11px] text-negative-400">{errosBusca[c.tipo]}</p>
-                <button onClick={() => setErrosBusca((p) => { const n = { ...p }; delete n[c.tipo]; return n })} className="ml-auto text-base-500 hover:text-base-300">
+                <button onClick={() => limparErro(c.tipo)} className="ml-auto text-base-500 hover:text-base-300">
                   <X className="w-3 h-3" />
                 </button>
               </div>

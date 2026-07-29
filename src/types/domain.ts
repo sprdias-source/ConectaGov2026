@@ -274,6 +274,14 @@ export interface BiddingChecklistItem {
   atendido: boolean
   clientDocumentTipo: Exclude<DocumentTipo, 'manual'> | null
   attachedFileId: string | null
+  // Vínculo com um documento específico do repositório do cliente — usado
+  // quando o item não é uma das 7 certidões padrão (essas já casam sozinhas
+  // via clientDocumentTipo) mas ainda assim é algo reaproveitável em outra
+  // licitação (ex: um documento manual qualquer salvo na pasta do cliente).
+  clientDocumentId: string | null
+  // Vínculo com um Atestado de Capacidade Técnica do cliente — mesma ideia,
+  // pra itens do tipo "atestado" resolvidos direto pelo checklist.
+  atestadoId: string | null
   origem: ChecklistItemOrigem
   observacoes: string | null
   prazo: string | null
