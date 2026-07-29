@@ -435,11 +435,11 @@ type LinhaProposta = {
   valorUnitario: string
 }
 
-function linhaPropostaDoItem(bidding: Bidding, item: BiddingItem): LinhaProposta {
+function linhaPropostaDoItem(bidding: Bidding, item: BiddingItem, doPortal?: { id: string; lote: string }): LinhaProposta {
   return {
     processo: bidding.processo ?? bidding.numeroEdital ?? '',
-    id: '',
-    lote: '',
+    id: doPortal?.id ?? '',
+    lote: doPortal?.lote ?? '',
     item: item.numeroItem,
     produto: item.descricao,
     quantidade: String(item.quantidade),
@@ -453,8 +453,28 @@ function linhaPropostaDoItem(bidding: Bidding, item: BiddingItem): LinhaProposta
 
 function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
   const { items, isLoading } = useBiddingItemsDaLicitacao(bidding.id)
+  const { analysis } = useBiddingAnalysis(bidding.id)
   const { nivel } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivel === 'edicao'
+
+  // ID e Lote geralmente já aparecem na própria tabela de itens do edital
+  // (o Portal costuma gerar o PDF do edital com os mesmos números que
+  // depois aparecem no CSV de proposta) — quando a Análise de Edital por
+  // IA identificou isso, cruza pelo número do item pra pré-preencher em
+  // vez de deixar em branco.
+  const analise = (analysis?.analise ?? null) as AnaliseEdital | null
+  const portalPorNumeroItem = useMemo(() => {
+    const mapa = new Map<string, { id: string; lote: string }>()
+    analise?.itens?.forEach((it) => {
+      const numero = it.numero != null ? String(it.numero) : null
+      if (!numero) return
+      mapa.set(numero, {
+        id: it.idPortal != null ? String(it.idPortal) : '',
+        lote: it.lote != null ? String(it.lote) : '',
+      })
+    })
+    return mapa
+  }, [analise])
 
   const [linhasProposta, setLinhasProposta] = useState<LinhaProposta[]>([])
   // Preenche a tabela sozinha com os itens da licitação assim que eles
@@ -463,7 +483,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
   // render, comparando com um marcador, em vez de useEffect).
   const [carregadaPara, setCarregadaPara] = useState<string | null>(null)
   if (!isLoading && carregadaPara !== bidding.id) {
-    setLinhasProposta(items.map((item) => linhaPropostaDoItem(bidding, item)))
+    setLinhasProposta(items.map((item) => linhaPropostaDoItem(bidding, item, portalPorNumeroItem.get(item.numeroItem))))
     setCarregadaPara(bidding.id)
   }
 
@@ -511,7 +531,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
       <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-4 flex flex-col gap-3">
         <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Proposta Inicial — Modelo do Portal de Compras Públicas</p>
         <p className="text-[12px] text-base-400">
-          A tabela abaixo já vem preenchida com os itens desta licitação — Item, Produto, Quantidade, Descrição ("Conforme edital") e Valor Unitário pelo preço de referência do edital. Complete ID e Lote (só o Portal sabe esses números) e ajuste o que precisar antes de exportar. O cabeçalho e o formato do arquivo já seguem exatamente o que o Portal exige.
+          A tabela abaixo já vem preenchida com os itens desta licitação — Item, Produto, Quantidade, Descrição ("Conforme edital") e Valor Unitário pelo preço de referência do edital. ID e Lote também vêm preenchidos quando a Análise de Edital já os identificou na tabela do edital; confira e complete o que faltar antes de exportar. O cabeçalho e o formato do arquivo já seguem exatamente o que o Portal exige.
         </p>
         {items.length === 0 && (
           <p className="text-[11px] text-warning-400">Nenhum item cadastrado ainda na aba Proposta Readequada — a tabela começou vazia, use "Adicionar Linha" pra montar manualmente ou cadastre os itens lá primeiro.</p>
@@ -995,7 +1015,7 @@ interface AnaliseEdital {
   portal?: string
   intervaloLances?: string
   resumoTecnico?: string
-  itens?: { numero?: string | number; descricao: string; unidade?: string; quantidade?: number; valorReferencia?: number }[]
+  itens?: { numero?: string | number; idPortal?: string | number; lote?: string | number; descricao: string; unidade?: string; quantidade?: number; valorReferencia?: number }[]
   validadeProposta?: string
   catalogo?: string
   garantias?: string
