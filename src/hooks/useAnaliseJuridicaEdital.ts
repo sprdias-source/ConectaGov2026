@@ -116,3 +116,26 @@ export function useAnaliseJuridicaEdital(biddingId: string | undefined, tipo: Ti
     analisar,
   }
 }
+
+// Apaga as 3 análises jurídicas (Esclarecimentos/Impugnações/Raio-X) de uma
+// licitação de uma vez — usado quando o edital que gerou essas análises é
+// removido (ou trocado por outro), pra não deixar resultado de um
+// documento que não existe mais disponível na tela. Mesma ideia do
+// limparAnalise de useBiddingAnalysis.ts, só que aqui precisa apagar as 3
+// linhas (uma por tipo) em vez de 1 só.
+export function useLimparAnaliseJuridica(biddingId: string | undefined) {
+  const queryClient = useQueryClient()
+
+  const limpar = useMutation({
+    mutationFn: async () => {
+      if (!biddingId) throw new Error('Licitação não informada')
+      const { error } = await supabase.from('bidding_analysis_juridica').delete().eq('bidding_id', biddingId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [...QUERY_KEY, biddingId] })
+    },
+  })
+
+  return { limpar }
+}

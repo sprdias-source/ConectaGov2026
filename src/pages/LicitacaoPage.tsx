@@ -22,7 +22,7 @@ import { useBuscaCertidaoAutomatica } from '../hooks/useBuscaCertidaoAutomatica'
 import AcoesDocumentoManual from '../components/documentos/AcoesDocumentoManual'
 import DownloadDocumentosModal from '../components/licitacao/DownloadDocumentosModal'
 import { useBiddingAnalysis } from '../hooks/useBiddingAnalysis'
-import { useAnaliseJuridicaEdital } from '../hooks/useAnaliseJuridicaEdital'
+import { useAnaliseJuridicaEdital, useLimparAnaliseJuridica } from '../hooks/useAnaliseJuridicaEdital'
 import type { TipoAnaliseJuridica, PontoAnaliseJuridica } from '../hooks/useAnaliseJuridicaEdital'
 import { useBiddingItems } from '../hooks/useBiddingItems'
 import { useBiddingItemVersions } from '../hooks/useBiddingItemVersions'
@@ -994,6 +994,7 @@ export default function LicitacaoPage() {
   const clienteDaLicitacao = clients.find((c) => c.id === bidding?.clientId)
   const { buscando, errosBusca, avisosBusca, buscarAutomatico, limparAviso, limparErro } = useBuscaCertidaoAutomatica(bidding?.clientId, clienteDaLicitacao?.cnpj ?? undefined, podeEditar)
   const { limparAnalise } = useBiddingAnalysis(bidding?.id)
+  const { limpar: limparAnaliseJuridica } = useLimparAnaliseJuridica(bidding?.id)
 
   const [enviando, setEnviando] = useState<string | null>(null)
   const [showNovoItem, setShowNovoItem] = useState(false)
@@ -1324,7 +1325,7 @@ export default function LicitacaoPage() {
                     <Download className="w-3.5 h-3.5" />
                   </button>
                   {podeEditar && (
-                    <button onClick={() => deleteAnexo.mutate(edital, { onSuccess: () => limparAnalise.mutate() })} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                    <button onClick={() => deleteAnexo.mutate(edital, { onSuccess: () => { limparAnalise.mutate(); limparAnaliseJuridica.mutate() } })} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   )}
