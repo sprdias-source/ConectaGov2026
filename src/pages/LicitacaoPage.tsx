@@ -2065,10 +2065,10 @@ export default function LicitacaoPage() {
                             {podeEditar && (
                               <button
                                 onClick={() => handleAbrirItem(item)}
-                                title={tipoConhecido ? 'Buscar / enviar certidão' : ehAtestado ? 'Salvar atestado' : 'Enviar documento'}
-                                className={`p-1.5 rounded transition ${aberto ? 'text-accent-300 bg-accent-500/10' : 'text-base-400 hover:text-accent-300 hover:bg-base-800'}`}
+                                title={arquivo ? 'Reenviar / substituir documento' : tipoConhecido ? 'Buscar / enviar certidão' : ehAtestado ? 'Salvar atestado' : 'Enviar documento'}
+                                className={`p-1.5 rounded transition ${aberto ? 'text-accent-300 bg-accent-500/10' : arquivo ? 'text-base-400 hover:text-warning-300 hover:bg-base-800' : 'text-base-400 hover:text-accent-300 hover:bg-base-800'}`}
                               >
-                                <Paperclip className="w-3.5 h-3.5" />
+                                {arquivo ? <RefreshCw className="w-3.5 h-3.5" /> : <Paperclip className="w-3.5 h-3.5" />}
                               </button>
                             )}
                             {podeEditar && temVinculoProprio && (
@@ -2100,6 +2100,14 @@ export default function LicitacaoPage() {
 
                         {aberto && podeEditar && (
                           <div className="mt-2.5 pt-2.5 border-t border-dashed border-base-700/60 flex flex-col gap-2.5">
+                            {arquivo && (
+                              <div className="bg-warning-500/10 border border-warning-500/25 rounded-lg p-2.5 flex items-start gap-2">
+                                <AlertCircle className="w-3.5 h-3.5 text-warning-400 shrink-0 mt-0.5" />
+                                <p className="text-[11px] text-warning-300 flex-1">
+                                  Este item já está enviado ({arquivo.nome}). Enviar um novo arquivo abaixo substitui o atual.
+                                </p>
+                              </div>
+                            )}
                             {tipoConhecido && (
                               <>
                                 <div className="flex items-center gap-2 flex-wrap">
