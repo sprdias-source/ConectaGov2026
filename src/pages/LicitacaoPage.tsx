@@ -1466,7 +1466,7 @@ export default function LicitacaoPage() {
   const clientName = bidding ? (clients.find((c) => c.id === bidding.clientId)?.name ?? 'Cliente removido') : ''
 
   const { files: anexos, uploadFile: uploadAnexo, uploadProgress, deleteFile: deleteAnexo, getDownloadUrl: getAnexoUrl } = useAttachedFiles('licitacao', bidding?.id)
-  const { items, addItem, updateItem, deleteItem } = useBiddingChecklist(bidding?.id)
+  const { items, addItem, updateItem, deleteItem, limparItensIA } = useBiddingChecklist(bidding?.id)
   const { documents: clientDocs, uploadAndSave: uploadClientDoc } = useClientDocuments(bidding?.clientId)
   const { atestados, addAtestado } = useAtestados(bidding?.clientId)
   const clienteDaLicitacao = clients.find((c) => c.id === bidding?.clientId)
@@ -1488,6 +1488,7 @@ export default function LicitacaoPage() {
   const [mostrarDownloadModal, setMostrarDownloadModal] = useState(false)
   const [gerandoReadequada, setGerandoReadequada] = useState(false)
   const [erroReadequada, setErroReadequada] = useState<string | null>(null)
+  const [confirmandoExclusaoEdital, setConfirmandoExclusaoEdital] = useState(false)
 
   if (!bidding) {
     return (
@@ -1512,6 +1513,24 @@ export default function LicitacaoPage() {
     } finally {
       setEnviando(null)
     }
+  }
+
+  // Excluir o edital pode significar que o PDF errado foi enviado — nesse
+  // caso, tudo que foi lido automaticamente dele (análise, análise
+  // jurídica, itens de checklist sugeridos pela IA) fica errado junto e
+  // precisa sumir também. Itens de checklist adicionados manualmente
+  // (origem='manual') não têm relação com qual edital foi analisado, então
+  // ficam intactos.
+  const handleExcluirEdital = () => {
+    if (!edital) return
+    deleteAnexo.mutate(edital, {
+      onSuccess: () => {
+        limparAnalise.mutate()
+        limparAnaliseJuridica.mutate()
+        limparItensIA.mutate()
+      },
+    })
+    setConfirmandoExclusaoEdital(false)
   }
 
   // Detecta um item de "Atestado de Capacidade Técnica" pela descrição —
@@ -1808,7 +1827,7 @@ export default function LicitacaoPage() {
                     <Download className="w-3.5 h-3.5" />
                   </button>
                   {podeEditar && (
-                    <button onClick={() => deleteAnexo.mutate(edital, { onSuccess: () => { limparAnalise.mutate(); limparAnaliseJuridica.mutate() } })} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                    <button onClick={() => setConfirmandoExclusaoEdital(true)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   )}
@@ -2323,6 +2342,17 @@ export default function LicitacaoPage() {
         contrato={contrato ?? null}
         getDownloadUrl={getAnexoUrl}
         nomeLicitacao={bidding.numeroEdital || bidding.objeto}
+      />
+
+      <ConfirmDialog
+        open={confirmandoExclusaoEdital}
+        title="Excluir edital"
+        description="Isso também apaga a Análise de Edital, a Análise Jurídica e os itens de checklist sugeridos pela IA a partir deste PDF (os itens que você adicionou manualmente continuam). Use quando o PDF enviado estiver errado."
+        confirmLabel="Excluir tudo"
+        danger
+        isLoading={deleteAnexo.isPending}
+        onCancel={() => setConfirmandoExclusaoEdital(false)}
+        onConfirm={handleExcluirEdital}
       />
     </div>
   )
