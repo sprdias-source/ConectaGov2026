@@ -2071,6 +2071,9 @@ export default function LicitacaoPage() {
                         {arquivo && (
                           <p className="text-[10.5px] text-base-500 mt-1.5 pl-7 flex items-center gap-1 truncate">
                             <FileText className="w-3 h-3 shrink-0" /> {arquivo.nome}
+                            {tipoConhecido && !temVinculoProprio && (
+                              <span className="text-base-600 italic shrink-0"> · reaproveitado do repositório do cliente, não deste edital</span>
+                            )}
                           </p>
                         )}
 
