@@ -245,6 +245,23 @@ export function useBiddingChecklist(biddingId?: string) {
     onSuccess: invalidate,
   })
 
+  // Usado quando o edital que gerou esses itens é removido (ex: PDF errado
+  // foi enviado) — apaga só os itens sugeridos pela IA (origem='ia'), sem
+  // mexer nos que o usuário adicionou manualmente, que não têm relação com
+  // qual edital foi analisado.
+  const limparItensIA = useMutation({
+    mutationFn: async () => {
+      if (!biddingId) throw new Error('Licitação não informada')
+      const { error } = await supabase
+        .from('bidding_checklist_items')
+        .delete()
+        .eq('bidding_id', biddingId)
+        .eq('origem', 'ia')
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+  })
+
   return {
     items: query.data ?? [],
     isLoading: query.isLoading,
@@ -252,6 +269,7 @@ export function useBiddingChecklist(biddingId?: string) {
     addItensEmLote,
     updateItem,
     deleteItem,
+    limparItensIA,
   }
 }
 
