@@ -26,7 +26,7 @@ import { useAnaliseJuridicaEdital, useLimparAnaliseJuridica } from '../hooks/use
 import type { TipoAnaliseJuridica, PontoAnaliseJuridica } from '../hooks/useAnaliseJuridicaEdital'
 import { useBiddingItems } from '../hooks/useBiddingItems'
 import { useBiddingItemVersions } from '../hooks/useBiddingItemVersions'
-import { useClientDocuments } from '../hooks/useClientDocuments'
+import { useClientDocuments, calcDocStatus } from '../hooks/useClientDocuments'
 import { useAtestados, calcularSimilaridade } from '../hooks/useAtestados'
 import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
@@ -1490,6 +1490,7 @@ export default function LicitacaoPage() {
   const [enviandoItemId, setEnviandoItemId] = useState<string | null>(null)
   const [dataValidadeCert, setDataValidadeCert] = useState('')
   const [certFileSelecionado, setCertFileSelecionado] = useState<File | null>(null)
+  const [confirmandoCertVencendo, setConfirmandoCertVencendo] = useState<{ item: BiddingChecklistItem; file: File } | null>(null)
   const [atestadoForm, setAtestadoForm] = useState({ nome: '', objeto: '', orgaoEmissor: '', valor: '', dataEmissao: '' })
   const [atestadoFileSelecionado, setAtestadoFileSelecionado] = useState<File | null>(null)
   const [mostrarDownloadModal, setMostrarDownloadModal] = useState(false)
@@ -1568,6 +1569,21 @@ export default function LicitacaoPage() {
     } finally {
       setEnviandoItemId(null)
     }
+  }
+
+  // Se a validade digitada já está vencendo (ou já vencida), confirma antes
+  // de enviar em vez de aceitar direto — evita salvar sem perceber uma data
+  // errada (ou um documento que já nasceu quase sem validade), mas ainda
+  // permite enviar mesmo assim quando é intencional (ex: documento provisório).
+  const handleClicarSalvarCertidao = (item: BiddingChecklistItem, file: File) => {
+    if (!item.clientDocumentTipo) return
+    const alertaDias = CERT_CONFIG[item.clientDocumentTipo].alertaDias
+    const statusData = calcDocStatus(dataValidadeCert || null, alertaDias)
+    if (statusData === 'vencendo' || statusData === 'vencido') {
+      setConfirmandoCertVencendo({ item, file })
+      return
+    }
+    handleEnviarCertidao(item, file)
   }
 
   const handleSalvarAtestadoDoItem = async (item: BiddingChecklistItem, file: File | null) => {
@@ -2071,6 +2087,11 @@ export default function LicitacaoPage() {
                         {arquivo && (
                           <p className="text-[10.5px] text-base-500 mt-1.5 pl-7 flex items-center gap-1 truncate">
                             <FileText className="w-3 h-3 shrink-0" /> {arquivo.nome}
+                            {arquivo.dataValidade && (
+                              <span className={`shrink-0 ${status === 'vencendo' ? 'text-warning-400' : ''}`}>
+                                {' '}· válido até {new Date(arquivo.dataValidade + 'T12:00:00').toLocaleDateString('pt-BR')}
+                              </span>
+                            )}
                             {tipoConhecido && !temVinculoProprio && (
                               <span className="text-base-600 italic shrink-0"> · reaproveitado do repositório do cliente, não deste edital</span>
                             )}
@@ -2126,7 +2147,7 @@ export default function LicitacaoPage() {
                                     className="text-[11px] text-base-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:bg-accent-500 file:text-base-950 file:font-semibold file:text-[11px] hover:file:bg-accent-400 file:cursor-pointer"
                                   />
                                   <Button
-                                    onClick={() => certFileSelecionado && handleEnviarCertidao(item, certFileSelecionado)}
+                                    onClick={() => certFileSelecionado && handleClicarSalvarCertidao(item, certFileSelecionado)}
                                     disabled={!certFileSelecionado || !dataValidadeCert || enviandoEste}
                                   >
                                     {enviandoEste ? 'Salvando...' : 'Salvar'}
@@ -2386,6 +2407,22 @@ export default function LicitacaoPage() {
         isLoading={deleteAnexo.isPending}
         onCancel={() => setConfirmandoExclusaoEdital(false)}
         onConfirm={handleExcluirEdital}
+      />
+
+      <ConfirmDialog
+        open={!!confirmandoCertVencendo}
+        title="Certidão já vencendo (ou vencida)"
+        description={`A validade informada (${dataValidadeCert ? new Date(dataValidadeCert + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}) já está vencendo ou vencida. Quer enviar mesmo assim?`}
+        confirmLabel="Enviar mesmo assim"
+        danger
+        isLoading={enviandoItemId === confirmandoCertVencendo?.item.id}
+        onCancel={() => setConfirmandoCertVencendo(null)}
+        onConfirm={() => {
+          if (!confirmandoCertVencendo) return
+          const { item, file } = confirmandoCertVencendo
+          setConfirmandoCertVencendo(null)
+          handleEnviarCertidao(item, file)
+        }}
       />
     </div>
   )

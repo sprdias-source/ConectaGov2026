@@ -444,7 +444,11 @@ export const CERT_CONFIG: Record<Exclude<DocumentTipo, 'manual'>, {
   fgts: {
     label: 'CRF — Certificado de Regularidade do FGTS (Caixa)',
     validadeDias: 30,
-    alertaDias: 15,
+    // O FGTS só vale 30 dias no total (bem mais curto que as outras
+    // certidões, de 60-180 dias) — um alerta de 15 dias dispararia já na
+    // metade da validade. 10 dias dá um aviso proporcional ao prazo curto,
+    // sem soar falso alarme cedo demais.
+    alertaDias: 10,
     portal: 'caixa.gov.br',
   },
   cnd_municipal: {
