@@ -17,7 +17,7 @@ import ConfirmDialog from '../components/ui/ConfirmDialog'
 import PdfViewerModal from '../components/ui/PdfViewerModal'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useAttachedFiles } from '../hooks/useAttachedFiles'
-import { useBiddingChecklist, calcularHabilitacao, statusItemChecklist, arquivoResolvidoDoItem } from '../hooks/useBiddingChecklist'
+import { useBiddingChecklist, calcularHabilitacao, statusItemChecklist, arquivoResolvidoDoItem, extrairNumeroEdital } from '../hooks/useBiddingChecklist'
 import { useBuscaCertidaoAutomatica } from '../hooks/useBuscaCertidaoAutomatica'
 import AcoesDocumentoManual from '../components/documentos/AcoesDocumentoManual'
 import DownloadDocumentosModal from '../components/licitacao/DownloadDocumentosModal'
@@ -26,7 +26,7 @@ import { useAnaliseJuridicaEdital, useLimparAnaliseJuridica } from '../hooks/use
 import type { TipoAnaliseJuridica, PontoAnaliseJuridica } from '../hooks/useAnaliseJuridicaEdital'
 import { useBiddingItems } from '../hooks/useBiddingItems'
 import { useBiddingItemVersions } from '../hooks/useBiddingItemVersions'
-import { useClientDocuments } from '../hooks/useClientDocuments'
+import { useClientDocuments, calcDocStatus } from '../hooks/useClientDocuments'
 import { useAtestados, calcularSimilaridade } from '../hooks/useAtestados'
 import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
@@ -1138,7 +1138,6 @@ function SecaoTexto({ label, texto }: { label: string; texto?: string | null }) 
 
 function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding; temEdital: boolean; podeEditar: boolean }) {
   const { analysis, analisar, travado } = useBiddingAnalysis(bidding.id)
-  const { addItensEmLote } = useBiddingChecklist(bidding.id)
   const { updateBidding } = useBiddings()
   const { items: itensAtuais } = useBiddingItems(bidding.id)
   const { showToast } = useToast()
@@ -1150,7 +1149,6 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
 
   const localOuFormaEntrega = [analise?.formaEntrega, analise?.localEntrega].filter(Boolean).join(' — ')
   const marcasTexto = Array.isArray(analise?.marcasPreAprovadas) ? analise.marcasPreAprovadas.join(', ') : analise?.marcasPreAprovadas
-  const checklistDocumentacao = analise?.checklistDocumentacao ?? []
   const preenchimento = analise ? construirPreenchimento(analise, itensAtuais) : null
 
   const confirmarPreenchimento = () => {
@@ -1284,13 +1282,10 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
           <SecaoTexto label="Cláusulas Restritivas" texto={analise.clausulasRestritivas} />
           <SecaoTexto label="Conclusão Técnica" texto={analise.conclusaoTecnica} />
 
-          {checklistDocumentacao.length > 0 && (
-            <div className="bg-accent-500/10 border border-accent-500/25 rounded-lg p-3">
-              <p className="text-[12px] text-accent-300 mb-2">{checklistDocumentacao.length} documento(s) sugerido(s) pela análise pra habilitação.</p>
-              <Button variant="secondary" onClick={() => addItensEmLote.mutate(checklistDocumentacao)} disabled={addItensEmLote.isPending}>
-                <Plus className="w-4 h-4" /> {addItensEmLote.isPending ? 'Adicionando...' : 'Adicionar ao Checklist'}
-              </Button>
-            </div>
+          {(analise.checklistDocumentacao?.length ?? 0) > 0 && (
+            <p className="text-[11px] text-base-500 italic">
+              {analise.checklistDocumentacao!.length} documento(s) sugerido(s) pela análise pra habilitação — adicione na aba Checklist &amp; Habilitação.
+            </p>
           )}
         </div>
       )}
@@ -1466,13 +1461,25 @@ export default function LicitacaoPage() {
   const clientName = bidding ? (clients.find((c) => c.id === bidding.clientId)?.name ?? 'Cliente removido') : ''
 
   const { files: anexos, uploadFile: uploadAnexo, uploadProgress, deleteFile: deleteAnexo, getDownloadUrl: getAnexoUrl } = useAttachedFiles('licitacao', bidding?.id)
-  const { items, addItem, updateItem, deleteItem, limparItensIA } = useBiddingChecklist(bidding?.id)
+  const { items, addItem, updateItem, deleteItem, limparItensIA, addItensEmLote } = useBiddingChecklist(bidding?.id)
   const { documents: clientDocs, uploadAndSave: uploadClientDoc } = useClientDocuments(bidding?.clientId)
   const { atestados, addAtestado } = useAtestados(bidding?.clientId)
   const clienteDaLicitacao = clients.find((c) => c.id === bidding?.clientId)
   const { buscando, errosBusca, avisosBusca, buscarAutomatico, limparAviso, limparErro } = useBuscaCertidaoAutomatica(bidding?.clientId, clienteDaLicitacao?.cnpj ?? undefined, podeEditar)
-  const { limparAnalise } = useBiddingAnalysis(bidding?.id)
+  const { analysis, limparAnalise } = useBiddingAnalysis(bidding?.id)
   const { limpar: limparAnaliseJuridica } = useLimparAnaliseJuridica(bidding?.id)
+
+  // Documentos sugeridos pela Análise de Edital pra habilitação — comparados
+  // com os itens de checklist já existentes (mesma transformação de número
+  // usada em addItensEmLote) pra saber quais já foram adicionados e quais
+  // ainda faltam, em vez de sempre oferecer "adicionar" tudo de novo.
+  const checklistDocumentacao = ((analysis?.analise as AnaliseEdital | null)?.checklistDocumentacao ?? [])
+  const descricoesJaNoChecklist = new Set(
+    items.filter((i) => i.origem === 'ia').map((i) => i.descricao)
+  )
+  const checklistSugeridoPendente = checklistDocumentacao.filter(
+    (doc) => !descricoesJaNoChecklist.has(extrairNumeroEdital(doc.descricao).descricao)
+  )
 
   const [enviando, setEnviando] = useState<string | null>(null)
   const [showNovoItem, setShowNovoItem] = useState(false)
@@ -1483,6 +1490,7 @@ export default function LicitacaoPage() {
   const [enviandoItemId, setEnviandoItemId] = useState<string | null>(null)
   const [dataValidadeCert, setDataValidadeCert] = useState('')
   const [certFileSelecionado, setCertFileSelecionado] = useState<File | null>(null)
+  const [confirmandoCertVencendo, setConfirmandoCertVencendo] = useState<{ item: BiddingChecklistItem; file: File } | null>(null)
   const [atestadoForm, setAtestadoForm] = useState({ nome: '', objeto: '', orgaoEmissor: '', valor: '', dataEmissao: '' })
   const [atestadoFileSelecionado, setAtestadoFileSelecionado] = useState<File | null>(null)
   const [mostrarDownloadModal, setMostrarDownloadModal] = useState(false)
@@ -1561,6 +1569,21 @@ export default function LicitacaoPage() {
     } finally {
       setEnviandoItemId(null)
     }
+  }
+
+  // Se a validade digitada já está vencendo (ou já vencida), confirma antes
+  // de enviar em vez de aceitar direto — evita salvar sem perceber uma data
+  // errada (ou um documento que já nasceu quase sem validade), mas ainda
+  // permite enviar mesmo assim quando é intencional (ex: documento provisório).
+  const handleClicarSalvarCertidao = (item: BiddingChecklistItem, file: File) => {
+    if (!item.clientDocumentTipo) return
+    const alertaDias = CERT_CONFIG[item.clientDocumentTipo].alertaDias
+    const statusData = calcDocStatus(dataValidadeCert || null, alertaDias)
+    if (statusData === 'vencendo' || statusData === 'vencido') {
+      setConfirmandoCertVencendo({ item, file })
+      return
+    }
+    handleEnviarCertidao(item, file)
   }
 
   const handleSalvarAtestadoDoItem = async (item: BiddingChecklistItem, file: File | null) => {
@@ -2042,10 +2065,10 @@ export default function LicitacaoPage() {
                             {podeEditar && (
                               <button
                                 onClick={() => handleAbrirItem(item)}
-                                title={tipoConhecido ? 'Buscar / enviar certidão' : ehAtestado ? 'Salvar atestado' : 'Enviar documento'}
-                                className={`p-1.5 rounded transition ${aberto ? 'text-accent-300 bg-accent-500/10' : 'text-base-400 hover:text-accent-300 hover:bg-base-800'}`}
+                                title={arquivo ? 'Reenviar / substituir documento' : tipoConhecido ? 'Buscar / enviar certidão' : ehAtestado ? 'Salvar atestado' : 'Enviar documento'}
+                                className={`p-1.5 rounded transition ${aberto ? 'text-accent-300 bg-accent-500/10' : arquivo ? 'text-base-400 hover:text-warning-300 hover:bg-base-800' : 'text-base-400 hover:text-accent-300 hover:bg-base-800'}`}
                               >
-                                <Paperclip className="w-3.5 h-3.5" />
+                                {arquivo ? <RefreshCw className="w-3.5 h-3.5" /> : <Paperclip className="w-3.5 h-3.5" />}
                               </button>
                             )}
                             {podeEditar && temVinculoProprio && (
@@ -2064,11 +2087,27 @@ export default function LicitacaoPage() {
                         {arquivo && (
                           <p className="text-[10.5px] text-base-500 mt-1.5 pl-7 flex items-center gap-1 truncate">
                             <FileText className="w-3 h-3 shrink-0" /> {arquivo.nome}
+                            {arquivo.dataValidade && (
+                              <span className={`shrink-0 ${status === 'vencendo' ? 'text-warning-400' : ''}`}>
+                                {' '}· válido até {new Date(arquivo.dataValidade + 'T12:00:00').toLocaleDateString('pt-BR')}
+                              </span>
+                            )}
+                            {tipoConhecido && !temVinculoProprio && (
+                              <span className="text-base-600 italic shrink-0"> · reaproveitado do repositório do cliente, não deste edital</span>
+                            )}
                           </p>
                         )}
 
                         {aberto && podeEditar && (
                           <div className="mt-2.5 pt-2.5 border-t border-dashed border-base-700/60 flex flex-col gap-2.5">
+                            {arquivo && (
+                              <div className="bg-warning-500/10 border border-warning-500/25 rounded-lg p-2.5 flex items-start gap-2">
+                                <AlertCircle className="w-3.5 h-3.5 text-warning-400 shrink-0 mt-0.5" />
+                                <p className="text-[11px] text-warning-300 flex-1">
+                                  Este item já está enviado ({arquivo.nome}). Enviar um novo arquivo abaixo substitui o atual.
+                                </p>
+                              </div>
+                            )}
                             {tipoConhecido && (
                               <>
                                 <div className="flex items-center gap-2 flex-wrap">
@@ -2116,7 +2155,7 @@ export default function LicitacaoPage() {
                                     className="text-[11px] text-base-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:bg-accent-500 file:text-base-950 file:font-semibold file:text-[11px] hover:file:bg-accent-400 file:cursor-pointer"
                                   />
                                   <Button
-                                    onClick={() => certFileSelecionado && handleEnviarCertidao(item, certFileSelecionado)}
+                                    onClick={() => certFileSelecionado && handleClicarSalvarCertidao(item, certFileSelecionado)}
                                     disabled={!certFileSelecionado || !dataValidadeCert || enviandoEste}
                                   >
                                     {enviandoEste ? 'Salvando...' : 'Salvar'}
@@ -2173,6 +2212,29 @@ export default function LicitacaoPage() {
                       </div>
                     )
                   })}
+                </div>
+              )}
+
+              {checklistDocumentacao.length > 0 && (
+                <div className="mt-3 bg-accent-500/10 border border-accent-500/25 rounded-lg p-3">
+                  {checklistSugeridoPendente.length > 0 ? (
+                    <>
+                      <p className="text-[12px] text-accent-300 mb-2">
+                        {checklistSugeridoPendente.length} documento(s) sugerido(s) pela análise pra habilitação
+                        {checklistSugeridoPendente.length < checklistDocumentacao.length
+                          && ` (${checklistDocumentacao.length - checklistSugeridoPendente.length} já adicionado(s))`}.
+                      </p>
+                      {podeEditar && (
+                        <Button variant="secondary" onClick={() => addItensEmLote.mutate(checklistSugeridoPendente)} disabled={addItensEmLote.isPending}>
+                          <Plus className="w-4 h-4" /> {addItensEmLote.isPending ? 'Adicionando...' : 'Adicionar ao Checklist'}
+                        </Button>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-[12px] text-positive-400 flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5" /> {checklistDocumentacao.length} documento(s) sugerido(s) pela análise já {checklistDocumentacao.length === 1 ? 'foi adicionado' : 'foram adicionados'} ao checklist.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -2353,6 +2415,22 @@ export default function LicitacaoPage() {
         isLoading={deleteAnexo.isPending}
         onCancel={() => setConfirmandoExclusaoEdital(false)}
         onConfirm={handleExcluirEdital}
+      />
+
+      <ConfirmDialog
+        open={!!confirmandoCertVencendo}
+        title="Certidão já vencendo (ou vencida)"
+        description={`A validade informada (${dataValidadeCert ? new Date(dataValidadeCert + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}) já está vencendo ou vencida. Quer enviar mesmo assim?`}
+        confirmLabel="Enviar mesmo assim"
+        danger
+        isLoading={enviandoItemId === confirmandoCertVencendo?.item.id}
+        onCancel={() => setConfirmandoCertVencendo(null)}
+        onConfirm={() => {
+          if (!confirmandoCertVencendo) return
+          const { item, file } = confirmandoCertVencendo
+          setConfirmandoCertVencendo(null)
+          handleEnviarCertidao(item, file)
+        }}
       />
     </div>
   )

@@ -56,22 +56,22 @@ export function arquivoResolvidoDoItem(
   clientDocs: ClientDocument[],
   atestados: AtestadoTecnico[],
   anexosLegado: AttachedFile[]
-): { nome: string; storagePath: string } | null {
+): { nome: string; storagePath: string; dataValidade: string | null } | null {
   if (item.clientDocumentId) {
     const doc = clientDocs.find((d) => d.id === item.clientDocumentId)
-    if (doc?.storagePath) return { nome: doc.nome, storagePath: doc.storagePath }
+    if (doc?.storagePath) return { nome: doc.nome, storagePath: doc.storagePath, dataValidade: doc.dataValidade }
   }
   if (item.clientDocumentTipo) {
     const doc = clientDocs.find((d) => d.tipo === item.clientDocumentTipo)
-    if (doc?.storagePath) return { nome: doc.nome, storagePath: doc.storagePath }
+    if (doc?.storagePath) return { nome: doc.nome, storagePath: doc.storagePath, dataValidade: doc.dataValidade }
   }
   if (item.atestadoId) {
     const a = atestados.find((x) => x.id === item.atestadoId)
-    if (a?.storagePath) return { nome: a.nome, storagePath: a.storagePath }
+    if (a?.storagePath) return { nome: a.nome, storagePath: a.storagePath, dataValidade: null }
   }
   if (item.attachedFileId) {
     const f = anexosLegado.find((x) => x.id === item.attachedFileId)
-    if (f) return { nome: f.name, storagePath: f.storagePath }
+    if (f) return { nome: f.name, storagePath: f.storagePath, dataValidade: null }
   }
   return null
 }
