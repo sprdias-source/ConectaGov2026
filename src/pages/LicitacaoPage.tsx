@@ -17,7 +17,7 @@ import ConfirmDialog from '../components/ui/ConfirmDialog'
 import PdfViewerModal from '../components/ui/PdfViewerModal'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useAttachedFiles } from '../hooks/useAttachedFiles'
-import { useBiddingChecklist, calcularHabilitacao, statusItemChecklist, arquivoResolvidoDoItem } from '../hooks/useBiddingChecklist'
+import { useBiddingChecklist, calcularHabilitacao, statusItemChecklist, arquivoResolvidoDoItem, extrairNumeroEdital } from '../hooks/useBiddingChecklist'
 import { useBuscaCertidaoAutomatica } from '../hooks/useBuscaCertidaoAutomatica'
 import AcoesDocumentoManual from '../components/documentos/AcoesDocumentoManual'
 import DownloadDocumentosModal from '../components/licitacao/DownloadDocumentosModal'
@@ -1138,7 +1138,6 @@ function SecaoTexto({ label, texto }: { label: string; texto?: string | null }) 
 
 function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding; temEdital: boolean; podeEditar: boolean }) {
   const { analysis, analisar, travado } = useBiddingAnalysis(bidding.id)
-  const { addItensEmLote } = useBiddingChecklist(bidding.id)
   const { updateBidding } = useBiddings()
   const { items: itensAtuais } = useBiddingItems(bidding.id)
   const { showToast } = useToast()
@@ -1150,7 +1149,6 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
 
   const localOuFormaEntrega = [analise?.formaEntrega, analise?.localEntrega].filter(Boolean).join(' — ')
   const marcasTexto = Array.isArray(analise?.marcasPreAprovadas) ? analise.marcasPreAprovadas.join(', ') : analise?.marcasPreAprovadas
-  const checklistDocumentacao = analise?.checklistDocumentacao ?? []
   const preenchimento = analise ? construirPreenchimento(analise, itensAtuais) : null
 
   const confirmarPreenchimento = () => {
@@ -1284,13 +1282,10 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
           <SecaoTexto label="Cláusulas Restritivas" texto={analise.clausulasRestritivas} />
           <SecaoTexto label="Conclusão Técnica" texto={analise.conclusaoTecnica} />
 
-          {checklistDocumentacao.length > 0 && (
-            <div className="bg-accent-500/10 border border-accent-500/25 rounded-lg p-3">
-              <p className="text-[12px] text-accent-300 mb-2">{checklistDocumentacao.length} documento(s) sugerido(s) pela análise pra habilitação.</p>
-              <Button variant="secondary" onClick={() => addItensEmLote.mutate(checklistDocumentacao)} disabled={addItensEmLote.isPending}>
-                <Plus className="w-4 h-4" /> {addItensEmLote.isPending ? 'Adicionando...' : 'Adicionar ao Checklist'}
-              </Button>
-            </div>
+          {(analise.checklistDocumentacao?.length ?? 0) > 0 && (
+            <p className="text-[11px] text-base-500 italic">
+              {analise.checklistDocumentacao!.length} documento(s) sugerido(s) pela análise pra habilitação — adicione na aba Checklist &amp; Habilitação.
+            </p>
           )}
         </div>
       )}
@@ -1466,13 +1461,25 @@ export default function LicitacaoPage() {
   const clientName = bidding ? (clients.find((c) => c.id === bidding.clientId)?.name ?? 'Cliente removido') : ''
 
   const { files: anexos, uploadFile: uploadAnexo, uploadProgress, deleteFile: deleteAnexo, getDownloadUrl: getAnexoUrl } = useAttachedFiles('licitacao', bidding?.id)
-  const { items, addItem, updateItem, deleteItem, limparItensIA } = useBiddingChecklist(bidding?.id)
+  const { items, addItem, updateItem, deleteItem, limparItensIA, addItensEmLote } = useBiddingChecklist(bidding?.id)
   const { documents: clientDocs, uploadAndSave: uploadClientDoc } = useClientDocuments(bidding?.clientId)
   const { atestados, addAtestado } = useAtestados(bidding?.clientId)
   const clienteDaLicitacao = clients.find((c) => c.id === bidding?.clientId)
   const { buscando, errosBusca, avisosBusca, buscarAutomatico, limparAviso, limparErro } = useBuscaCertidaoAutomatica(bidding?.clientId, clienteDaLicitacao?.cnpj ?? undefined, podeEditar)
-  const { limparAnalise } = useBiddingAnalysis(bidding?.id)
+  const { analysis, limparAnalise } = useBiddingAnalysis(bidding?.id)
   const { limpar: limparAnaliseJuridica } = useLimparAnaliseJuridica(bidding?.id)
+
+  // Documentos sugeridos pela Análise de Edital pra habilitação — comparados
+  // com os itens de checklist já existentes (mesma transformação de número
+  // usada em addItensEmLote) pra saber quais já foram adicionados e quais
+  // ainda faltam, em vez de sempre oferecer "adicionar" tudo de novo.
+  const checklistDocumentacao = ((analysis?.analise as AnaliseEdital | null)?.checklistDocumentacao ?? [])
+  const descricoesJaNoChecklist = new Set(
+    items.filter((i) => i.origem === 'ia').map((i) => i.descricao)
+  )
+  const checklistSugeridoPendente = checklistDocumentacao.filter(
+    (doc) => !descricoesJaNoChecklist.has(extrairNumeroEdital(doc.descricao).descricao)
+  )
 
   const [enviando, setEnviando] = useState<string | null>(null)
   const [showNovoItem, setShowNovoItem] = useState(false)
@@ -2173,6 +2180,29 @@ export default function LicitacaoPage() {
                       </div>
                     )
                   })}
+                </div>
+              )}
+
+              {checklistDocumentacao.length > 0 && (
+                <div className="mt-3 bg-accent-500/10 border border-accent-500/25 rounded-lg p-3">
+                  {checklistSugeridoPendente.length > 0 ? (
+                    <>
+                      <p className="text-[12px] text-accent-300 mb-2">
+                        {checklistSugeridoPendente.length} documento(s) sugerido(s) pela análise pra habilitação
+                        {checklistSugeridoPendente.length < checklistDocumentacao.length
+                          && ` (${checklistDocumentacao.length - checklistSugeridoPendente.length} já adicionado(s))`}.
+                      </p>
+                      {podeEditar && (
+                        <Button variant="secondary" onClick={() => addItensEmLote.mutate(checklistSugeridoPendente)} disabled={addItensEmLote.isPending}>
+                          <Plus className="w-4 h-4" /> {addItensEmLote.isPending ? 'Adicionando...' : 'Adicionar ao Checklist'}
+                        </Button>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-[12px] text-positive-400 flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5" /> {checklistDocumentacao.length} documento(s) sugerido(s) pela análise já {checklistDocumentacao.length === 1 ? 'foi adicionado' : 'foram adicionados'} ao checklist.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
