@@ -92,9 +92,14 @@ export function useClientDocuments(clientId?: string) {
       // isso, 'manual' sempre gera uma linha nova (insert simples); só as 7
       // certidões automáticas (uma por tipo por cliente, de verdade) usam o
       // upsert, pra sobrescrever a certidão anterior ao renovar.
+      // O banco só tem uma constraint de unicidade não-condicional em
+      // (user_id, client_id, tipo_dedup) — tipo_dedup é NULL pra 'manual'
+      // (Postgres trata cada NULL como distinto, então múltiplos manuais
+      // convivem), e igual a `tipo` pras 7 certidões automáticas (onde uma
+      // unicidade de verdade é esperada). Ver migração 011.
       const { data, error } = doc.tipo === 'manual'
         ? await supabase.from('client_documents').insert(payload).select('id').single()
-        : await supabase.from('client_documents').upsert(payload, { onConflict: 'user_id,client_id,tipo' }).select('id').single()
+        : await supabase.from('client_documents').upsert(payload, { onConflict: 'user_id,client_id,tipo_dedup' }).select('id').single()
       if (error) throw error
       return data.id as string
     },
