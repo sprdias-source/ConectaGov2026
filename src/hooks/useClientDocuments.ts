@@ -8,6 +8,16 @@ import type { ClientDocument, DocumentTipo, DocumentStatus } from '../types/doma
 
 const QUERY_KEY = ['client_documents']
 
+// Erros do Supabase (Postgrest, Storage) são objetos simples com .message,
+// não instância de Error — String(err) neles vira "[object Object]".
+function mensagemDeErro(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (err && typeof err === 'object' && 'message' in err && typeof (err as { message: unknown }).message === 'string') {
+    return (err as { message: string }).message
+  }
+  return String(err)
+}
+
 // Calcula o status real de uma certidão com base na validade e no alerta
 // configurado (padrão: 15 dias de antecedência antes de considerar crítico).
 export function calcDocStatus(dataValidade: string | null, alertaDias = 15): DocumentStatus {
@@ -119,11 +129,13 @@ export function useClientDocuments(clientId?: string) {
       // Cada etapa tem sua própria rede (upload no Storage, depois insert/
       // upsert no Postgrest) — sem esse prefixo por etapa, um erro de rede
       // aparece como "Failed to fetch" cru e não dá pra saber qual das duas
-      // falhou só olhando o toast no celular, sem console.
+      // falhou só olhando o toast no celular, sem console. Erros do
+      // Postgrest/Storage não são instância de Error (são objetos simples
+      // com .message), então String(err) sozinho vira "[object Object]".
       try {
         await uploadResumivel(file, path, session.access_token, () => {})
       } catch (err) {
-        throw new Error(`Envio do arquivo falhou — ${err instanceof Error ? err.message : String(err)}`)
+        throw new Error(`Envio do arquivo falhou — ${mensagemDeErro(err)}`)
       }
       let id: string
       try {
@@ -132,7 +144,7 @@ export function useClientDocuments(clientId?: string) {
           autoRenovavel: false, observacoes, pasta,
         })
       } catch (err) {
-        throw new Error(`Arquivo enviado, mas falhou ao salvar o registro — ${err instanceof Error ? err.message : String(err)}`)
+        throw new Error(`Arquivo enviado, mas falhou ao salvar o registro — ${mensagemDeErro(err)}`)
       }
       return { path, id }
     },
