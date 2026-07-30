@@ -1739,7 +1739,7 @@ export default function LicitacaoPage() {
 
   const itensComAnexo = items
     .map((item) => ({ item, arquivo: arquivoResolvidoDoItem(item, clientDocs, atestados, anexos) }))
-    .filter((x): x is { item: BiddingChecklistItem; arquivo: { nome: string; storagePath: string } } => !!x.arquivo)
+    .filter((x): x is { item: BiddingChecklistItem; arquivo: NonNullable<ReturnType<typeof arquivoResolvidoDoItem>> } => !!x.arquivo)
 
   const PainelStatus = () => statusGeral && (
     <div className={`rounded-xl border p-4 flex items-center justify-between ${
