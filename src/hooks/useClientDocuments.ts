@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { fromClientDocumentRow } from '../lib/mappers'
+import { uploadResumivel } from '../lib/uploadResumivel'
 import { useAuth } from './useAuth'
 import { todayLocalISO } from '../lib/dateUtils'
 import type { ClientDocument, DocumentTipo, DocumentStatus } from '../types/domain'
@@ -113,10 +114,9 @@ export function useClientDocuments(clientId?: string) {
       const path = tipo === 'manual'
         ? `${user.id}/${clientId}/${tipo}/${Date.now()}.${ext}`
         : `${user.id}/${clientId}/${tipo}.${ext}`
-      const { error: uploadError } = await supabase.storage
-        .from('client-documents')
-        .upload(path, file, { upsert: true })
-      if (uploadError) throw uploadError
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Não autenticado')
+      await uploadResumivel(file, path, session.access_token, () => {})
       const id = await upsertDocument.mutateAsync({
         tipo, nome, storagePath: path, dataEmissao, dataValidade,
         autoRenovavel: false, observacoes, pasta,
