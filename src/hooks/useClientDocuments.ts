@@ -116,11 +116,24 @@ export function useClientDocuments(clientId?: string) {
         : `${user.id}/${clientId}/${tipo}.${ext}`
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) throw new Error('Não autenticado')
-      await uploadResumivel(file, path, session.access_token, () => {})
-      const id = await upsertDocument.mutateAsync({
-        tipo, nome, storagePath: path, dataEmissao, dataValidade,
-        autoRenovavel: false, observacoes, pasta,
-      })
+      // Cada etapa tem sua própria rede (upload no Storage, depois insert/
+      // upsert no Postgrest) — sem esse prefixo por etapa, um erro de rede
+      // aparece como "Failed to fetch" cru e não dá pra saber qual das duas
+      // falhou só olhando o toast no celular, sem console.
+      try {
+        await uploadResumivel(file, path, session.access_token, () => {})
+      } catch (err) {
+        throw new Error(`Envio do arquivo falhou — ${err instanceof Error ? err.message : String(err)}`)
+      }
+      let id: string
+      try {
+        id = await upsertDocument.mutateAsync({
+          tipo, nome, storagePath: path, dataEmissao, dataValidade,
+          autoRenovavel: false, observacoes, pasta,
+        })
+      } catch (err) {
+        throw new Error(`Arquivo enviado, mas falhou ao salvar o registro — ${err instanceof Error ? err.message : String(err)}`)
+      }
       return { path, id }
     },
     onSuccess: invalidate,
