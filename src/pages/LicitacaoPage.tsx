@@ -953,7 +953,7 @@ function AbaSessaoAoVivo({ bidding }: { bidding: Bidding }) {
           const proximoLance = ultimoLance > 0 && pct > 0 ? ultimoLance * (1 - pct / 100) : null
           return (
             <div key={i.id} className="bg-base-850/60 border border-base-800 rounded-xl px-5 py-4 flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-4 min-w-0 flex-1">
+              <div className="flex items-center gap-4 min-w-[200px] flex-1">
                 <span className="text-xl font-extrabold font-mono text-accent-300 shrink-0 w-14 text-center">{i.numeroItem}</span>
                 <div className="min-w-0">
                   <p className="text-base font-semibold text-base-100">{i.descricao}</p>
