@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
@@ -71,9 +72,20 @@ export function useBiddingAnalysis(biddingId?: string) {
   })
 
   const analysis = query.data ?? null
+
+  // Date.now() não pode ser chamado direto no corpo do componente (função
+  // impura durante o render) — guardamos o instante atual em estado,
+  // atualizado a cada 5s só enquanto a análise está 'processando'.
+  const [agora, setAgora] = useState(() => Date.now())
+  useEffect(() => {
+    if (analysis?.status !== 'processando') return
+    const id = setInterval(() => setAgora(Date.now()), 5000)
+    return () => clearInterval(id)
+  }, [analysis?.status])
+
   const travado = !!analysis
     && analysis.status === 'processando'
-    && Date.now() - new Date(analysis.updatedAt).getTime() > LIMITE_PROCESSANDO_MS
+    && agora - new Date(analysis.updatedAt).getTime() > LIMITE_PROCESSANDO_MS
 
   const analisar = useMutation({
     mutationFn: async () => {

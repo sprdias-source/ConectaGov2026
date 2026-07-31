@@ -1801,7 +1801,7 @@ export default function LicitacaoPage() {
     .map((item) => ({ item, arquivo: arquivoResolvidoDoItem(item, clientDocs, atestados, anexos) }))
     .filter((x): x is { item: BiddingChecklistItem; arquivo: NonNullable<ReturnType<typeof arquivoResolvidoDoItem>> } => !!x.arquivo)
 
-  const PainelStatus = () => statusGeral && (
+  const painelStatus = statusGeral && (
     <div className={`rounded-xl border p-4 flex items-center justify-between ${
       statusGeral === 'HABILITADO' ? 'bg-positive-500/10 border-positive-500/30' :
       statusGeral === 'ATENÇÃO' ? 'bg-warning-500/10 border-warning-500/30' :
@@ -1872,7 +1872,7 @@ export default function LicitacaoPage() {
       <div className="px-6 mt-5 flex flex-col gap-5">
         {aba === 'visao' && (
           <>
-            <PainelStatus />
+            {painelStatus}
             <ResultadoLicitacao bidding={bidding} />
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Card className="p-3">
@@ -1991,7 +1991,7 @@ export default function LicitacaoPage() {
 
         {aba === 'checklist' && (
           <>
-            <PainelStatus />
+            {painelStatus}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">
