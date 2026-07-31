@@ -1098,22 +1098,29 @@ function construirPreenchimento(analise: AnaliseEdital, itensAtuais: BiddingItem
   if (dataISO) { campos.dataAbertura = dataISO; resumo.push('Data do Pregão') }
   if (analise.validadeProposta) { campos.diasValidadeProposta = analise.validadeProposta; resumo.push('Validade da Proposta') }
 
-  const temItensNaAnalise = !!analise.itens?.length
-  const itens: Partial<BiddingItem>[] = temItensNaAnalise
-    ? analise.itens!.map((it, idx) => ({
-        numeroItem: it.numero != null ? String(it.numero) : String(idx + 1),
-        descricao: it.descricao,
-        unidade: it.unidade ?? null,
-        quantidade: it.quantidade ?? 1,
-        marca: null,
-        referencia: null,
-        valorUnitarioLicitado: it.valorReferencia ?? 0,
-        valorUnitarioOfertado: null,
-      }))
-    : itensAtuais
-  if (temItensNaAnalise) resumo.push(`Itens/Lotes (${analise.itens!.length})`)
+  const itensMapeados = mapearItensDaAnalise(analise)
+  const temItensNaAnalise = !!itensMapeados
+  const itens: Partial<BiddingItem>[] = itensMapeados ?? itensAtuais
+  if (temItensNaAnalise) resumo.push(`Itens/Lotes (${itensMapeados!.length})`)
 
   return { campos, itens, substituiItens: temItensNaAnalise, resumo }
+}
+
+// Mesma transformação usada tanto pelo botão manual "Preencher Licitação com
+// estes Dados" quanto pelo auto-import de itens (ver LicitacaoPage) — só os
+// itens, sem mexer em nenhum outro campo da licitação.
+function mapearItensDaAnalise(analise: AnaliseEdital): Partial<BiddingItem>[] | null {
+  if (!analise.itens?.length) return null
+  return analise.itens.map((it, idx) => ({
+    numeroItem: it.numero != null ? String(it.numero) : String(idx + 1),
+    descricao: it.descricao,
+    unidade: it.unidade ?? null,
+    quantidade: it.quantidade ?? 1,
+    marca: null,
+    referencia: null,
+    valorUnitarioLicitado: it.valorReferencia ?? 0,
+    valorUnitarioOfertado: null,
+  }))
 }
 
 function CampoResumo({ label, valor }: { label: string; valor?: string | null }) {
@@ -1450,7 +1457,7 @@ function AnaliseJuridicaIA({ bidding, temEdital }: { bidding: Bidding; temEdital
 export default function LicitacaoPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { biddings, updateEtapa } = useBiddings()
+  const { biddings, updateEtapa, updateBidding } = useBiddings()
   const { showToast } = useToast()
   const { clients } = useClients()
   const { nivel: nivelLicitacoes } = usePermissaoFerramenta('licitacoes')
@@ -1468,6 +1475,26 @@ export default function LicitacaoPage() {
   const { buscando, errosBusca, avisosBusca, buscarAutomatico, limparAviso, limparErro } = useBuscaCertidaoAutomatica(bidding?.clientId, clienteDaLicitacao?.cnpj ?? undefined, podeEditar)
   const { analysis, limparAnalise } = useBiddingAnalysis(bidding?.id)
   const { limpar: limparAnaliseJuridica } = useLimparAnaliseJuridica(bidding?.id)
+  const { items: itensDaProposta, isLoading: carregandoItensProposta } = useBiddingItems(bidding?.id ?? null)
+
+  // Assim que a IA identifica os itens do edital, eles já entram
+  // automaticamente em Cadastrar Proposta / Proposta Readequada (ambas leem
+  // de bidding_items) — sem precisar clicar em "Preencher Licitação com
+  // estes Dados". Só roda enquanto a lista de itens estiver vazia: nunca
+  // sobrescreve item já cadastrado/editado manualmente (marca, valor
+  // ofertado etc.), e o botão manual continua disponível pra reimportar de
+  // propósito depois (ex: se a análise for refeita).
+  const itensJaImportadosParaRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!bidding || carregandoItensProposta) return
+    if (itensJaImportadosParaRef.current === bidding.id) return
+    const analise = (analysis?.analise ?? null) as AnaliseEdital | null
+    const itensDaAnalise = analise ? mapearItensDaAnalise(analise) : null
+    if (itensDaAnalise && itensDaProposta.length === 0) {
+      itensJaImportadosParaRef.current = bidding.id
+      updateBidding.mutate({ bidding, items: itensDaAnalise })
+    }
+  }, [bidding, analysis, itensDaProposta, carregandoItensProposta, updateBidding])
 
   // Documentos sugeridos pela Análise de Edital pra habilitação — comparados
   // com os itens de checklist já existentes (mesma transformação de número
