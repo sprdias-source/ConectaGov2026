@@ -91,6 +91,7 @@ export function StatusBadge({ status }: { status: string }) {
     'Em Andamento': 'bg-accent-500/15 text-accent-400 border-accent-500/30',
     'Cancelada': 'bg-base-600/30 text-base-400 border-base-600/40',
     'Cancelado': 'bg-base-600/30 text-base-400 border-base-600/40',
+    'Desistiu': 'bg-warning-500/15 text-warning-400 border-warning-500/30',
     'Faturado': 'bg-positive-500/15 text-positive-400 border-positive-500/30',
   }
   return (

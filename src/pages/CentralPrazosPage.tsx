@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { AlarmClock, ChevronRight, Gavel, Globe, ShieldAlert, Wallet } from 'lucide-react'
+import { AlarmClock, ChevronRight, Gavel, Globe, ShieldAlert, Wallet, Send } from 'lucide-react'
 import { PageHeader, Card, EmptyState } from '../components/ui/Primitives'
 import { SkeletonList } from '../components/ui/Skeleton'
 import { useBiddings } from '../hooks/useBiddings'
@@ -10,13 +10,14 @@ import { useAllBiddingChecklistItems } from '../hooks/useBiddingChecklist'
 import { useAllClientDocuments, calcDocStatus, diasRestantes } from '../hooks/useClientDocuments'
 import { useAllClientPlatforms, calcPlatformStatus, diasParaVencer } from '../hooks/useClientPlatforms'
 import { usePlatforms } from '../hooks/usePlatforms'
+import { useOpportunities, calcOpportunityStatus, diasParaSessao } from '../hooks/useOpportunities'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { CERT_CONFIG } from '../types/domain'
 import { todayLocalISO } from '../lib/dateUtils'
 
 type ItemPrazo = {
   key: string
-  tipo: 'Pregão' | 'Certidão' | 'Financeiro' | 'Plataforma'
+  tipo: 'Pregão' | 'Certidão' | 'Financeiro' | 'Plataforma' | 'Oportunidade'
   titulo: string
   subtitulo: string
   data: string
@@ -40,6 +41,7 @@ export default function CentralPrazosPage() {
   const { items: allChecklistItems, isLoading: loadingChecklist } = useAllBiddingChecklistItems()
   const { clientPlatforms, isLoading: loadingPlatforms } = useAllClientPlatforms()
   const { platforms } = usePlatforms()
+  const { opportunities, isLoading: loadingOpportunities } = useOpportunities()
 
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? 'Cliente removido'
 
@@ -162,15 +164,34 @@ export default function CentralPrazosPage() {
       })
     }
 
-    return lista.sort((a, b) => a.dias - b.dias)
-  }, [biddings, documents, allChecklistItems, transactions, clients, clientPlatforms, platforms])
+    // Oportunidades (editais enviados pro cliente avaliar, antes de virar
+    // licitação de verdade) urgentes ou vencidas — mesma régua de
+    // calcOpportunityStatus/diasParaSessao usada na aba Oportunidades, com a
+    // antecedência de aviso vindo do próprio registro (dias_aviso_prazo).
+    for (const o of opportunities) {
+      const status = calcOpportunityStatus(o)
+      if (status !== 'urgente' && status !== 'vencida') continue
+      lista.push({
+        key: `opportunity-${o.id}`,
+        tipo: 'Oportunidade',
+        titulo: o.titulo,
+        subtitulo: `${clientName(o.clientId)} — aguardando resposta`,
+        data: o.dataSessao ?? hoje,
+        dias: diasParaSessao(o.dataSessao) ?? 0,
+        link: `/cadastros?tab=oportunidades`,
+      })
+    }
 
-  const isLoading = loadingBiddings || loadingTransactions || loadingDocuments || loadingChecklist || loadingPlatforms
+    return lista.sort((a, b) => a.dias - b.dias)
+  }, [biddings, documents, allChecklistItems, transactions, clients, clientPlatforms, platforms, opportunities])
+
+  const isLoading = loadingBiddings || loadingTransactions || loadingDocuments || loadingChecklist || loadingPlatforms || loadingOpportunities
 
   const iconFor = (tipo: ItemPrazo['tipo']) => {
     if (tipo === 'Pregão') return Gavel
     if (tipo === 'Certidão') return ShieldAlert
     if (tipo === 'Plataforma') return Globe
+    if (tipo === 'Oportunidade') return Send
     return Wallet
   }
 

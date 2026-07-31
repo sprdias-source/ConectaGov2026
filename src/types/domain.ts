@@ -20,7 +20,12 @@ export type BiddingTipo =
   | 'Técnica e Preço'
   | 'Maior Retorno Econômico'
 
-export type BiddingStatus = 'Em Andamento' | 'Ganhou' | 'Perdeu' | 'Cancelada'
+// 'Desistiu' é diferente de 'Cancelada': Desistiu é quando o CLIENTE decide
+// não participar mais (mesmo já com a licitação em andamento no Kanban);
+// Cancelada continua sendo quando o próprio ÓRGÃO cancela o certame. Contam
+// separado no relatório mensal — por isso são dois status, não um só com
+// motivo em texto livre.
+export type BiddingStatus = 'Em Andamento' | 'Ganhou' | 'Perdeu' | 'Cancelada' | 'Desistiu'
 
 export type BiddingEtapa =
   | 'Análise de Edital'
@@ -103,6 +108,7 @@ export interface Bidding {
   diasValidadeProposta: string | null
   modeloCustomizadoPath: string | null
   motivoPerda: string | null
+  motivoDesistencia: string | null
   isActive: boolean
   createdAt: string
   updatedAt: string
@@ -241,7 +247,7 @@ export interface Receipt {
 }
 
 export type FileCategory = 'Edital' | 'Termo de Referência' | 'Contrato' | 'Recibo' | 'Certidão' | 'Outro' | 'Checklist' | 'Proposta' | 'Proposta Readequada'
-export type FileEntityType = 'licitacao' | 'contrato' | 'recibo' | 'cliente' | 'funcionario' | 'empenho'
+export type FileEntityType = 'licitacao' | 'contrato' | 'recibo' | 'cliente' | 'funcionario' | 'empenho' | 'oportunidade'
 
 export interface AttachedFile {
   id: string
@@ -458,6 +464,83 @@ export interface ClientPlatform {
 // preenchida — não é sobre ser paga ou não, é sobre ter ou não uma data
 // pra vencer.
 export type PlatformStatus = 'ativa' | 'vencendo' | 'vencida' | 'sem_vencimento'
+
+export type OpportunityResposta = 'pendente' | 'aceita' | 'recusada'
+
+// O estágio antes de uma Licitação existir de verdade: edital encontrado
+// numa plataforma, mandado pro cliente avaliar. Só vira uma Bidding (e só
+// aí entra no Kanban) quando o cliente confirma que quer participar — ver
+// biddingId, preenchido no momento da conversão.
+export interface Opportunity {
+  id: string
+  userId: string
+  clientId: string
+  platformId: string
+  titulo: string
+  numeroEdital: string | null
+  dataSessao: string | null
+  dataEnvioCliente: string | null
+  resposta: OpportunityResposta
+  dataResposta: string | null
+  motivoRecusa: string | null
+  diasAvisoPrazo: number
+  biddingId: string | null
+  observacoes: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+// 'resolvida' cobre tanto aceita quanto recusada — já saiu da fila de
+// "esperando resposta", não precisa mais de alerta de prazo.
+export type OpportunityStatus = 'aguardando' | 'urgente' | 'vencida' | 'resolvida'
+
+// Resultado da análise de edital por IA — usado tanto pela function
+// Analisar-edital (bidding_analysis, licitação já cadastrada) quanto pela
+// Analisar-oportunidade (opportunity_analysis, ainda no estágio de
+// oportunidade) — o schema/prompt das duas é o mesmo, só muda onde grava.
+export interface AnaliseEdital {
+  municipio?: string
+  orgao?: string
+  objeto?: string
+  numeroEdital?: string
+  numeroProcesso?: string
+  modalidade?: string
+  srp?: boolean
+  data?: string
+  horario?: string
+  portal?: string
+  intervaloLances?: string
+  modoDisputa?: {
+    tipo?: string
+    duracaoFaseAberta?: string
+    duracaoFaseFechada?: string
+    prorrogacaoAutomatica?: string
+    tempoAleatorio?: string
+    criterioEncerramento?: string
+    observacoes?: string
+  }
+  resumoTecnico?: string
+  itens?: { numero?: string | number; idPortal?: string | number; lote?: string | number; descricao: string; unidade?: string; quantidade?: number; valorReferencia?: number }[]
+  validadeProposta?: string
+  catalogo?: string
+  garantias?: string
+  amostras?: string
+  marcasPreAprovadas?: string[] | string
+  habilitacao?: {
+    habilitacaoJuridica?: string
+    regularidadeFiscalTrabalhista?: string
+    qualificacaoEconomicoFinanceira?: string
+    qualificacaoTecnica?: string
+    proposta?: string
+  }
+  prazos?: string
+  formaEntrega?: string
+  localEntrega?: string
+  condicoesPagamento?: string
+  clausulasRestritivas?: string
+  conclusaoTecnica?: string
+  checklistDocumentacao?: { descricao: string; categoria?: string | null; obrigatorio?: boolean }[]
+}
 
 // Configuração de cada tipo de certidão automática
 export const CERT_CONFIG: Record<Exclude<DocumentTipo, 'manual'>, {
