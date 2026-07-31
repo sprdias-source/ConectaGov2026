@@ -2156,7 +2156,7 @@ export default function LicitacaoPage() {
                                   />
                                   <Button
                                     onClick={() => certFileSelecionado && handleClicarSalvarCertidao(item, certFileSelecionado)}
-                                    disabled={!certFileSelecionado || !dataValidadeCert || enviandoEste}
+                                    disabled={!certFileSelecionado || enviandoEste}
                                   >
                                     {enviandoEste ? 'Salvando...' : 'Salvar'}
                                   </Button>
