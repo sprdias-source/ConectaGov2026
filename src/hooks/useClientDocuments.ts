@@ -2,21 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { fromClientDocumentRow } from '../lib/mappers'
 import { uploadResumivel } from '../lib/uploadResumivel'
+import { mensagemDeErro } from '../lib/errors'
 import { useAuth } from './useAuth'
 import { todayLocalISO } from '../lib/dateUtils'
 import type { ClientDocument, DocumentTipo, DocumentStatus } from '../types/domain'
 
 const QUERY_KEY = ['client_documents']
-
-// Erros do Supabase (Postgrest, Storage) são objetos simples com .message,
-// não instância de Error — String(err) neles vira "[object Object]".
-function mensagemDeErro(err: unknown): string {
-  if (err instanceof Error) return err.message
-  if (err && typeof err === 'object' && 'message' in err && typeof (err as { message: unknown }).message === 'string') {
-    return (err as { message: string }).message
-  }
-  return String(err)
-}
 
 // Calcula o status real de uma certidão com base na validade e no alerta
 // configurado (padrão: 15 dias de antecedência antes de considerar crítico).
