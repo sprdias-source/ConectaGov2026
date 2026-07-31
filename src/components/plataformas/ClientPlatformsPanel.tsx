@@ -6,6 +6,7 @@ import CampoSenha from '../auth/CampoSenha'
 import { usePlatforms } from '../../hooks/usePlatforms'
 import { useClientPlatforms, calcPlatformStatus, diasParaVencer } from '../../hooks/useClientPlatforms'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
+import { mensagemDeErro } from '../../lib/errors'
 import type { ClientPlatform, PlatformStatus, PlatformTipo } from '../../types/domain'
 
 const NOVA_PLATAFORMA = '__nova__'
@@ -125,7 +126,7 @@ export default function ClientPlatformsPanel({ clientId, clientName }: Props) {
       }
       fechar()
     } catch (err) {
-      setErro(err instanceof Error ? err.message : String(err))
+      setErro(mensagemDeErro(err))
     }
   }
 
