@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, FileText, Upload, Plus, Trash2, CheckCircle2, Circle, Download, Eye,
   AlertCircle, Loader2, Sparkles, Award, Check, History, ChevronDown, ChevronUp,
@@ -1492,7 +1492,12 @@ export default function LicitacaoPage() {
   const { clients } = useClients()
   const { nivel: nivelLicitacoes } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivelLicitacoes === 'edicao'
-  const [aba, setAba] = useState<AbaKey>('visao')
+  const [searchParams] = useSearchParams()
+  // Permite chegar direto numa aba específica via link (ex: um alerta de
+  // pendência em ?aba=checklist) — só aceita chaves reais de ABAS, senão
+  // cai no padrão de sempre.
+  const abaInicial = ABAS.find((a) => a.key === searchParams.get('aba'))?.key ?? 'visao'
+  const [aba, setAba] = useState<AbaKey>(abaInicial)
 
   const bidding = biddings.find((b) => b.id === id)
   const clientName = bidding ? (clients.find((c) => c.id === bidding.clientId)?.name ?? 'Cliente removido') : ''

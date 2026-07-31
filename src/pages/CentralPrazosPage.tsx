@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import { AlarmClock, Gavel, Globe, ShieldAlert, Wallet } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { AlarmClock, ChevronRight, Gavel, Globe, ShieldAlert, Wallet } from 'lucide-react'
 import { PageHeader, Card, EmptyState } from '../components/ui/Primitives'
 import { SkeletonList } from '../components/ui/Skeleton'
 import { useBiddings } from '../hooks/useBiddings'
@@ -21,6 +22,10 @@ type ItemPrazo = {
   data: string
   dias: number
   valor?: number
+  // Rota que leva direto pra tela onde esse prazo pode ser resolvido —
+  // cada tipo aponta pra um lugar diferente (ver comentários no useMemo
+  // abaixo).
+  link: string
 }
 
 // Janela de antecedência pra considerar um pregão "próximo" — mesma lógica
@@ -57,6 +62,7 @@ export default function CentralPrazosPage() {
         subtitulo: `${clientName(b.clientId)} — ${b.orgao}`,
         data: b.dataAbertura,
         dias,
+        link: `/licitacoes/${b.id}`,
       })
     }
 
@@ -92,6 +98,10 @@ export default function CentralPrazosPage() {
             : `${clientName(doc.clientId)} — vinculada à sessão de "${biddingVinculada.objeto.slice(0, 40)}"`,
           data: doc.dataValidade ?? hoje,
           dias: diasRestantes(doc.dataValidade) ?? 0,
+          // Vinculada a uma sessão: o lugar certo pra resolver é o
+          // checklist DAQUELA licitação, não o repositório genérico do
+          // cliente — é lá que o vínculo é cobrado.
+          link: `/licitacoes/${biddingVinculada.id}?aba=checklist`,
         })
         continue
       }
@@ -104,6 +114,9 @@ export default function CentralPrazosPage() {
         subtitulo: clientName(doc.clientId),
         data: doc.dataValidade ?? hoje,
         dias: diasRestantes(doc.dataValidade) ?? 0,
+        // Sem sessão vinculada: o lugar certo é o repositório do cliente
+        // em Cadastros, já com o cliente selecionado.
+        link: `/cadastros?tab=documentos&clientId=${doc.clientId}`,
       })
     }
 
@@ -115,6 +128,7 @@ export default function CentralPrazosPage() {
         / (1000 * 60 * 60 * 24)
       )
       if (dias > JANELA_PREGOES_DIAS) continue
+      const vencimento = new Date(t.dueDate + 'T12:00:00')
       lista.push({
         key: `tx-${t.id}`,
         tipo: 'Financeiro',
@@ -123,6 +137,10 @@ export default function CentralPrazosPage() {
         data: t.dueDate,
         dias,
         valor: t.value,
+        // Leva pro mês do vencimento (senão o lançamento fica invisível,
+        // já que a tela só mostra o mês atual por padrão) e destaca a
+        // linha certa.
+        link: `/contas?mes=${vencimento.getMonth()}&ano=${vencimento.getFullYear()}&highlight=${t.id}`,
       })
     }
 
@@ -140,6 +158,7 @@ export default function CentralPrazosPage() {
         data: cp.dataVencimento ?? hoje,
         dias: diasParaVencer(cp.dataVencimento) ?? 0,
         valor: cp.tipo === 'paga' ? cp.valorMensalidade ?? undefined : undefined,
+        link: `/cadastros?tab=plataformas&clientId=${cp.clientId}`,
       })
     }
 
@@ -188,25 +207,30 @@ export default function CentralPrazosPage() {
             {itens.map((item) => {
               const Icon = iconFor(item.tipo)
               return (
-                <Card key={item.key} className={`p-3.5 flex items-center gap-3 border ${corFor(item.dias)}`}>
-                  <div className="p-2 rounded-lg bg-base-900/60 shrink-0">
-                    <Icon className="w-4 h-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] font-bold uppercase tracking-wider opacity-70">{item.tipo}</span>
+                <Link key={item.key} to={item.link} className="block">
+                  <Card className={`p-3.5 flex items-center gap-3 border transition hover:brightness-125 cursor-pointer ${corFor(item.dias)}`}>
+                    <div className="p-2 rounded-lg bg-base-900/60 shrink-0">
+                      <Icon className="w-4 h-4" />
                     </div>
-                    <p className="text-[13px] font-semibold text-base-100 truncate">{item.titulo}</p>
-                    <p className="text-[11px] text-base-500 truncate">{item.subtitulo}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-[12px] font-bold">{labelDias(item.dias)}</p>
-                    <p className="text-[10px] text-base-500">
-                      {new Date(item.data + 'T12:00:00').toLocaleDateString('pt-BR')}
-                      {item.valor !== undefined && ` — ${formatBRL(item.valor)}`}
-                    </p>
-                  </div>
-                </Card>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-bold uppercase tracking-wider opacity-70">{item.tipo}</span>
+                      </div>
+                      <p className="text-[13px] font-semibold text-base-100 truncate">{item.titulo}</p>
+                      <p className="text-[11px] text-base-500 truncate">{item.subtitulo}</p>
+                    </div>
+                    <div className="text-right shrink-0 flex items-center gap-2">
+                      <div>
+                        <p className="text-[12px] font-bold">{labelDias(item.dias)}</p>
+                        <p className="text-[10px] text-base-500">
+                          {new Date(item.data + 'T12:00:00').toLocaleDateString('pt-BR')}
+                          {item.valor !== undefined && ` — ${formatBRL(item.valor)}`}
+                        </p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 opacity-40" />
+                    </div>
+                  </Card>
+                </Link>
               )
             })}
           </div>

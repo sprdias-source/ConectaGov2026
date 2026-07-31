@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { FolderKanban, Users, Gavel, Wallet, FileText, Globe } from 'lucide-react'
 import { PageHeader, Card } from '../components/ui/Primitives'
 import { Select } from '../components/ui/FormControls'
@@ -12,10 +13,16 @@ import HabilitacaoChecklist from '../components/documentos/HabilitacaoChecklist'
 import ClientPlatformsPanel from '../components/plataformas/ClientPlatformsPanel'
 
 type Tab = 'clientes' | 'licitacoes' | 'contas' | 'documentos' | 'plataformas'
+const TABS_VALIDAS: Tab[] = ['clientes', 'licitacoes', 'contas', 'documentos', 'plataformas']
 
 export default function CadastrosPage() {
-  const [tab, setTab] = useState<Tab>('clientes')
-  const [selectedClientId, setSelectedClientId] = useState<string>('')
+  const [searchParams] = useSearchParams()
+  // Permite chegar direto numa aba com um cliente já selecionado via link
+  // (ex: um alerta de certidão/plataforma vencendo em
+  // ?tab=documentos&clientId=...) — só aceita chaves reais de Tab.
+  const tabInicial = TABS_VALIDAS.find((t) => t === searchParams.get('tab')) ?? 'clientes'
+  const [tab, setTab] = useState<Tab>(tabInicial)
+  const [selectedClientId, setSelectedClientId] = useState<string>(searchParams.get('clientId') ?? '')
   const { clients } = useClients()
   const { biddings } = useBiddings()
   const { accounts } = useFinancialAccounts()

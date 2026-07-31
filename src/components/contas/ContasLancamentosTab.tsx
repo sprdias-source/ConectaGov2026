@@ -1,4 +1,5 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Plus, Search, Pencil, Trash2, ArrowDownCircle, ArrowUpCircle, Check, Receipt, Repeat, Tags, CreditCard } from 'lucide-react'
 import { Button, Input } from '../ui/FormControls'
 import { EmptyState, StatusBadge } from '../ui/Primitives'
@@ -28,9 +29,22 @@ export default function ContasLancamentosTab() {
   const { nivel: nivelFinanceiro } = usePermissaoFerramenta('financeiro')
   const podeEditar = nivelFinanceiro === 'edicao'
 
+  // Chegando de um alerta (ex: Central de Prazos), a URL pode trazer o mês
+  // do vencimento e o id do lançamento a destacar — sem isso, um lançamento
+  // fora do mês atual fica invisível até o usuário navegar manualmente.
+  const [searchParams] = useSearchParams()
+  const highlightId = searchParams.get('highlight')
+  const jaPaginouParaHighlightRef = useRef(false)
+
   const now = new Date()
-  const [month, setMonth] = useState(now.getMonth())
-  const [year, setYear] = useState(now.getFullYear())
+  const [month, setMonth] = useState(() => {
+    const mes = searchParams.get('mes')
+    return mes !== null ? parseInt(mes, 10) : now.getMonth()
+  })
+  const [year, setYear] = useState(() => {
+    const ano = searchParams.get('ano')
+    return ano !== null ? parseInt(ano, 10) : now.getFullYear()
+  })
   const [filter, setFilter] = useState<'todos' | 'atrasados' | 'vence_hoje'>('todos')
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
@@ -65,6 +79,22 @@ export default function ContasLancamentosTab() {
   useEffect(() => {
     setPage(1)
   }, [month, year, filter, search, setPage])
+
+  // Depois do reset acima, pula direto pra página onde o lançamento
+  // destacado está — sem isso, ele pode ficar numa página seguinte, fora
+  // de vista, mesmo já no mês certo.
+  useEffect(() => {
+    if (!highlightId || jaPaginouParaHighlightRef.current) return
+    const idx = filtered.findIndex((t) => t.id === highlightId)
+    if (idx === -1) return
+    jaPaginouParaHighlightRef.current = true
+    setPage(Math.floor(idx / pageSize) + 1)
+  }, [filtered, highlightId, pageSize, setPage])
+
+  useEffect(() => {
+    if (!highlightId) return
+    document.getElementById(`tx-${highlightId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [highlightId, paginated])
 
   const summary = useMemo(() => {
     const aPagar = periodTxs.filter((t) => t.type === 'Pagar' && t.status !== 'Pago').reduce((s, t) => s + t.value, 0)
@@ -191,7 +221,13 @@ export default function ContasLancamentosTab() {
               </thead>
               <tbody>
                 {paginated.map((t) => (
-                  <tr key={t.id} className="border-b border-base-800/60 hover:bg-base-850/40 transition">
+                  <tr
+                    key={t.id}
+                    id={`tx-${t.id}`}
+                    className={`border-b border-base-800/60 hover:bg-base-850/40 transition ${
+                      t.id === highlightId ? 'bg-accent-500/10 ring-1 ring-inset ring-accent-500/40' : ''
+                    }`}
+                  >
                     <td className="px-4 py-3 text-base-300 text-[13px] whitespace-nowrap">
                       {new Date(t.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}
                     </td>
