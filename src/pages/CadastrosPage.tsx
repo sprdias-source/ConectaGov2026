@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { FolderKanban, Users, Gavel, Wallet, FileText, Globe } from 'lucide-react'
+import { FolderKanban, Users, Gavel, Wallet, FileText, Globe, Send } from 'lucide-react'
 import { PageHeader, Card } from '../components/ui/Primitives'
 import { Select } from '../components/ui/FormControls'
 import { useClients } from '../hooks/useClients'
@@ -11,9 +11,10 @@ import BiddingsTab from '../components/cadastros/BiddingsTab'
 import AccountsTab from '../components/cadastros/AccountsTab'
 import HabilitacaoChecklist from '../components/documentos/HabilitacaoChecklist'
 import ClientPlatformsPanel from '../components/plataformas/ClientPlatformsPanel'
+import OportunidadesPanel from '../components/oportunidades/OportunidadesPanel'
 
-type Tab = 'clientes' | 'licitacoes' | 'contas' | 'documentos' | 'plataformas'
-const TABS_VALIDAS: Tab[] = ['clientes', 'licitacoes', 'contas', 'documentos', 'plataformas']
+type Tab = 'clientes' | 'licitacoes' | 'contas' | 'documentos' | 'plataformas' | 'oportunidades'
+const TABS_VALIDAS: Tab[] = ['clientes', 'licitacoes', 'contas', 'documentos', 'plataformas', 'oportunidades']
 
 export default function CadastrosPage() {
   const [searchParams] = useSearchParams()
@@ -33,6 +34,7 @@ export default function CadastrosPage() {
     { key: 'contas', label: 'Contas & Cartões', icon: Wallet, count: accounts.length },
     { key: 'documentos', label: 'Documentos de Habilitação', icon: FileText },
     { key: 'plataformas', label: 'Plataformas', icon: Globe },
+    { key: 'oportunidades', label: 'Oportunidades', icon: Send },
   ]
 
   const selectedClient = clients.find((c) => c.id === selectedClientId)
@@ -131,6 +133,8 @@ export default function CadastrosPage() {
             )}
           </div>
         )}
+
+        {tab === 'oportunidades' && <OportunidadesPanel />}
       </div>
     </div>
   )

@@ -1,0 +1,327 @@
+// Edge Function: Analisar-oportunidade
+//
+// Cópia adaptada de Analisar-edital, pro estágio de Oportunidade (antes da
+// licitação existir de verdade — ver tabela `opportunities`). Mesmo prompt,
+// mesmo schema, mesmo mecanismo de upload em segundo plano — só muda ONDE
+// verifica permissão (opportunities em vez de biddings) e ONDE grava o
+// resultado (opportunity_analysis em vez de bidding_analysis).
+//
+// Quando a oportunidade é convertida em licitação (ver fluxo de conversão
+// em useOpportunities.ts), o resultado desta análise é COPIADO direto pra
+// bidding_analysis da licitação nova — não roda a IA de novo.
+//
+// Recebe { opportunityId }, marca a análise como "processando" e devolve a
+// resposta IMEDIATAMENTE — o trabalho pesado roda em SEGUNDO PLANO via
+// EdgeRuntime.waitUntil(), depois que a resposta já foi enviada (mesmo
+// motivo de Analisar-edital: editais grandes podem passar do limite de
+// execução síncrona de uma Edge Function).
+//
+// VARIÁVEIS DE AMBIENTE NECESSÁRIAS (Supabase → Edge Functions → Secrets):
+// - GEMINI_API_KEY: a mesma chave já usada pela function Analisar-edital.
+// - SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY já vêm injetadas
+//   automaticamente pelo Supabase em toda Edge Function.
+
+import { createClient } from 'jsr:@supabase/supabase-js@2'
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!
+const GEMINI_MODEL = 'gemini-flash-latest'
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+}
+
+type Supa = ReturnType<typeof createClient>
+type Anexo = { id: string; name: string; storage_path: string; mime_type: string | null; size_bytes: number | null; category: string }
+
+// Mesmo schema de Analisar-edital — os dois alimentam o mesmo tipo
+// AnaliseEdital no frontend (src/types/domain.ts).
+const ANALISE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    municipio: { type: 'STRING' },
+    orgao: { type: 'STRING' },
+    objeto: { type: 'STRING' },
+    numeroEdital: { type: 'STRING' },
+    numeroProcesso: { type: 'STRING' },
+    modalidade: { type: 'STRING' },
+    srp: { type: 'BOOLEAN' },
+    data: { type: 'STRING' },
+    horario: { type: 'STRING' },
+    portal: { type: 'STRING' },
+    intervaloLances: { type: 'STRING' },
+    modoDisputa: {
+      type: 'OBJECT',
+      properties: {
+        tipo: { type: 'STRING' },
+        duracaoFaseAberta: { type: 'STRING' },
+        duracaoFaseFechada: { type: 'STRING' },
+        prorrogacaoAutomatica: { type: 'STRING' },
+        tempoAleatorio: { type: 'STRING' },
+        criterioEncerramento: { type: 'STRING' },
+        observacoes: { type: 'STRING' },
+      },
+    },
+    resumoTecnico: { type: 'STRING' },
+    itens: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          numero: { type: 'STRING' },
+          descricao: { type: 'STRING' },
+          unidade: { type: 'STRING' },
+          quantidade: { type: 'NUMBER' },
+          valorReferencia: { type: 'NUMBER' },
+        },
+      },
+    },
+    validadeProposta: { type: 'STRING' },
+    catalogo: { type: 'STRING' },
+    garantias: { type: 'STRING' },
+    amostras: { type: 'STRING' },
+    marcasPreAprovadas: { type: 'STRING' },
+    habilitacao: {
+      type: 'OBJECT',
+      properties: {
+        habilitacaoJuridica: { type: 'STRING' },
+        regularidadeFiscalTrabalhista: { type: 'STRING' },
+        qualificacaoEconomicoFinanceira: { type: 'STRING' },
+        qualificacaoTecnica: { type: 'STRING' },
+        proposta: { type: 'STRING' },
+      },
+    },
+    prazos: { type: 'STRING' },
+    formaEntrega: { type: 'STRING' },
+    localEntrega: { type: 'STRING' },
+    condicoesPagamento: { type: 'STRING' },
+    clausulasRestritivas: { type: 'STRING' },
+    conclusaoTecnica: { type: 'STRING' },
+    checklistDocumentacao: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          descricao: { type: 'STRING' },
+          categoria: { type: 'STRING' },
+          obrigatorio: { type: 'BOOLEAN' },
+        },
+        required: ['descricao'],
+      },
+    },
+  },
+}
+
+// Mesmo prompt de Analisar-edital, palavra por palavra — mantém as duas
+// functions devolvendo o mesmo formato de resultado.
+const PROMPT = `Você é um analista de licitações públicas brasileiras, especialista na Lei nº 14.133/2021 e no Decreto nº 10.024/2019 (pregão eletrônico). Analise o edital (e o termo de referência, se estiver junto) em anexo e devolva um JSON com os campos do schema fornecido.
+
+Preencha todos os campos que conseguir identificar no documento; deixe null ou vazio o que não encontrar — nunca invente informação.
+
+IMPORTANTE: quando a mesma informação aparecer repetida em várias partes do edital (isso é comum — o mesmo prazo ou regra costuma aparecer no resumo, no modelo de proposta e nas condições gerais, cada vez com uma frase um pouco diferente), responda UMA ÚNICA VEZ, de forma direta e resumida — nunca liste cada variação de texto que encontrar. Ex: se o edital disser "90 dias" em três lugares com frases diferentes, o campo deve conter só "90 dias, contados da abertura da sessão", nunca as três frases juntas.
+
+Para "objeto", transcreva (resumindo só o essencial, sem cortar o sentido) a cláusula "Do Objeto" do edital — a frase formal que descreve o que está sendo licitado, tipo "Contratação de empresa especializada para fornecimento de...". Não confunda com "resumoTecnico", que é uma análise, não uma transcrição.
+
+Para "numeroEdital", extraia o número de identificação do edital tal como escrito no documento (ex: "05/2026", "Edital nº 012/2026").
+
+Para "numeroProcesso", extraia o número do processo administrativo/licitatório associado, se o edital mencionar (ex: "Processo nº 423/2026", "Processo Administrativo 1234/2026").
+
+Para "intervaloLances", procure a cláusula do edital que define o intervalo/diferença MÍNIMA exigida entre um lance e o lance anterior durante a disputa (geralmente na seção sobre "modo de disputa", "lances" ou "fase de lances" do pregão eletrônico). Transcreva a regra tal como o edital define, incluindo a unidade (percentual ou valor fixo) — ex: "1% (um por cento)", "0,5%", "R$ 50,00". Se o edital definir regras diferentes pra fases diferentes (ex: lances abertos x fechados), traga a regra da fase de lances abertos/aberta, que é a que vale durante a disputa ao vivo. Se não encontrar essa cláusula, deixe null — não invente um percentual.
+
+Para "modoDisputa", localize a cláusula do edital que define o MODO DE DISPUTA da sessão pública (geralmente na seção "Do Modo de Disputa", "Da Sessão Pública" ou "Dos Lances") e preencha, como um analista de licitações preencheria uma ficha de acompanhamento de sessão:
+- tipo: "Aberto", "Fechado" ou "Aberto e Fechado", exatamente como o edital classificar;
+- duracaoFaseAberta: a duração da fase de lances abertos, se houver — inclua tanto o tempo fixo quanto a regra de encerramento por inatividade, se o edital definir as duas coisas (ex: "15 minutos, encerrando automaticamente após 10 minutos sem novo lance");
+- duracaoFaseFechada: a duração/regra da fase fechada, se houver (ex: "10 minutos para envio da proposta final lacrada", "os 3 melhores classificados têm até 5 minutos para ofertar nova proposta");
+- prorrogacaoAutomatica: a regra de prorrogação automática da fase aberta, se o edital previr (ex: "prorroga automaticamente por mais 2 minutos a cada novo lance registrado nos 2 minutos finais");
+- tempoAleatorio: se o edital previr um tempo aleatório de encerramento decidido pelo sistema (comum no modo aberto, tipicamente de até 30 minutos), descreva a regra tal como escrita;
+- criterioEncerramento: resuma, em poucas palavras, o que efetivamente encerra a disputa (ex: "inatividade + tempo aleatório do sistema", "decisão do pregoeiro", "prazo fixo sem prorrogação");
+- observacoes: qualquer outra regra relevante da disputa que não caiba nos campos acima (ex: regra específica de desempate na fase de lances, retorno à fase de lances em caso de desclassificação, particularidades do modo combinado).
+Preencha só o que o próprio edital detalhar explicitamente — nunca complete uma regra com o que é "padrão" ou "comum" no mercado se o documento não disser isso.
+
+ATENÇÃO ESPECIAL com unidades que têm expoente (m², m³, cm³, km² etc.) nos itens: releia a quantidade e a unidade completas com cuidado antes de preencher — o caractere de expoente (², ³) não pode cortar ou confundir o número nem a unidade ao lado dele. Exemplo: "405 m³" tem que virar quantidade 405 e unidade "m³" — nunca quantidade 4 e unidade "m", nem qualquer outra combinação truncada.
+
+Para "checklistDocumentacao", liste TODOS os documentos de habilitação exigidos no edital (jurídica, fiscal/trabalhista, econômico-financeira, técnica), um item por documento, marcando "obrigatorio: true" para os exigidos e "obrigatorio: false" só se o próprio edital disser que é facultativo/complementar. SEMPRE que o próprio edital numerar aquele documento (cláusula, item ou alínea, ex: "5.2", "5.2.1", "5 a)", "8.3 b)"), inicie o campo "descricao" com esse número/alínea EXATAMENTE como aparece no edital, seguido de um espaço e então o nome do documento — ex: "5.2 a) Comprovação de inscrição no CNPJ", "8.3 Certidão Negativa de Débitos Trabalhistas (CNDT)". Se o edital não numerar aquele item especificamente, escreva só a descrição, sem inventar numeração.
+
+Para os 5 campos de "habilitacao", resuma em texto corrido o que o edital exige em cada categoria (habilitação jurídica, regularidade fiscal e trabalhista, qualificação econômico-financeira, qualificação técnica, proposta).`
+
+async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeBytes: number, mimeType: string, displayName: string) {
+  const startRes = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${GEMINI_API_KEY}`, {
+    method: 'POST',
+    headers: {
+      'X-Goog-Upload-Protocol': 'resumable',
+      'X-Goog-Upload-Command': 'start',
+      'X-Goog-Upload-Header-Content-Length': String(sizeBytes),
+      'X-Goog-Upload-Header-Content-Type': mimeType,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ file: { display_name: displayName } }),
+  })
+  if (!startRes.ok) throw new Error(`Falha ao iniciar upload no Gemini: ${await startRes.text()}`)
+  const uploadUrl = startRes.headers.get('x-goog-upload-url')
+  if (!uploadUrl) throw new Error('Gemini não retornou a URL de upload')
+
+  const uploadRes = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Length': String(sizeBytes),
+      'X-Goog-Upload-Offset': '0',
+      'X-Goog-Upload-Command': 'upload, finalize',
+    },
+    body: fileStream,
+    // @ts-ignore: 'duplex' é exigido pelo fetch quando o body é uma stream, mas ainda não está no lib.dom.d.ts do TS
+    duplex: 'half',
+  })
+  if (!uploadRes.ok) throw new Error(`Falha ao enviar "${displayName}" pro Gemini: ${await uploadRes.text()}`)
+  const uploaded = await uploadRes.json()
+
+  let file = uploaded.file
+  let tentativas = 0
+  while (file.state === 'PROCESSING' && tentativas < 20) {
+    await new Promise((r) => setTimeout(r, 2000))
+    const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${file.name}?key=${GEMINI_API_KEY}`)
+    file = await checkRes.json()
+    tentativas++
+  }
+  if (file.state !== 'ACTIVE') throw new Error(`"${displayName}" não ficou pronto no Gemini (estado: ${file.state})`)
+
+  return file as { name: string; uri: string }
+}
+
+async function apagarArquivoGemini(fileName: string) {
+  try {
+    await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${GEMINI_API_KEY}`, { method: 'DELETE' })
+  } catch {
+    // best-effort — o Gemini expira arquivos sozinho depois de um tempo
+  }
+}
+
+async function processarDocumento(supabase: Supa, doc: Anexo) {
+  const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+    .from('client-documents')
+    .createSignedUrl(doc.storage_path, 300)
+  if (signedUrlError || !signedUrlData) throw new Error(`Não foi possível gerar a URL de "${doc.name}" no Storage`)
+
+  const downloadRes = await fetch(signedUrlData.signedUrl)
+  if (!downloadRes.ok || !downloadRes.body) throw new Error(`Falha ao baixar "${doc.name}" do Storage`)
+
+  const mimeType = doc.mime_type || 'application/pdf'
+  const sizeBytes = doc.size_bytes ?? Number(downloadRes.headers.get('content-length') ?? 0)
+  if (!sizeBytes) throw new Error(`Não foi possível determinar o tamanho de "${doc.name}"`)
+
+  const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, doc.name)
+  return {
+    fileData: { file_data: { mime_type: mimeType, file_uri: geminiFile.uri } },
+    geminiFileName: geminiFile.name,
+  }
+}
+
+async function processarAnalise(supabase: Supa, analysisRowId: string, edital: Anexo, tr: Anexo | undefined) {
+  const arquivosGeminiParaApagar: string[] = []
+  try {
+    const docs = [edital, tr].filter((d): d is Anexo => !!d)
+    const resultados = await Promise.all(docs.map((doc) => processarDocumento(supabase, doc)))
+    const partesArquivos = resultados.map((r) => r.fileData)
+    resultados.forEach((r) => arquivosGeminiParaApagar.push(r.geminiFileName))
+
+    const genRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [...partesArquivos, { text: PROMPT }] }],
+          generationConfig: {
+            response_mime_type: 'application/json',
+            response_schema: ANALISE_SCHEMA,
+          },
+        }),
+      }
+    )
+
+    for (const nome of arquivosGeminiParaApagar) apagarArquivoGemini(nome) // não precisa esperar terminar
+
+    if (!genRes.ok) throw new Error(`Falha ao analisar com Gemini: ${await genRes.text()}`)
+    const genData = await genRes.json()
+    const textoResposta = genData.candidates?.[0]?.content?.parts?.[0]?.text
+    if (!textoResposta) throw new Error('Gemini não retornou conteúdo na análise')
+
+    const analise = JSON.parse(textoResposta)
+
+    await supabase.from('opportunity_analysis').update({ status: 'concluido', analise, erro_mensagem: null }).eq('id', analysisRowId)
+  } catch (err) {
+    const mensagem = err instanceof Error ? err.message : String(err)
+    console.error('Erro ao analisar oportunidade (segundo plano):', mensagem)
+    await supabase.from('opportunity_analysis').update({ status: 'erro', erro_mensagem: mensagem }).eq('id', analysisRowId)
+  }
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+
+  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
+
+  try {
+    const { opportunityId } = await req.json()
+    if (!opportunityId) return json({ error: 'opportunityId é obrigatório' }, 400)
+
+    const authHeader = req.headers.get('Authorization')
+    const jwt = authHeader?.replace('Bearer ', '')
+    if (!jwt) return json({ error: 'Não autenticado' }, 401)
+    const { data: { user }, error: userError } = await supabase.auth.getUser(jwt)
+    if (userError || !user) return json({ error: 'Não autenticado' }, 401)
+
+    const { data: opportunity, error: opportunityError } = await supabase
+      .from('opportunities')
+      .select('id, user_id')
+      .eq('id', opportunityId)
+      .single()
+    if (opportunityError || !opportunity) return json({ error: 'Oportunidade não encontrada' }, 404)
+    if (opportunity.user_id !== user.id) return json({ error: 'Sem permissão para esta oportunidade' }, 403)
+
+    const { data: anexos, error: anexosError } = await supabase
+      .from('attached_files')
+      .select('id, name, storage_path, mime_type, size_bytes, category')
+      .eq('entity_type', 'oportunidade')
+      .eq('entity_id', opportunityId)
+      .in('category', ['Edital', 'Termo de Referência'])
+      .order('created_at', { ascending: false })
+    if (anexosError) throw anexosError
+
+    const edital = (anexos as Anexo[] | null)?.find((a) => a.category === 'Edital')
+    const tr = (anexos as Anexo[] | null)?.find((a) => a.category === 'Termo de Referência')
+    if (!edital) return json({ error: 'Nenhum edital enviado para esta oportunidade' }, 400)
+
+    let analysisRowId: string
+    const { data: existente } = await supabase.from('opportunity_analysis').select('id').eq('opportunity_id', opportunityId).maybeSingle()
+    if (existente) {
+      await supabase.from('opportunity_analysis').update({ status: 'processando', erro_mensagem: null }).eq('id', existente.id)
+      analysisRowId = existente.id as string
+    } else {
+      const { data: novo, error: insertError } = await supabase
+        .from('opportunity_analysis')
+        .insert({ user_id: user.id, opportunity_id: opportunityId, status: 'processando' })
+        .select('id')
+        .single()
+      if (insertError) throw insertError
+      analysisRowId = novo.id as string
+    }
+
+    // @ts-ignore: EdgeRuntime é global no runtime do Supabase, não existe no lib.dom.d.ts do TypeScript
+    EdgeRuntime.waitUntil(processarAnalise(supabase, analysisRowId, edital, tr))
+
+    return json({ started: true })
+  } catch (err) {
+    const mensagem = err instanceof Error ? err.message : String(err)
+    console.error('Erro ao iniciar análise de oportunidade:', mensagem)
+    return json({ success: false, error: mensagem }, 500)
+  }
+})

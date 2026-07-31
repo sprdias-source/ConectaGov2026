@@ -4,6 +4,7 @@ import { Card, StatusBadge, EmptyState } from '../ui/Primitives'
 import { Select } from '../ui/FormControls'
 import { formatBRL } from '../../hooks/useAccountBalances'
 import { useBiddingItemsPorLicitacoes } from '../../hooks/useBiddingItems'
+import { useOpportunities } from '../../hooks/useOpportunities'
 import type { Client, Bidding, BiddingItem } from '../../types/domain'
 
 // Valor "fechado" de uma licitação ganha e "valor em jogo" de uma perdida —
@@ -31,7 +32,7 @@ function resumoItensBidding(b: Bidding, itens: BiddingItem[]): ResumoItensBiddin
     const valorGanho = b.status === 'Ganhou' ? valorRelevante(b) : 0
     return {
       valorLicitado: b.valorLicitado,
-      valorParticipado: b.status !== 'Cancelada' ? b.valorLicitado : 0,
+      valorParticipado: b.status !== 'Cancelada' && b.status !== 'Desistiu' ? b.valorLicitado : 0,
       valorGanho,
       diferenca: b.status === 'Ganhou' ? b.valorLicitado - valorGanho : 0,
       temItens: false,
@@ -85,11 +86,15 @@ export default function RelatorioLicitacoesCliente({ clients, biddings }: { clie
   }, [doCliente, itensPorBidding])
 
   const stats = useMemo(() => {
-    const participou = doCliente.filter((b) => b.status !== 'Cancelada')
+    const participou = doCliente.filter((b) => b.status !== 'Cancelada' && b.status !== 'Desistiu')
     const ganhou = doCliente.filter((b) => b.status === 'Ganhou')
     const perdeu = doCliente.filter((b) => b.status === 'Perdeu')
     const emAndamento = doCliente.filter((b) => b.status === 'Em Andamento')
     const canceladas = doCliente.filter((b) => b.status === 'Cancelada')
+    // Separado de "Cancelada" (o órgão que cancelou o edital) — aqui é o
+    // cliente que desistiu depois de já estar no funil, informação que o
+    // relatório precisa mostrar à parte.
+    const desistiu = doCliente.filter((b) => b.status === 'Desistiu')
     // Valor fechado agora vem do que foi ganho ITEM A ITEM, não da
     // licitação inteira — um cliente que ganhou 1 de 4 itens não pode
     // aparecer como se tivesse fechado o edital todo.
@@ -103,6 +108,7 @@ export default function RelatorioLicitacoesCliente({ clients, biddings }: { clie
       totalPerdeu: perdeu.length,
       totalEmAndamento: emAndamento.length,
       totalCanceladas: canceladas.length,
+      totalDesistiu: desistiu.length,
       valorFechado,
       valorPerdido,
     }
@@ -160,10 +166,13 @@ export default function RelatorioLicitacoesCliente({ clients, biddings }: { clie
             <CardEstatistica label="Ganhou" valor={stats.totalGanhou} cor="text-positive-400" />
             <CardEstatistica label="Perdeu" valor={stats.totalPerdeu} cor="text-negative-400" />
             <CardEstatistica label="Em Andamento" valor={stats.totalEmAndamento} cor="text-accent-400" />
-            <CardEstatistica label="Não Participou / Cancelada" valor={stats.totalCanceladas} />
+            <CardEstatistica label="Cancelada (órgão)" valor={stats.totalCanceladas} />
+            <CardEstatistica label="Desistiu (cliente)" valor={stats.totalDesistiu} />
             <CardEstatistica label="Valor Ganho (por item)" valor={formatBRL(stats.valorFechado)} cor="text-positive-400" mono />
             <CardEstatistica label="Deixou de Ganhar (Perdidas)" valor={formatBRL(stats.valorPerdido)} cor="text-negative-400" mono />
           </div>
+
+          <OportunidadesResumoCliente clientId={clientId} />
 
           {doCliente.length === 0 ? (
             <Card className="screen-only">
@@ -188,7 +197,8 @@ export default function RelatorioLicitacoesCliente({ clients, biddings }: { clie
                   <tr><td className="py-0.5 pr-2 font-semibold">Ganhou:</td><td>{stats.totalGanhou}</td></tr>
                   <tr><td className="py-0.5 pr-2 font-semibold">Perdeu:</td><td>{stats.totalPerdeu}</td></tr>
                   <tr><td className="py-0.5 pr-2 font-semibold">Em andamento:</td><td>{stats.totalEmAndamento}</td></tr>
-                  <tr><td className="py-0.5 pr-2 font-semibold">Não participou / cancelada:</td><td>{stats.totalCanceladas}</td></tr>
+                  <tr><td className="py-0.5 pr-2 font-semibold">Cancelada pelo órgão:</td><td>{stats.totalCanceladas}</td></tr>
+                  <tr><td className="py-0.5 pr-2 font-semibold">Desistiu (cliente):</td><td>{stats.totalDesistiu}</td></tr>
                   <tr><td className="py-0.5 pr-2 font-semibold">Valor ganho (por item):</td><td>{formatBRL(stats.valorFechado)}</td></tr>
                   <tr><td className="py-0.5 pr-2 font-semibold">Valor deixado de ganhar (oportunidades perdidas):</td><td>{formatBRL(stats.valorPerdido)}</td></tr>
                 </tbody>
@@ -388,6 +398,42 @@ function TabelaNormal({ doCliente, itensPorBidding }: { doCliente: Bidding[]; it
         )
       })}
     </div>
+  )
+}
+
+// Oportunidades (editais enviados pra avaliação antes de virar licitação de
+// verdade) somadas ao mesmo relatório — o cliente também precisa ver quantas
+// foram enviadas, quantas aceitou/recusou e quantas ainda estão esperando
+// resposta dele.
+function OportunidadesResumoCliente({ clientId }: { clientId: string }) {
+  const { opportunities } = useOpportunities()
+  const doCliente = useMemo(() => opportunities.filter((o) => o.clientId === clientId), [opportunities, clientId])
+
+  if (doCliente.length === 0) return null
+
+  const aceitas = doCliente.filter((o) => o.resposta === 'aceita').length
+  const recusadas = doCliente.filter((o) => o.resposta === 'recusada').length
+  const aguardando = doCliente.filter((o) => o.resposta === 'pendente').length
+
+  return (
+    <>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 screen-only">
+        <CardEstatistica label="Oportunidades Identificadas" valor={doCliente.length} />
+        <CardEstatistica label="Aceitas p/ Participar" valor={aceitas} cor="text-positive-400" />
+        <CardEstatistica label="Recusadas pelo Cliente" valor={recusadas} cor="text-negative-400" />
+        <CardEstatistica label="Aguardando Resposta" valor={aguardando} cor="text-warning-400" />
+      </div>
+      <div className="print-only" style={{ display: 'none' }}>
+        <table className="w-full text-[12px] mb-4">
+          <tbody>
+            <tr><td className="py-0.5 pr-2 font-semibold">Oportunidades identificadas:</td><td>{doCliente.length}</td></tr>
+            <tr><td className="py-0.5 pr-2 font-semibold">Aceitas p/ participar:</td><td>{aceitas}</td></tr>
+            <tr><td className="py-0.5 pr-2 font-semibold">Recusadas pelo cliente:</td><td>{recusadas}</td></tr>
+            <tr><td className="py-0.5 pr-2 font-semibold">Aguardando resposta:</td><td>{aguardando}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </>
   )
 }
 

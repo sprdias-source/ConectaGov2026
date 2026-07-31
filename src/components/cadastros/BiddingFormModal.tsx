@@ -14,7 +14,7 @@ const MODALIDADES: BiddingModalidade[] = [
   'Convite', 'Leilão', 'Diálogo Competitivo', 'Dispensa de Licitação', 'Inexigibilidade',
 ]
 const TIPOS: BiddingTipo[] = ['Menor Preço', 'Maior Desconto', 'Melhor Técnica', 'Técnica e Preço', 'Maior Retorno Econômico']
-const STATUSES: BiddingStatus[] = ['Em Andamento', 'Ganhou', 'Perdeu', 'Cancelada']
+const STATUSES: BiddingStatus[] = ['Em Andamento', 'Ganhou', 'Perdeu', 'Cancelada', 'Desistiu']
 const ETAPAS: BiddingEtapa[] = ['Análise de Edital', 'Montagem de Documentação', 'Proposta Enviada', 'Disputa de Lances', 'Fase Recursal', 'Adjudicada e Homologada']
 
 const emptyForm = (clients: Client[]): Partial<Bidding> => ({

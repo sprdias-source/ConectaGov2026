@@ -1,0 +1,211 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { supabase } from '../lib/supabase'
+import { fromOpportunityRow, toOpportunityInsert, toBiddingInsert, toBiddingItemInsert } from '../lib/mappers'
+import { mapearCamposDaAnalise, mapearItensDaAnalise } from '../lib/analiseEdital'
+import { useAuth } from './useAuth'
+import { useAuditLog } from './useAuditLog'
+import { todayLocalISO } from '../lib/dateUtils'
+import type { AnaliseEdital, Opportunity, OpportunityStatus } from '../types/domain'
+
+const QUERY_KEY = ['opportunities']
+
+// Mesma régua de calcDocStatus/calcPlatformStatus: a antecedência do aviso
+// vem do próprio registro (dias_aviso_prazo), editável por oportunidade.
+// 'resolvida' (aceita ou recusada) nunca alerta, mesmo perto da sessão —
+// já não depende mais de resposta de ninguém.
+export function calcOpportunityStatus(opp: Pick<Opportunity, 'resposta' | 'dataSessao' | 'diasAvisoPrazo'>): OpportunityStatus {
+  if (opp.resposta !== 'pendente') return 'resolvida'
+  if (!opp.dataSessao) return 'aguardando'
+  const today = new Date(todayLocalISO() + 'T00:00:00')
+  const sessao = new Date(opp.dataSessao + 'T00:00:00')
+  const diffDays = Math.floor((sessao.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  if (diffDays < 0) return 'vencida'
+  if (diffDays <= opp.diasAvisoPrazo) return 'urgente'
+  return 'aguardando'
+}
+
+export function diasParaSessao(dataSessao: string | null): number | null {
+  if (!dataSessao) return null
+  const today = new Date(todayLocalISO() + 'T00:00:00')
+  const sessao = new Date(dataSessao + 'T00:00:00')
+  return Math.floor((sessao.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+// Lista global (todos os clientes juntos) — o hábito de trabalho aqui é
+// escanear tudo que está aguardando resposta de uma vez, não olhar cliente
+// por cliente (diferente de Documentos/Plataformas, que pedem selecionar
+// um cliente primeiro).
+export function useOpportunities() {
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+  const { logEvent } = useAuditLog()
+
+  const query = useQuery({
+    queryKey: QUERY_KEY,
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('opportunities')
+        .select('*')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data.map(fromOpportunityRow)
+    },
+  })
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: QUERY_KEY })
+
+  const addOpportunity = useMutation({
+    mutationFn: async (o: {
+      clientId: string
+      platformId: string
+      titulo: string
+      numeroEdital?: string | null
+      dataSessao?: string | null
+      dataEnvioCliente?: string | null
+      diasAvisoPrazo?: number
+      observacoes?: string | null
+    }) => {
+      if (!user) throw new Error('Não autenticado')
+      const { data, error } = await supabase
+        .from('opportunities')
+        .insert(toOpportunityInsert(o, user.id))
+        .select('id')
+        .single()
+      if (error) throw error
+      return data.id as string
+    },
+    onSuccess: invalidate,
+  })
+
+  const updateOpportunity = useMutation({
+    mutationFn: async (o: Opportunity) => {
+      if (!user) throw new Error('Não autenticado')
+      const { error } = await supabase
+        .from('opportunities')
+        .update(toOpportunityInsert(o, user.id))
+        .eq('id', o.id)
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+  })
+
+  // Só o registro da resposta — não mexe em nenhum outro campo, pra não
+  // pisar em uma edição concorrente de outro campo do formulário.
+  const marcarResposta = useMutation({
+    mutationFn: async ({ opportunity, resposta, motivoRecusa }: {
+      opportunity: Opportunity
+      resposta: 'aceita' | 'recusada'
+      motivoRecusa?: string | null
+    }) => {
+      const { error } = await supabase
+        .from('opportunities')
+        .update({
+          resposta,
+          data_resposta: todayLocalISO(),
+          motivo_recusa: resposta === 'recusada' ? (motivoRecusa ?? null) : null,
+        })
+        .eq('id', opportunity.id)
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+  })
+
+  const deleteOpportunity = useMutation({
+    mutationFn: async (o: Opportunity) => {
+      const { error } = await supabase.from('opportunities').delete().eq('id', o.id)
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+  })
+
+  // O coração do "nasce quase pronta": cria a licitação de verdade a
+  // partir da oportunidade aceita, reaproveitando a MESMA transformação já
+  // usada em "Preencher Licitação com estes Dados" (mapearCamposDaAnalise /
+  // mapearItensDaAnalise) — sem duplicar lógica. Se já existe uma análise
+  // de IA rodada nesta oportunidade, ela é COPIADA pra bidding_analysis da
+  // licitação nova (não roda a IA de novo). Os arquivos (edital/TR) só têm
+  // a referência movida (entity_type/entity_id) — nunca reenviados.
+  const converterEmLicitacao = useMutation({
+    mutationFn: async (opportunity: Opportunity) => {
+      if (!user) throw new Error('Não autenticado')
+
+      const { data: analiseRow } = await supabase
+        .from('opportunity_analysis')
+        .select('analise, status')
+        .eq('opportunity_id', opportunity.id)
+        .maybeSingle()
+      const analise = (analiseRow?.status === 'concluido' ? analiseRow.analise : null) as AnaliseEdital | null
+
+      const campos = analise ? mapearCamposDaAnalise(analise) : {}
+      const itens = analise ? mapearItensDaAnalise(analise) : null
+
+      const biddingPartial = {
+        ...campos,
+        clientId: opportunity.clientId,
+        objeto: campos.objeto ?? opportunity.titulo,
+        orgao: campos.orgao ?? '',
+        numeroEdital: campos.numeroEdital ?? opportunity.numeroEdital ?? null,
+        dataAbertura: campos.dataAbertura ?? opportunity.dataSessao ?? todayLocalISO(),
+        status: 'Em Andamento' as const,
+        etapa: 'Análise de Edital' as const,
+      }
+
+      const { data: biddingRow, error: biddingError } = await supabase
+        .from('biddings')
+        .insert(toBiddingInsert(biddingPartial, user.id))
+        .select('id')
+        .single()
+      if (biddingError) throw biddingError
+      const novoBiddingId = biddingRow.id as string
+
+      if (itens?.length) {
+        const { error: itensError } = await supabase
+          .from('bidding_items')
+          .insert(itens.map((i) => toBiddingItemInsert({ ...i, biddingId: novoBiddingId }, user.id)))
+        if (itensError) throw itensError
+      }
+
+      // Move a referência dos arquivos (edital/TR) — mesmo storage_path,
+      // sem reenviar nada.
+      const { error: arquivosError } = await supabase
+        .from('attached_files')
+        .update({ entity_type: 'licitacao', entity_id: novoBiddingId })
+        .eq('entity_type', 'oportunidade')
+        .eq('entity_id', opportunity.id)
+      if (arquivosError) throw arquivosError
+
+      if (analise) {
+        const { error: analiseError } = await supabase
+          .from('bidding_analysis')
+          .insert({ user_id: user.id, bidding_id: novoBiddingId, status: 'concluido', analise: analiseRow!.analise })
+        if (analiseError) throw analiseError
+      }
+
+      const { error: opportunityError } = await supabase
+        .from('opportunities')
+        .update({ bidding_id: novoBiddingId })
+        .eq('id', opportunity.id)
+      if (opportunityError) throw opportunityError
+
+      return { biddingId: novoBiddingId, objeto: biddingPartial.objeto, orgao: biddingPartial.orgao }
+    },
+    onSuccess: ({ objeto, orgao }) => {
+      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['biddings'] })
+      queryClient.invalidateQueries({ queryKey: ['bidding_items'] })
+      queryClient.invalidateQueries({ queryKey: ['attached_files'] })
+      logEvent('Criou Licitação', `Convertida a partir de uma oportunidade — "${objeto}"${orgao ? ` (Órgão: ${orgao})` : ''}`)
+    },
+  })
+
+  return {
+    opportunities: query.data ?? [],
+    isLoading: query.isLoading,
+    addOpportunity,
+    updateOpportunity,
+    marcarResposta,
+    deleteOpportunity,
+    converterEmLicitacao,
+  }
+}

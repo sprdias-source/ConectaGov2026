@@ -242,13 +242,18 @@ export function useBiddings() {
 
   // Registra o resultado final da disputa — separada do updateBidding pra
   // não arriscar mexer nos itens da licitação. O motivo da perda só faz
-  // sentido quando o status é 'Perdeu'; qualquer outro status limpa o
-  // campo, pra não deixar um motivo "fantasma" de uma edição anterior.
+  // sentido quando o status é 'Perdeu' (idem motivoDesistencia com
+  // 'Desistiu'); qualquer outro status limpa os dois campos, pra não deixar
+  // um motivo "fantasma" de uma edição anterior.
   const marcarResultado = useMutation({
-    mutationFn: async ({ biddingId, status, motivoPerda }: { biddingId: string; status: BiddingStatus; motivoPerda: string | null }) => {
+    mutationFn: async ({ biddingId, status, motivoPerda, motivoDesistencia }: { biddingId: string; status: BiddingStatus; motivoPerda: string | null; motivoDesistencia?: string | null }) => {
       const { data, error } = await supabase
         .from('biddings')
-        .update({ status, motivo_perda: status === 'Perdeu' ? motivoPerda : null })
+        .update({
+          status,
+          motivo_perda: status === 'Perdeu' ? motivoPerda : null,
+          motivo_desistencia: status === 'Desistiu' ? (motivoDesistencia ?? null) : null,
+        })
         .eq('id', biddingId)
         .select()
         .single()
@@ -257,7 +262,7 @@ export function useBiddings() {
     },
     onSuccess: (updated) => {
       invalidate()
-      logEvent('Registrou Resultado da Licitação', `Licitação "${updated.objeto}" — resultado: ${updated.status}${updated.motivoPerda ? ` (${updated.motivoPerda})` : ''}`)
+      logEvent('Registrou Resultado da Licitação', `Licitação "${updated.objeto}" — resultado: ${updated.status}${updated.motivoPerda ? ` (${updated.motivoPerda})` : ''}${updated.motivoDesistencia ? ` (${updated.motivoDesistencia})` : ''}`)
     },
   })
 

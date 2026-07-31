@@ -473,6 +473,7 @@ export type Database = {
           modalidade: string
           modelo_customizado_path: string | null
           motivo_perda: string | null
+          motivo_desistencia: string | null
           municipio: string | null
           numero_edital: string | null
           objeto: string
@@ -506,6 +507,7 @@ export type Database = {
           modalidade: string
           modelo_customizado_path?: string | null
           motivo_perda?: string | null
+          motivo_desistencia?: string | null
           municipio?: string | null
           numero_edital?: string | null
           objeto: string
@@ -539,6 +541,7 @@ export type Database = {
           modalidade?: string
           modelo_customizado_path?: string | null
           motivo_perda?: string | null
+          motivo_desistencia?: string | null
           municipio?: string | null
           numero_edital?: string | null
           objeto?: string
@@ -1465,6 +1468,126 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "system_tools"
             referencedColumns: ["key"]
+          },
+        ]
+      }
+      opportunities: {
+        Row: {
+          bidding_id: string | null
+          client_id: string
+          created_at: string
+          data_envio_cliente: string | null
+          data_resposta: string | null
+          data_sessao: string | null
+          dias_aviso_prazo: number
+          id: string
+          motivo_recusa: string | null
+          numero_edital: string | null
+          observacoes: string | null
+          platform_id: string
+          resposta: string
+          titulo: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bidding_id?: string | null
+          client_id: string
+          created_at?: string
+          data_envio_cliente?: string | null
+          data_resposta?: string | null
+          data_sessao?: string | null
+          dias_aviso_prazo?: number
+          id?: string
+          motivo_recusa?: string | null
+          numero_edital?: string | null
+          observacoes?: string | null
+          platform_id: string
+          resposta?: string
+          titulo: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bidding_id?: string | null
+          client_id?: string
+          created_at?: string
+          data_envio_cliente?: string | null
+          data_resposta?: string | null
+          data_sessao?: string | null
+          dias_aviso_prazo?: number
+          id?: string
+          motivo_recusa?: string | null
+          numero_edital?: string | null
+          observacoes?: string | null
+          platform_id?: string
+          resposta?: string
+          titulo?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opportunities_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "opportunities_platform_id_fkey"
+            columns: ["platform_id"]
+            isOneToOne: false
+            referencedRelation: "platforms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "opportunities_bidding_id_fkey"
+            columns: ["bidding_id"]
+            isOneToOne: false
+            referencedRelation: "biddings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      opportunity_analysis: {
+        Row: {
+          analise: Json | null
+          created_at: string
+          erro_mensagem: string | null
+          id: string
+          opportunity_id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          analise?: Json | null
+          created_at?: string
+          erro_mensagem?: string | null
+          id?: string
+          opportunity_id: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          analise?: Json | null
+          created_at?: string
+          erro_mensagem?: string | null
+          id?: string
+          opportunity_id?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opportunity_analysis_opportunity_id_fkey"
+            columns: ["opportunity_id"]
+            isOneToOne: true
+            referencedRelation: "opportunities"
+            referencedColumns: ["id"]
           },
         ]
       }

@@ -34,9 +34,10 @@ import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import BiddingItemsEditor from '../components/cadastros/BiddingItemsEditor'
 import { stringifyCsvPortal, textoParaBlobLatin1, formatarNumeroPtBR, HEADER_PORTAL_COMPRAS } from '../lib/csvPortalCompras'
 import { parseFlexibleNumber } from '../lib/numberParsing'
+import { mapearCamposDaAnalise, mapearItensDaAnalise } from '../lib/analiseEdital'
 import { useToast } from '../hooks/useToast'
 import { CERT_CONFIG } from '../types/domain'
-import type { Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingModalidade, BiddingStatus } from '../types/domain'
+import type { AnaliseEdital, Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingStatus } from '../types/domain'
 
 const ETAPAS_TRILHA: BiddingEtapa[] = [
   'Análise de Edital',
@@ -287,14 +288,18 @@ function ResultadoLicitacao({ bidding }: { bidding: Bidding }) {
   const podeEditar = nivel === 'edicao'
   const [status, setStatus] = useState<BiddingStatus>(bidding.status)
   const [motivo, setMotivo] = useState(bidding.motivoPerda ?? '')
+  const [motivoDesistencia, setMotivoDesistencia] = useState(bidding.motivoDesistencia ?? '')
 
-  const mudou = status !== bidding.status || (status === 'Perdeu' && motivo !== (bidding.motivoPerda ?? ''))
+  const mudou = status !== bidding.status
+    || (status === 'Perdeu' && motivo !== (bidding.motivoPerda ?? ''))
+    || (status === 'Desistiu' && motivoDesistencia !== (bidding.motivoDesistencia ?? ''))
 
   if (!podeEditar) {
     return (
       <div className="text-[12px] text-base-500">
         Resultado: <span className="font-semibold text-base-300">{bidding.status}</span>
         {bidding.motivoPerda && <span> — {bidding.motivoPerda}</span>}
+        {bidding.motivoDesistencia && <span> — {bidding.motivoDesistencia}</span>}
       </div>
     )
   }
@@ -309,6 +314,7 @@ function ResultadoLicitacao({ bidding }: { bidding: Bidding }) {
             <option value="Ganhou">Ganhou</option>
             <option value="Perdeu">Perdeu</option>
             <option value="Cancelada">Cancelada</option>
+            <option value="Desistiu">Desistiu (cliente)</option>
           </Select>
         </div>
         {status === 'Perdeu' && (
@@ -320,15 +326,24 @@ function ResultadoLicitacao({ bidding }: { bidding: Bidding }) {
             />
           </div>
         )}
+        {status === 'Desistiu' && (
+          <div className="flex-1 min-w-[220px]">
+            <Input
+              placeholder="Motivo da desistência do cliente"
+              value={motivoDesistencia}
+              onChange={(e) => setMotivoDesistencia(e.target.value)}
+            />
+          </div>
+        )}
         <Button
-          onClick={() => marcarResultado.mutate({ biddingId: bidding.id, status, motivoPerda: motivo })}
+          onClick={() => marcarResultado.mutate({ biddingId: bidding.id, status, motivoPerda: motivo, motivoDesistencia })}
           disabled={!mudou || marcarResultado.isPending}
         >
           {marcarResultado.isPending ? 'Salvando...' : 'Salvar Resultado'}
         </Button>
       </div>
       <p className="text-[11px] text-base-500">
-        Registrar o motivo quando perde é o que alimenta o relatório mensal pro cliente depois — sem isso, o "porquê" se perde.
+        Registrar o motivo quando perde ou o cliente desiste é o que alimenta o relatório mensal pro cliente depois — sem isso, o "porquê" se perde.
       </p>
     </div>
   )
@@ -1002,50 +1017,6 @@ function AbaSessaoAoVivo({ bidding }: { bidding: Bidding }) {
 // combinados na especificação da tarefa; se a function usar chaves
 // diferentes, as seções correspondentes simplesmente não aparecem (nada
 // quebra), já que cada uma só renderiza quando o campo existe.
-interface AnaliseEdital {
-  municipio?: string
-  orgao?: string
-  objeto?: string
-  numeroEdital?: string
-  numeroProcesso?: string
-  modalidade?: string
-  srp?: boolean
-  data?: string
-  horario?: string
-  portal?: string
-  intervaloLances?: string
-  modoDisputa?: {
-    tipo?: string
-    duracaoFaseAberta?: string
-    duracaoFaseFechada?: string
-    prorrogacaoAutomatica?: string
-    tempoAleatorio?: string
-    criterioEncerramento?: string
-    observacoes?: string
-  }
-  resumoTecnico?: string
-  itens?: { numero?: string | number; idPortal?: string | number; lote?: string | number; descricao: string; unidade?: string; quantidade?: number; valorReferencia?: number }[]
-  validadeProposta?: string
-  catalogo?: string
-  garantias?: string
-  amostras?: string
-  marcasPreAprovadas?: string[] | string
-  habilitacao?: {
-    habilitacaoJuridica?: string
-    regularidadeFiscalTrabalhista?: string
-    qualificacaoEconomicoFinanceira?: string
-    qualificacaoTecnica?: string
-    proposta?: string
-  }
-  prazos?: string
-  formaEntrega?: string
-  localEntrega?: string
-  condicoesPagamento?: string
-  clausulasRestritivas?: string
-  conclusaoTecnica?: string
-  checklistDocumentacao?: { descricao: string; categoria?: string | null; obrigatorio?: boolean }[]
-}
-
 const CAMPOS_MODO_DISPUTA: { chave: keyof NonNullable<AnaliseEdital['modoDisputa']>; label: string }[] = [
   { chave: 'tipo', label: 'Tipo' },
   { chave: 'duracaoFaseAberta', label: 'Duração — Fase Aberta' },
@@ -1064,32 +1035,6 @@ const CAMPOS_HABILITACAO: { chave: keyof NonNullable<AnaliseEdital['habilitacao'
   { chave: 'proposta', label: 'Proposta' },
 ]
 
-const MODALIDADES_VALIDAS: BiddingModalidade[] = [
-  'Pregão Eletrônico', 'Pregão Presencial', 'Concorrência Pública', 'Tomada de Preços',
-  'Convite', 'Leilão', 'Diálogo Competitivo', 'Dispensa de Licitação', 'Inexigibilidade',
-]
-
-const normalizarTexto = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
-
-// A IA devolve a modalidade como texto livre — só aceitamos se bater com uma
-// das opções válidas do formulário, pra nunca gravar um valor fora do enum.
-function encontrarModalidade(texto?: string): BiddingModalidade | null {
-  if (!texto) return null
-  const alvo = normalizarTexto(texto)
-  return MODALIDADES_VALIDAS.find((m) => alvo.includes(normalizarTexto(m))) ?? null
-}
-
-// Idem para a data: a IA pode devolver "15/03/2026" ou já em ISO — qualquer
-// outro formato (ex: "15 de março") é ignorado em vez de gravar algo errado.
-function converterDataParaISO(texto?: string): string | null {
-  if (!texto) return null
-  const iso = texto.match(/(\d{4})-(\d{2})-(\d{2})/)
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`
-  const br = texto.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-  if (br) return `${br[3]}-${br[2].padStart(2, '0')}-${br[1].padStart(2, '0')}`
-  return null
-}
-
 // Monta, a partir da análise de IA, só os campos que ela conseguiu
 // identificar (nunca sobrescreve com vazio) e a lista de itens — se a
 // análise não trouxe itens, mantém os já cadastrados em vez de apagá-los.
@@ -1102,20 +1047,17 @@ function construirPreenchimento(analise: AnaliseEdital, itensAtuais: BiddingItem
     console.log('[Preencher Licitação] itens brutos recebidos da análise:', JSON.stringify(analise.itens))
   }
 
-  const campos: Partial<Bidding> = {}
+  const campos = mapearCamposDaAnalise(analise)
   const resumo: string[] = []
-
-  if (analise.municipio) { campos.municipio = analise.municipio; resumo.push('Município') }
-  if (analise.orgao) { campos.orgao = analise.orgao; resumo.push('Órgão') }
-  if (analise.objeto) { campos.objeto = analise.objeto; resumo.push('Objeto') }
-  if (analise.numeroEdital) { campos.numeroEdital = analise.numeroEdital; resumo.push('Nº Edital') }
-  if (analise.numeroProcesso) { campos.processo = analise.numeroProcesso; resumo.push('Processo') }
-  if (analise.portal) { campos.portal = analise.portal; resumo.push('Portal') }
-  const modalidade = encontrarModalidade(analise.modalidade)
-  if (modalidade) { campos.modalidade = modalidade; resumo.push('Modalidade') }
-  const dataISO = converterDataParaISO(analise.data)
-  if (dataISO) { campos.dataAbertura = dataISO; resumo.push('Data do Pregão') }
-  if (analise.validadeProposta) { campos.diasValidadeProposta = analise.validadeProposta; resumo.push('Validade da Proposta') }
+  if (campos.municipio) resumo.push('Município')
+  if (campos.orgao) resumo.push('Órgão')
+  if (campos.objeto) resumo.push('Objeto')
+  if (campos.numeroEdital) resumo.push('Nº Edital')
+  if (campos.processo) resumo.push('Processo')
+  if (campos.portal) resumo.push('Portal')
+  if (campos.modalidade) resumo.push('Modalidade')
+  if (campos.dataAbertura) resumo.push('Data do Pregão')
+  if (campos.diasValidadeProposta) resumo.push('Validade da Proposta')
 
   const itensMapeados = mapearItensDaAnalise(analise)
   const temItensNaAnalise = !!itensMapeados
@@ -1123,23 +1065,6 @@ function construirPreenchimento(analise: AnaliseEdital, itensAtuais: BiddingItem
   if (temItensNaAnalise) resumo.push(`Itens/Lotes (${itensMapeados!.length})`)
 
   return { campos, itens, substituiItens: temItensNaAnalise, resumo }
-}
-
-// Mesma transformação usada tanto pelo botão manual "Preencher Licitação com
-// estes Dados" quanto pelo auto-import de itens (ver LicitacaoPage) — só os
-// itens, sem mexer em nenhum outro campo da licitação.
-function mapearItensDaAnalise(analise: AnaliseEdital): Partial<BiddingItem>[] | null {
-  if (!analise.itens?.length) return null
-  return analise.itens.map((it, idx) => ({
-    numeroItem: it.numero != null ? String(it.numero) : String(idx + 1),
-    descricao: it.descricao,
-    unidade: it.unidade ?? null,
-    quantidade: it.quantidade ?? 1,
-    marca: null,
-    referencia: null,
-    valorUnitarioLicitado: it.valorReferencia ?? 0,
-    valorUnitarioOfertado: null,
-  }))
 }
 
 function CampoResumo({ label, valor }: { label: string; valor?: string | null }) {

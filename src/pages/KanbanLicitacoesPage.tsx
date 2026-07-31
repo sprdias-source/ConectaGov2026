@@ -4,10 +4,12 @@ import {
   DndContext, DragOverlay, PointerSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors,
   type DragEndEvent, type DragStartEvent,
 } from '@dnd-kit/core'
-import { LayoutGrid, ChevronLeft, ChevronRight, ClipboardList, Pencil, GripVertical } from 'lucide-react'
+import { LayoutGrid, ChevronLeft, ChevronRight, ClipboardList, Pencil, GripVertical, Ban } from 'lucide-react'
 import { PageHeader } from '../components/ui/Primitives'
 import SeloHabilitacao from '../components/ui/SeloHabilitacao'
 import BiddingFormModal from '../components/cadastros/BiddingFormModal'
+import Modal from '../components/ui/Modal'
+import { Field, Select, Input, Button } from '../components/ui/FormControls'
 import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
@@ -15,7 +17,56 @@ import { useToast } from '../hooks/useToast'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useEmpenhos } from '../hooks/useEmpenhos'
 import { useBiddingIdsComDocumentosFinais } from '../hooks/useAttachedFiles'
-import type { Bidding, BiddingEtapa, BiddingItem } from '../types/domain'
+import type { Bidding, BiddingEtapa, BiddingItem, BiddingStatus } from '../types/domain'
+
+// Encerrar direto do Kanban, sem abrir o cadastro completo — pro caso comum
+// de "o cliente desistiu" ou "o órgão cancelou o edital", que não precisa
+// editar mais nada da licitação.
+function EncerrarDialog({ bidding, onClose }: { bidding: Bidding | null; onClose: () => void }) {
+  const { marcarResultado } = useBiddings()
+  const { showToast } = useToast()
+  const [status, setStatus] = useState<'Cancelada' | 'Desistiu'>('Desistiu')
+  const [motivo, setMotivo] = useState('')
+
+  if (!bidding) return null
+
+  const salvar = () => {
+    marcarResultado.mutate(
+      { biddingId: bidding.id, status: status as BiddingStatus, motivoPerda: null, motivoDesistencia: motivo },
+      {
+        onSuccess: () => {
+          showToast('Licitação encerrada.')
+          onClose()
+          setMotivo('')
+        },
+        onError: (err) => showToast(`Erro ao encerrar: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+      }
+    )
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Encerrar Licitação" maxWidth="max-w-md">
+      <div className="flex flex-col gap-4">
+        <p className="text-[12px] text-base-400">{bidding.objeto}</p>
+        <Field label="Motivo do encerramento" required>
+          <Select value={status} onChange={(e) => setStatus(e.target.value as 'Cancelada' | 'Desistiu')}>
+            <option value="Desistiu">Cliente desistiu</option>
+            <option value="Cancelada">Órgão cancelou o edital</option>
+          </Select>
+        </Field>
+        <Field label={status === 'Desistiu' ? 'Motivo da desistência (opcional)' : 'Motivo do cancelamento (opcional)'}>
+          <Input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Detalhe rapidamente, se quiser" />
+        </Field>
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>Cancelar</Button>
+          <Button variant="danger" onClick={salvar} disabled={marcarResultado.isPending}>
+            {marcarResultado.isPending ? 'Salvando...' : 'Encerrar'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
 
 const ETAPAS: BiddingEtapa[] = [
   'Análise de Edital',
@@ -43,7 +94,7 @@ type Visualizacao = 'quadro' | 'lista'
 // arrastável e o drag ficaria instável.
 function CardLicitacao({
   b, clienteNome, podeEditar, podeRetroceder, podeAvancar, desabilitado,
-  onMoverAnterior, onMoverProxima, onEditar,
+  onMoverAnterior, onMoverProxima, onEditar, onEncerrar,
 }: {
   b: Bidding
   clienteNome: string
@@ -54,6 +105,7 @@ function CardLicitacao({
   onMoverAnterior: () => void
   onMoverProxima: () => void
   onEditar: () => void
+  onEncerrar: () => void
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: b.id, disabled: !podeEditar || desabilitado })
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 10 } : undefined
@@ -107,6 +159,13 @@ function CardLicitacao({
             title="Próxima etapa"
           >
             <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEncerrar() }}
+            className="p-1 text-base-500 hover:text-negative-400 transition"
+            title="Encerrar (cliente desistiu ou órgão cancelou)"
+          >
+            <Ban className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
@@ -174,6 +233,7 @@ export default function KanbanLicitacoesPage() {
     () => (localStorage.getItem('cg_kanban_visualizacao') as Visualizacao) || 'quadro'
   )
   const [editando, setEditando] = useState<Bidding | null>(null)
+  const [encerrando, setEncerrando] = useState<Bidding | null>(null)
   const [arrastando, setArrastando] = useState<Bidding | null>(null)
 
   const sensors = useSensors(
@@ -281,6 +341,7 @@ export default function KanbanLicitacoesPage() {
         onMoverAnterior={() => mover(b, -1)}
         onMoverProxima={() => mover(b, 1)}
         onEditar={() => setEditando(b)}
+        onEncerrar={() => setEncerrando(b)}
       />
     )
   }
@@ -399,6 +460,13 @@ export default function KanbanLicitacoesPage() {
                             >
                               <Pencil className="w-3.5 h-3.5" />
                             </button>
+                            <button
+                              onClick={() => setEncerrando(b)}
+                              title="Encerrar (cliente desistiu ou órgão cancelou)"
+                              className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition"
+                            >
+                              <Ban className="w-3.5 h-3.5" />
+                            </button>
                           </td>
                         )}
                       </tr>
@@ -423,6 +491,8 @@ export default function KanbanLicitacoesPage() {
           error={updateBidding.error}
         />
       )}
+
+      {podeEditar && <EncerrarDialog bidding={encerrando} onClose={() => setEncerrando(null)} />}
     </div>
   )
 }

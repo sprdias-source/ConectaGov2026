@@ -7,7 +7,7 @@ import type { Database } from '../types/database'
 import type {
   Client, ClientPrefeitura, Bidding, BiddingItem, FinancialAccount, Empenho, Transaction,
   Employee, Contract, Receipt, AttachedFile, AuditLog, Category, PaymentMethod, ClientDocument, BiddingChecklistItem, AtestadoTecnico, ModeloDocumento, ContractMarco, PersonalEvent,
-  Platform, ClientPlatform,
+  Platform, ClientPlatform, Opportunity,
 } from '../types/domain'
 import { todayLocalISO } from './dateUtils'
 
@@ -122,6 +122,7 @@ export const fromBiddingRow = (r: Row<'biddings'>): Bidding => ({
   diasValidadeProposta: r.dias_validade_proposta,
   modeloCustomizadoPath: r.modelo_customizado_path,
   motivoPerda: r.motivo_perda,
+  motivoDesistencia: r.motivo_desistencia,
   isActive: r.is_active,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
@@ -155,6 +156,7 @@ export const toBiddingInsert = (b: Partial<Bidding>, userId: string): Database['
   dias_validade_proposta: b.diasValidadeProposta ?? '60 (sessenta)',
   modelo_customizado_path: b.modeloCustomizadoPath ?? null,
   motivo_perda: b.motivoPerda ?? null,
+  motivo_desistencia: b.motivoDesistencia ?? null,
   is_active: b.isActive ?? true,
 })
 
@@ -585,6 +587,43 @@ export const toClientPlatformInsert = (
   login: cp.login ?? null,
   senha: cp.senha ?? null,
   observacoes: cp.observacoes ?? null,
+})
+
+export const fromOpportunityRow = (r: Row<'opportunities'>): Opportunity => ({
+  id: r.id,
+  userId: r.user_id,
+  clientId: r.client_id,
+  platformId: r.platform_id,
+  titulo: r.titulo,
+  numeroEdital: r.numero_edital,
+  dataSessao: r.data_sessao,
+  dataEnvioCliente: r.data_envio_cliente,
+  resposta: r.resposta as Opportunity['resposta'],
+  dataResposta: r.data_resposta,
+  motivoRecusa: r.motivo_recusa,
+  diasAvisoPrazo: r.dias_aviso_prazo,
+  biddingId: r.bidding_id,
+  observacoes: r.observacoes,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+})
+
+export const toOpportunityInsert = (
+  o: Partial<Opportunity>, userId: string
+): Database['public']['Tables']['opportunities']['Insert'] => ({
+  user_id: userId,
+  client_id: o.clientId ?? '',
+  platform_id: o.platformId ?? '',
+  titulo: o.titulo ?? '',
+  numero_edital: o.numeroEdital ?? null,
+  data_sessao: o.dataSessao ?? null,
+  data_envio_cliente: o.dataEnvioCliente ?? null,
+  resposta: o.resposta ?? 'pendente',
+  data_resposta: o.dataResposta ?? null,
+  motivo_recusa: o.motivoRecusa ?? null,
+  dias_aviso_prazo: o.diasAvisoPrazo ?? 7,
+  bidding_id: o.biddingId ?? null,
+  observacoes: o.observacoes ?? null,
 })
 
 export const fromModeloDocumentoRow = (r: Row<'modelos_documentos'>): ModeloDocumento => ({
