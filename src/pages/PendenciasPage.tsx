@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import { ClipboardList, AlertTriangle, User } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { ClipboardList, AlertTriangle, User, ChevronRight } from 'lucide-react'
 import { PageHeader, Card, EmptyState } from '../components/ui/Primitives'
 import { SkeletonList } from '../components/ui/Skeleton'
 import { usePendenciasChecklist } from '../hooks/useBiddingChecklist'
@@ -59,29 +60,34 @@ export default function PendenciasPage() {
             {pendenciasOrdenadas.map((p) => {
               const dias = diasRestantes(p.prazo)
               return (
-                <Card key={p.id} className={`p-3.5 flex items-center gap-3 border ${corFor(dias)}`}>
-                  <div className="p-2 rounded-lg bg-base-900/60 shrink-0">
-                    <AlertTriangle className="w-4 h-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[9px] font-bold uppercase tracking-wider opacity-70">{p.categoria ?? 'Geral'}</span>
-                      {p.obrigatorio && <span className="text-[9px] font-bold uppercase tracking-wider text-warning-400">obrigatório</span>}
+                <Link key={p.id} to={`/licitacoes/${p.biddingId}?aba=checklist`} className="block">
+                  <Card className={`p-3.5 flex items-center gap-3 border transition hover:brightness-125 cursor-pointer ${corFor(dias)}`}>
+                    <div className="p-2 rounded-lg bg-base-900/60 shrink-0">
+                      <AlertTriangle className="w-4 h-4" />
                     </div>
-                    <p className="text-[13px] font-semibold text-base-100 truncate">{p.descricao}</p>
-                    <p className="text-[11px] text-base-500 truncate">
-                      {p.clientName} — {p.biddingObjeto.slice(0, 60)} ({p.biddingOrgao})
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-[12px] font-bold">{labelDias(dias)}</p>
-                    {p.responsavelNome && (
-                      <p className="text-[10px] text-base-500 flex items-center justify-end gap-1 mt-0.5">
-                        <User className="w-3 h-3" /> {p.responsavelNome}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[9px] font-bold uppercase tracking-wider opacity-70">{p.categoria ?? 'Geral'}</span>
+                        {p.obrigatorio && <span className="text-[9px] font-bold uppercase tracking-wider text-warning-400">obrigatório</span>}
+                      </div>
+                      <p className="text-[13px] font-semibold text-base-100 truncate">{p.descricao}</p>
+                      <p className="text-[11px] text-base-500 truncate">
+                        {p.clientName} — {p.biddingObjeto.slice(0, 60)} ({p.biddingOrgao})
                       </p>
-                    )}
-                  </div>
-                </Card>
+                    </div>
+                    <div className="text-right shrink-0 flex items-center gap-2">
+                      <div>
+                        <p className="text-[12px] font-bold">{labelDias(dias)}</p>
+                        {p.responsavelNome && (
+                          <p className="text-[10px] text-base-500 flex items-center justify-end gap-1 mt-0.5">
+                            <User className="w-3 h-3" /> {p.responsavelNome}
+                          </p>
+                        )}
+                      </div>
+                      <ChevronRight className="w-4 h-4 opacity-40" />
+                    </div>
+                  </Card>
+                </Link>
               )
             })}
           </div>
