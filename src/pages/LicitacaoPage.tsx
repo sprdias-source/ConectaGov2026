@@ -1587,11 +1587,14 @@ export default function LicitacaoPage() {
   }
 
   const handleSalvarAtestadoDoItem = async (item: BiddingChecklistItem, file: File | null) => {
-    if (!atestadoForm.nome.trim() || !atestadoForm.objeto.trim()) return
+    if (!file) return
     setEnviandoItemId(item.id)
     try {
       const novoId = await addAtestado.mutateAsync({
-        nome: atestadoForm.nome.trim(),
+        // Nome e objeto ficam opcionais — sem digitar, usa o nome do
+        // arquivo. Objeto vazio só significa que esse atestado não entra
+        // na comparação automática do Ranking de Compatibilidade.
+        nome: atestadoForm.nome.trim() || file.name,
         objeto: atestadoForm.objeto.trim(),
         orgaoEmissor: atestadoForm.orgaoEmissor.trim() || null,
         valor: atestadoForm.valor ? parseFloat(atestadoForm.valor) : null,
@@ -2187,7 +2190,7 @@ export default function LicitacaoPage() {
                                 <div className="flex justify-end">
                                   <Button
                                     onClick={() => handleSalvarAtestadoDoItem(item, atestadoFileSelecionado)}
-                                    disabled={!atestadoForm.nome.trim() || !atestadoForm.objeto.trim() || enviandoEste}
+                                    disabled={!atestadoFileSelecionado || enviandoEste}
                                   >
                                     {enviandoEste ? 'Salvando...' : 'Salvar Atestado'}
                                   </Button>
