@@ -1014,6 +1014,15 @@ interface AnaliseEdital {
   horario?: string
   portal?: string
   intervaloLances?: string
+  modoDisputa?: {
+    tipo?: string
+    duracaoFaseAberta?: string
+    duracaoFaseFechada?: string
+    prorrogacaoAutomatica?: string
+    tempoAleatorio?: string
+    criterioEncerramento?: string
+    observacoes?: string
+  }
   resumoTecnico?: string
   itens?: { numero?: string | number; idPortal?: string | number; lote?: string | number; descricao: string; unidade?: string; quantidade?: number; valorReferencia?: number }[]
   validadeProposta?: string
@@ -1036,6 +1045,16 @@ interface AnaliseEdital {
   conclusaoTecnica?: string
   checklistDocumentacao?: { descricao: string; categoria?: string | null; obrigatorio?: boolean }[]
 }
+
+const CAMPOS_MODO_DISPUTA: { chave: keyof NonNullable<AnaliseEdital['modoDisputa']>; label: string }[] = [
+  { chave: 'tipo', label: 'Tipo' },
+  { chave: 'duracaoFaseAberta', label: 'Duração — Fase Aberta' },
+  { chave: 'duracaoFaseFechada', label: 'Duração — Fase Fechada' },
+  { chave: 'prorrogacaoAutomatica', label: 'Prorrogação Automática' },
+  { chave: 'tempoAleatorio', label: 'Tempo Aleatório' },
+  { chave: 'criterioEncerramento', label: 'Critério de Encerramento' },
+  { chave: 'observacoes', label: 'Observações' },
+]
 
 const CAMPOS_HABILITACAO: { chave: keyof NonNullable<AnaliseEdital['habilitacao']>; label: string }[] = [
   { chave: 'habilitacaoJuridica', label: 'Habilitação Jurídica' },
@@ -1231,6 +1250,17 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
             <CampoResumo label="Catálogo" valor={analise.catalogo} />
             <CampoResumo label="Forma / Local de Entrega" valor={localOuFormaEntrega} />
           </div>
+
+          {analise.modoDisputa && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">Modo de Disputa</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {CAMPOS_MODO_DISPUTA.map(({ chave, label }) => (
+                  <CampoResumo key={chave} label={label} valor={analise.modoDisputa?.[chave]} />
+                ))}
+              </div>
+            </div>
+          )}
 
           <SecaoTexto label="Resumo Técnico" texto={analise.resumoTecnico} />
 
