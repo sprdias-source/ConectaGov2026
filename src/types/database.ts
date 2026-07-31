@@ -861,6 +861,105 @@ export type Database = {
         }
         Relationships: []
       }
+      platforms: {
+        Row: {
+          created_at: string
+          id: string
+          nome: string
+          tipo_padrao: string
+          updated_at: string
+          url: string | null
+          user_id: string
+          valor_padrao: number | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          nome: string
+          tipo_padrao?: string
+          updated_at?: string
+          url?: string | null
+          user_id: string
+          valor_padrao?: number | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          nome?: string
+          tipo_padrao?: string
+          updated_at?: string
+          url?: string | null
+          user_id?: string
+          valor_padrao?: number | null
+        }
+        Relationships: []
+      }
+      client_platforms: {
+        Row: {
+          ativo: boolean
+          client_id: string
+          created_at: string
+          data_vencimento: string | null
+          dias_aviso_vencimento: number
+          id: string
+          login: string | null
+          observacoes: string | null
+          platform_id: string
+          senha: string | null
+          tipo: string
+          updated_at: string
+          user_id: string
+          valor_mensalidade: number | null
+        }
+        Insert: {
+          ativo?: boolean
+          client_id: string
+          created_at?: string
+          data_vencimento?: string | null
+          dias_aviso_vencimento?: number
+          id?: string
+          login?: string | null
+          observacoes?: string | null
+          platform_id: string
+          senha?: string | null
+          tipo?: string
+          updated_at?: string
+          user_id: string
+          valor_mensalidade?: number | null
+        }
+        Update: {
+          ativo?: boolean
+          client_id?: string
+          created_at?: string
+          data_vencimento?: string | null
+          dias_aviso_vencimento?: number
+          id?: string
+          login?: string | null
+          observacoes?: string | null
+          platform_id?: string
+          senha?: string | null
+          tipo?: string
+          updated_at?: string
+          user_id?: string
+          valor_mensalidade?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_platforms_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_platforms_platform_id_fkey"
+            columns: ["platform_id"]
+            isOneToOne: false
+            referencedRelation: "platforms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contracts: {
         Row: {
           bidding_id: string | null

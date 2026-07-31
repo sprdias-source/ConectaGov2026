@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FolderKanban, Users, Gavel, Wallet, FileText } from 'lucide-react'
+import { FolderKanban, Users, Gavel, Wallet, FileText, Globe } from 'lucide-react'
 import { PageHeader, Card } from '../components/ui/Primitives'
 import { Select } from '../components/ui/FormControls'
 import { useClients } from '../hooks/useClients'
@@ -9,8 +9,9 @@ import ClientsTab from '../components/cadastros/ClientsTab'
 import BiddingsTab from '../components/cadastros/BiddingsTab'
 import AccountsTab from '../components/cadastros/AccountsTab'
 import HabilitacaoChecklist from '../components/documentos/HabilitacaoChecklist'
+import ClientPlatformsPanel from '../components/plataformas/ClientPlatformsPanel'
 
-type Tab = 'clientes' | 'licitacoes' | 'contas' | 'documentos'
+type Tab = 'clientes' | 'licitacoes' | 'contas' | 'documentos' | 'plataformas'
 
 export default function CadastrosPage() {
   const [tab, setTab] = useState<Tab>('clientes')
@@ -24,6 +25,7 @@ export default function CadastrosPage() {
     { key: 'licitacoes', label: 'Licitações', icon: Gavel, count: biddings.length },
     { key: 'contas', label: 'Contas & Cartões', icon: Wallet, count: accounts.length },
     { key: 'documentos', label: 'Documentos de Habilitação', icon: FileText },
+    { key: 'plataformas', label: 'Plataformas', icon: Globe },
   ]
 
   const selectedClient = clients.find((c) => c.id === selectedClientId)
@@ -88,6 +90,36 @@ export default function CadastrosPage() {
             ) : (
               <div className="text-center py-12 text-base-500 text-[13px]">
                 Selecione um cliente acima para gerenciar os documentos de habilitação.
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'plataformas' && (
+          <div className="flex flex-col gap-4">
+            <Card className="p-4">
+              <p className="text-[11px] uppercase tracking-wider text-base-500 font-bold mb-2">
+                Selecione o cliente
+              </p>
+              <Select
+                value={selectedClientId}
+                onChange={(e) => setSelectedClientId(e.target.value)}
+                className="max-w-sm"
+              >
+                <option value="">— Selecione um cliente —</option>
+                {clients.filter((c) => c.isActive).map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </Select>
+            </Card>
+
+            {selectedClient ? (
+              <Card className="p-5">
+                <ClientPlatformsPanel clientId={selectedClient.id} clientName={selectedClient.name} />
+              </Card>
+            ) : (
+              <div className="text-center py-12 text-base-500 text-[13px]">
+                Selecione um cliente acima para gerenciar as plataformas assinadas.
               </div>
             )}
           </div>

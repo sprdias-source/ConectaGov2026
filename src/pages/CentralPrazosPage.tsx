@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { AlarmClock, Gavel, ShieldAlert, Wallet } from 'lucide-react'
+import { AlarmClock, Gavel, Globe, ShieldAlert, Wallet } from 'lucide-react'
 import { PageHeader, Card, EmptyState } from '../components/ui/Primitives'
 import { SkeletonList } from '../components/ui/Skeleton'
 import { useBiddings } from '../hooks/useBiddings'
@@ -7,13 +7,15 @@ import { useClients } from '../hooks/useClients'
 import { useTransactions } from '../hooks/useTransactions'
 import { useAllBiddingChecklistItems } from '../hooks/useBiddingChecklist'
 import { useAllClientDocuments, calcDocStatus, diasRestantes } from '../hooks/useClientDocuments'
+import { useAllClientPlatforms, calcPlatformStatus, diasParaVencer } from '../hooks/useClientPlatforms'
+import { usePlatforms } from '../hooks/usePlatforms'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { CERT_CONFIG } from '../types/domain'
 import { todayLocalISO } from '../lib/dateUtils'
 
 type ItemPrazo = {
   key: string
-  tipo: 'Pregão' | 'Certidão' | 'Financeiro'
+  tipo: 'Pregão' | 'Certidão' | 'Financeiro' | 'Plataforma'
   titulo: string
   subtitulo: string
   data: string
@@ -31,6 +33,8 @@ export default function CentralPrazosPage() {
   const { transactions, isLoading: loadingTransactions } = useTransactions()
   const { documents, isLoading: loadingDocuments } = useAllClientDocuments()
   const { items: allChecklistItems, isLoading: loadingChecklist } = useAllBiddingChecklistItems()
+  const { clientPlatforms, isLoading: loadingPlatforms } = useAllClientPlatforms()
+  const { platforms } = usePlatforms()
 
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? 'Cliente removido'
 
@@ -122,14 +126,32 @@ export default function CentralPrazosPage() {
       })
     }
 
-    return lista.sort((a, b) => a.dias - b.dias)
-  }, [biddings, documents, allChecklistItems, transactions, clients])
+    // Plataformas (assinaturas ativas) vencendo ou já vencidas — mesma
+    // régua de calcDocStatus, mas com a antecedência de aviso vindo do
+    // próprio registro (dias_aviso_vencimento), não de um valor fixo.
+    for (const cp of clientPlatforms) {
+      const status = calcPlatformStatus(cp.dataVencimento, cp.diasAvisoVencimento)
+      if (status !== 'vencendo' && status !== 'vencida') continue
+      lista.push({
+        key: `platform-${cp.id}`,
+        tipo: 'Plataforma',
+        titulo: platforms.find((p) => p.id === cp.platformId)?.nome ?? 'Plataforma removida',
+        subtitulo: clientName(cp.clientId),
+        data: cp.dataVencimento ?? hoje,
+        dias: diasParaVencer(cp.dataVencimento) ?? 0,
+        valor: cp.tipo === 'paga' ? cp.valorMensalidade ?? undefined : undefined,
+      })
+    }
 
-  const isLoading = loadingBiddings || loadingTransactions || loadingDocuments || loadingChecklist
+    return lista.sort((a, b) => a.dias - b.dias)
+  }, [biddings, documents, allChecklistItems, transactions, clients, clientPlatforms, platforms])
+
+  const isLoading = loadingBiddings || loadingTransactions || loadingDocuments || loadingChecklist || loadingPlatforms
 
   const iconFor = (tipo: ItemPrazo['tipo']) => {
     if (tipo === 'Pregão') return Gavel
     if (tipo === 'Certidão') return ShieldAlert
+    if (tipo === 'Plataforma') return Globe
     return Wallet
   }
 

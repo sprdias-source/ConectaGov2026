@@ -13,6 +13,7 @@ import { useTransactions } from '../../hooks/useTransactions'
 import { useAccountBalances, formatBRL } from '../../hooks/useAccountBalances'
 import { useBackup } from '../../hooks/useBackup'
 import { useAllClientDocuments } from '../../hooks/useClientDocuments'
+import { useAllClientPlatforms, calcPlatformStatus } from '../../hooks/useClientPlatforms'
 import ResolverCaptchaModal from '../robos/ResolverCaptchaModal'
 
 export default function AppShell({ children }: { children: ReactNode }) {
@@ -24,6 +25,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const { standardAccounts, creditCards, balances, patrimonioTotal, unlinkedPaidCount } = useAccountBalances(accounts, transactions)
   const { exportBackup, isExporting } = useBackup()
   const { documents: clientDocuments } = useAllClientDocuments()
+  const { clientPlatforms } = useAllClientPlatforms()
 
   const [patrimonioVisible, setPatrimonioVisible] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -88,12 +90,17 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }
 
   // Contagem de itens urgentes pro badge da Central de Prazos: certidões
-  // vencendo/vencidas + lançamentos financeiros atrasados. Mantido simples
-  // de propósito — o detalhe completo (incluindo pregões próximos) fica só
-  // na própria tela, aqui é só o "chame a atenção".
+  // vencendo/vencidas + lançamentos financeiros atrasados + plataformas
+  // vencendo/vencidas. Mantido simples de propósito — o detalhe completo
+  // (incluindo pregões próximos) fica só na própria tela, aqui é só o
+  // "chame a atenção".
   const alertasUrgentes =
     clientDocuments.filter((d) => d.status === 'vencendo' || d.status === 'vencido').length +
-    transactions.filter((t) => t.status === 'Atrasado').length
+    transactions.filter((t) => t.status === 'Atrasado').length +
+    clientPlatforms.filter((cp) => {
+      const status = calcPlatformStatus(cp.dataVencimento, cp.diasAvisoVencimento)
+      return status === 'vencendo' || status === 'vencida'
+    }).length
 
   // Conteúdo completo do menu (busca, patrimônio, contas/cartões, grupos de
   // navegação) — reaproveitado tanto no painel expandido normal quanto na
