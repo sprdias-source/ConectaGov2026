@@ -7,6 +7,7 @@ import type { Database } from '../types/database'
 import type {
   Client, ClientPrefeitura, Bidding, BiddingItem, FinancialAccount, Empenho, Transaction,
   Employee, Contract, Receipt, AttachedFile, AuditLog, Category, PaymentMethod, ClientDocument, BiddingChecklistItem, AtestadoTecnico, ModeloDocumento, ContractMarco, PersonalEvent,
+  Platform, ClientPlatform,
 } from '../types/domain'
 import { todayLocalISO } from './dateUtils'
 
@@ -530,6 +531,60 @@ export const toAtestadoInsert = (
   data_emissao: a.dataEmissao ?? null,
   storage_path: a.storagePath ?? null,
   observacoes: a.observacoes ?? null,
+})
+
+export const fromPlatformRow = (r: Row<'platforms'>): Platform => ({
+  id: r.id,
+  userId: r.user_id,
+  nome: r.nome,
+  url: r.url,
+  tipoPadrao: r.tipo_padrao as Platform['tipoPadrao'],
+  valorPadrao: r.valor_padrao !== null ? Number(r.valor_padrao) : null,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+})
+
+export const toPlatformInsert = (
+  p: Partial<Platform>, userId: string
+): Database['public']['Tables']['platforms']['Insert'] => ({
+  user_id: userId,
+  nome: p.nome ?? '',
+  url: p.url ?? null,
+  tipo_padrao: p.tipoPadrao ?? 'paga',
+  valor_padrao: p.valorPadrao ?? null,
+})
+
+export const fromClientPlatformRow = (r: Row<'client_platforms'>): ClientPlatform => ({
+  id: r.id,
+  userId: r.user_id,
+  clientId: r.client_id,
+  platformId: r.platform_id,
+  tipo: r.tipo as ClientPlatform['tipo'],
+  valorMensalidade: r.valor_mensalidade !== null ? Number(r.valor_mensalidade) : null,
+  dataVencimento: r.data_vencimento,
+  diasAvisoVencimento: r.dias_aviso_vencimento,
+  ativo: r.ativo,
+  login: r.login,
+  senha: r.senha,
+  observacoes: r.observacoes,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+})
+
+export const toClientPlatformInsert = (
+  cp: Partial<ClientPlatform>, userId: string
+): Database['public']['Tables']['client_platforms']['Insert'] => ({
+  user_id: userId,
+  client_id: cp.clientId ?? '',
+  platform_id: cp.platformId ?? '',
+  tipo: cp.tipo ?? 'paga',
+  valor_mensalidade: cp.valorMensalidade ?? null,
+  data_vencimento: cp.dataVencimento ?? null,
+  dias_aviso_vencimento: cp.diasAvisoVencimento ?? 15,
+  ativo: cp.ativo ?? true,
+  login: cp.login ?? null,
+  senha: cp.senha ?? null,
+  observacoes: cp.observacoes ?? null,
 })
 
 export const fromModeloDocumentoRow = (r: Row<'modelos_documentos'>): ModeloDocumento => ({

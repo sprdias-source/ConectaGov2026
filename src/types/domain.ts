@@ -416,6 +416,49 @@ export interface ClientDocument {
   updatedAt: string
 }
 
+export type PlatformTipo = 'paga' | 'gratuita'
+
+// Catálogo de plataformas de licitação (Portal de Compras Públicas, BLL,
+// ComprasNet etc.) — cadastrado uma vez, reaproveitado em quantas
+// assinaturas de cliente precisar (ver ClientPlatform).
+export interface Platform {
+  id: string
+  userId: string
+  nome: string
+  url: string | null
+  tipoPadrao: PlatformTipo
+  valorPadrao: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+// Assinatura de um cliente numa plataforma do catálogo — mensalidade,
+// vencimento e a antecedência do aviso (diasAvisoVencimento), editável por
+// assinatura porque cada cliente prefere ser avisado com um número de dias
+// diferente.
+export interface ClientPlatform {
+  id: string
+  userId: string
+  clientId: string
+  platformId: string
+  tipo: PlatformTipo
+  valorMensalidade: number | null
+  dataVencimento: string | null
+  diasAvisoVencimento: number
+  ativo: boolean
+  login: string | null
+  senha: string | null
+  observacoes: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+// 'sem_vencimento' cobre tanto plataformas gratuitas sem prazo (ex:
+// ComprasNet) quanto qualquer assinatura ainda sem data de vencimento
+// preenchida — não é sobre ser paga ou não, é sobre ter ou não uma data
+// pra vencer.
+export type PlatformStatus = 'ativa' | 'vencendo' | 'vencida' | 'sem_vencimento'
+
 // Configuração de cada tipo de certidão automática
 export const CERT_CONFIG: Record<Exclude<DocumentTipo, 'manual'>, {
   label: string
