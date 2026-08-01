@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Globe, Plus, X, ChevronDown, ChevronRight, Upload, Eye, Trash2, Sparkles,
@@ -9,8 +9,12 @@ import { Card } from '../ui/Primitives'
 import ErrorAlert from '../ui/ErrorAlert'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import PdfViewerModal from '../ui/PdfViewerModal'
+import { AnaliseEditalResumo } from '../shared/AnaliseEditalResumo'
+import { AnaliseJuridicaTabs } from '../shared/AnaliseJuridicaTabs'
 import { useOpportunities, calcOpportunityStatus, diasParaSessao } from '../../hooks/useOpportunities'
 import { useOpportunityAnalysis } from '../../hooks/useOpportunityAnalysis'
+import { useAnaliseJuridicaOportunidade, useLimparAnaliseJuridicaOportunidade } from '../../hooks/useAnaliseJuridicaOportunidade'
+import type { TipoAnaliseJuridica } from '../../hooks/useAnaliseJuridicaEdital'
 import { usePlatforms } from '../../hooks/usePlatforms'
 import { useClients } from '../../hooks/useClients'
 import { useAttachedFiles } from '../../hooks/useAttachedFiles'
@@ -64,11 +68,15 @@ function OportunidadeDetalhe({
   const navigate = useNavigate()
   const { marcarResposta, deleteOpportunity, converterEmLicitacao, updateOpportunity } = useOpportunities()
   const { files, uploadFile, deleteFile } = useAttachedFiles('oportunidade', opportunity.id)
-  const { analysis, analisar, travado } = useOpportunityAnalysis(opportunity.id)
+  const { analysis, analisar, travado, limparAnalise } = useOpportunityAnalysis(opportunity.id)
+  const [tipoJuridicoAtivo, setTipoJuridicoAtivo] = useState<TipoAnaliseJuridica>('esclarecimento')
+  const { analysis: analiseJuridica, analisar: analisarJuridica, travado: travadoJuridica } = useAnaliseJuridicaOportunidade(opportunity.id, tipoJuridicoAtivo)
+  const { limpar: limparAnaliseJuridica } = useLimparAnaliseJuridicaOportunidade(opportunity.id)
   const [motivoRecusa, setMotivoRecusa] = useState('')
   const [mostrarRecusa, setMostrarRecusa] = useState(false)
   const [confirmandoConversao, setConfirmandoConversao] = useState(false)
   const [diasAviso, setDiasAviso] = useState(String(opportunity.diasAvisoPrazo))
+  const [titulo, setTitulo] = useState(opportunity.titulo)
   const [erro, setErro] = useState<string | null>(null)
 
   const edital = files.find((f) => f.category === 'Edital')
@@ -80,6 +88,44 @@ function OportunidadeDetalhe({
     const valor = parseInt(diasAviso, 10)
     if (Number.isNaN(valor) || valor === opportunity.diasAvisoPrazo) return
     updateOpportunity.mutate({ ...opportunity, diasAvisoPrazo: valor })
+  }
+
+  const handleSalvarTitulo = () => {
+    const valor = titulo.trim()
+    if (!valor || valor === opportunity.titulo) return
+    updateOpportunity.mutate({ ...opportunity, titulo: valor })
+  }
+
+  // Quando a oportunidade nasce sem título (fluxo atual: pode salvar só com
+  // cliente/plataforma, direto pro upload/análise do edital, sem precisar
+  // resumir o objeto de antemão), assim que a IA identificar o objeto do
+  // edital, ele vira o título automaticamente — nunca sobrescreve um título
+  // já definido manualmente.
+  useEffect(() => {
+    if (analise?.objeto && !opportunity.titulo.trim() && !updateOpportunity.isPending) {
+      updateOpportunity.mutate({ ...opportunity, titulo: analise.objeto })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analise?.objeto, opportunity.titulo])
+
+  const handleExcluirEdital = () => {
+    if (!edital) return
+    deleteFile.mutate(edital, {
+      onSuccess: () => {
+        limparAnalise.mutate()
+        limparAnaliseJuridica.mutate()
+      },
+    })
+  }
+
+  // Mantém o campo sincronizado se o título mudar por fora (ex: o
+  // preenchimento automático a partir do objeto identificado pela IA,
+  // acima) — ajuste durante a renderização, não em efeito (evita o
+  // re-render em cascata de um setState dentro de useEffect).
+  const [tituloBase, setTituloBase] = useState(opportunity.titulo)
+  if (opportunity.titulo !== tituloBase) {
+    setTituloBase(opportunity.titulo)
+    setTitulo(opportunity.titulo)
   }
 
   const handleConverter = async () => {
@@ -95,6 +141,23 @@ function OportunidadeDetalhe({
 
   return (
     <div className="border-t border-base-800 px-4 py-3.5 flex flex-col gap-3.5 bg-base-900/30">
+      <div>
+        <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Título / Objeto</p>
+        {podeEditar ? (
+          <Input
+            placeholder="Ex: Fornecimento de postes de madeira tratada"
+            value={titulo}
+            onChange={(e) => setTitulo(e.target.value)}
+            onBlur={handleSalvarTitulo}
+          />
+        ) : (
+          <p className="text-[13px] text-base-200">{opportunity.titulo || '(sem título)'}</p>
+        )}
+        {!opportunity.titulo.trim() && (
+          <p className="text-[11px] text-base-500 italic mt-1">Sem título ainda — envie o edital e analise com IA abaixo pra preencher automaticamente, ou digite aqui.</p>
+        )}
+      </div>
+
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div>
           <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Edital (PDF)</p>
@@ -104,7 +167,7 @@ function OportunidadeDetalhe({
                 <Eye className="w-3.5 h-3.5" /> Ver PDF
               </button>
               {podeEditar && (
-                <button onClick={() => deleteFile.mutate(edital)} className="text-base-500 hover:text-negative-400"><Trash2 className="w-3.5 h-3.5" /></button>
+                <button onClick={handleExcluirEdital} className="text-base-500 hover:text-negative-400"><Trash2 className="w-3.5 h-3.5" /></button>
               )}
             </div>
           ) : podeEditar ? (
@@ -166,13 +229,21 @@ function OportunidadeDetalhe({
       {analysis?.status === 'erro' && <p className="text-[11px] text-negative-400">Falha na análise: {analysis.erroMensagem}</p>}
 
       {analise && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[12px]">
-          {analise.objeto && <div className="bg-base-850/60 border border-base-800 rounded-lg px-2.5 py-2"><p className="text-[9.5px] uppercase text-base-500 font-bold mb-0.5">Objeto</p><p className="text-base-200 truncate">{analise.objeto}</p></div>}
-          {analise.orgao && <div className="bg-base-850/60 border border-base-800 rounded-lg px-2.5 py-2"><p className="text-[9.5px] uppercase text-base-500 font-bold mb-0.5">Órgão</p><p className="text-base-200 truncate">{analise.orgao}</p></div>}
-          {analise.modalidade && <div className="bg-base-850/60 border border-base-800 rounded-lg px-2.5 py-2"><p className="text-[9.5px] uppercase text-base-500 font-bold mb-0.5">Modalidade</p><p className="text-base-200 truncate">{analise.modalidade}</p></div>}
-          {!!analise.itens?.length && <div className="bg-base-850/60 border border-base-800 rounded-lg px-2.5 py-2"><p className="text-[9.5px] uppercase text-base-500 font-bold mb-0.5">Itens</p><p className="text-base-200">{analise.itens.length} identificados</p></div>}
+        <div className="border-t border-base-800/60 pt-3.5">
+          <AnaliseEditalResumo analise={analise} />
         </div>
       )}
+
+      <div className="border-t border-base-800/60 pt-3.5">
+        <AnaliseJuridicaTabs
+          temEdital={!!edital}
+          tipoAtivo={tipoJuridicoAtivo}
+          onTrocarTipo={setTipoJuridicoAtivo}
+          analysis={analiseJuridica}
+          analisar={analisarJuridica}
+          travado={travadoJuridica}
+        />
+      </div>
 
       {erro && <p className="text-[11px] text-negative-400">{erro}</p>}
 
@@ -204,9 +275,14 @@ function OportunidadeDetalhe({
           )
         ) : opportunity.resposta === 'aceita' ? (
           podeEditar && (
-            <Button onClick={() => setConfirmandoConversao(true)}>
-              <ArrowRight className="w-3.5 h-3.5" /> Converter em Licitação
-            </Button>
+            <div className="flex flex-col gap-1">
+              <Button onClick={() => setConfirmandoConversao(true)} disabled={!analise && !opportunity.titulo.trim()}>
+                <ArrowRight className="w-3.5 h-3.5" /> Converter em Licitação
+              </Button>
+              {!analise && !opportunity.titulo.trim() && (
+                <p className="text-[11px] text-base-500 italic">Defina um título ou rode a análise de IA antes de converter.</p>
+              )}
+            </div>
           )
         ) : (
           <p className="text-[11.5px] text-base-500">
@@ -271,7 +347,7 @@ export default function OportunidadesPanel() {
 
   const handleSalvarNova = async () => {
     setErroForm(null)
-    if (!form.clientId || !form.titulo.trim()) return
+    if (!form.clientId) return
     try {
       let platformId = form.platformId
       if (platformId === NOVA_PLATAFORMA) {
@@ -279,7 +355,13 @@ export default function OportunidadesPanel() {
         platformId = await addPlatform.mutateAsync({ nome: form.novaPlataformaNome.trim() })
       }
       if (!platformId) return
-      await addOpportunity.mutateAsync({
+      // Título é opcional aqui de propósito: o fluxo normal é enviar o
+      // edital e analisar com IA já na sequência (linha recém-criada abre
+      // sozinha, ver abaixo) — o objeto identificado pela IA vira o título
+      // automaticamente (ver efeito em OportunidadeDetalhe). Sem isso, o
+      // cadastro forçava resumir o objeto ANTES de sequer poder anexar o
+      // edital, na ordem errada.
+      const novaId = await addOpportunity.mutateAsync({
         clientId: form.clientId,
         platformId,
         titulo: form.titulo.trim(),
@@ -290,6 +372,7 @@ export default function OportunidadesPanel() {
       })
       setMostrarForm(false)
       setForm(FORM_VAZIO)
+      setExpandedId(novaId)
     } catch (err) {
       setErroForm(mensagemDeErro(err))
     }
@@ -356,8 +439,8 @@ export default function OportunidadesPanel() {
             <Input placeholder="Nome da nova plataforma" value={form.novaPlataformaNome} onChange={(e) => setForm({ ...form, novaPlataformaNome: e.target.value })} />
           )}
           <div>
-            <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Título / objeto resumido *</label>
-            <Input placeholder="Ex: Fornecimento de postes de madeira tratada" value={form.titulo} onChange={(e) => setForm({ ...form, titulo: e.target.value })} />
+            <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Título / objeto resumido</label>
+            <Input placeholder="Opcional — pode deixar em branco e enviar o edital direto, a IA preenche depois de analisar" value={form.titulo} onChange={(e) => setForm({ ...form, titulo: e.target.value })} />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
@@ -376,11 +459,11 @@ export default function OportunidadesPanel() {
           {erroForm && <p className="text-[11px] text-negative-400">{erroForm}</p>}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => { setMostrarForm(false); setForm(FORM_VAZIO) }}>Cancelar</Button>
-            <Button onClick={handleSalvarNova} disabled={!form.clientId || !form.titulo.trim() || addOpportunity.isPending}>
+            <Button onClick={handleSalvarNova} disabled={!form.clientId || addOpportunity.isPending}>
               {addOpportunity.isPending ? 'Salvando...' : 'Salvar'}
             </Button>
           </div>
-          <p className="text-[11px] text-base-500">Depois de salvar, envie o edital/TR e rode a análise por IA na própria linha.</p>
+          <p className="text-[11px] text-base-500">Depois de salvar, a linha já abre pra você enviar o edital/TR e rodar a análise por IA.</p>
         </div>
       )}
 
@@ -399,7 +482,7 @@ export default function OportunidadesPanel() {
                 <button onClick={() => setExpandedId(aberto ? null : o.id)} className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-base-850 transition">
                   {aberto ? <ChevronDown className="w-3.5 h-3.5 text-base-500 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-base-500 shrink-0" />}
                   <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-medium text-base-200 truncate">{clientName(o.clientId)} — {o.titulo}</p>
+                    <p className="text-[13px] font-medium text-base-200 truncate">{clientName(o.clientId)} — {o.titulo || '(sem título)'}</p>
                     <p className="text-[11px] text-base-500 truncate">{plataforma?.nome ?? 'Plataforma removida'}{o.numeroEdital ? ` · Edital ${o.numeroEdital}` : ''}</p>
                   </div>
                   {o.dataSessao && (

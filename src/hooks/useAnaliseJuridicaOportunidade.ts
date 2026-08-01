@@ -3,57 +3,58 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import type { Database } from '../types/database'
+import type { ResultadoAnaliseJuridica, TipoAnaliseJuridica } from './useAnaliseJuridicaEdital'
 
-export type OpportunityAnalysisStatus = 'processando' | 'concluido' | 'erro' | string
-
-export interface OpportunityAnalysisResult {
+export interface AnaliseJuridicaOportunidade {
   id: string
   userId: string
   opportunityId: string
-  status: OpportunityAnalysisStatus
-  analise: Record<string, unknown> | null
+  tipo: TipoAnaliseJuridica
+  status: string
+  resultado: ResultadoAnaliseJuridica | null
   erroMensagem: string | null
   createdAt: string
   updatedAt: string
 }
 
-function fromRow(r: Database['public']['Tables']['opportunity_analysis']['Row']): OpportunityAnalysisResult {
+function fromRow(r: Database['public']['Tables']['opportunity_analysis_juridica']['Row']): AnaliseJuridicaOportunidade {
   return {
     id: r.id,
     userId: r.user_id,
     opportunityId: r.opportunity_id,
+    tipo: r.tipo as TipoAnaliseJuridica,
     status: r.status,
-    analise: (r.analise as Record<string, unknown> | null) ?? null,
+    resultado: (r.resultado as ResultadoAnaliseJuridica | null) ?? null,
     erroMensagem: r.erro_mensagem,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
 }
 
-const QUERY_KEY = ['opportunity_analysis']
+const QUERY_KEY = ['opportunity_analysis_juridica']
 
-// Mesmo limite usado em useBiddingAnalysis: se a function travar antes de
-// gravar o resultado, a linha fica presa em 'processando' pra sempre.
+// Mesmo limite usado em useAnaliseJuridicaEdital: se a function travar antes
+// de gravar o resultado, a linha fica presa em 'processando' pra sempre.
 const LIMITE_PROCESSANDO_MS = 3 * 60 * 1000
 
-// Mesmo padrão de useBiddingAnalysis, mas pro estágio de Oportunidade —
-// permite rodar a mesma análise de IA (Analisar-oportunidade) antes mesmo
-// da licitação existir de verdade. Ao converter a oportunidade, o
-// resultado é copiado direto pra bidding_analysis (ver useOpportunities.ts)
-// em vez de rodar a IA de novo.
-export function useOpportunityAnalysis(opportunityId?: string) {
+// Esclarecimentos / Impugnações / Raio-X do edital por IA, já na fase de
+// Oportunidade — mesmo padrão de useAnaliseJuridicaEdital, só que lendo/
+// gravando em opportunity_analysis_juridica (uma linha por opportunity_id +
+// tipo) via a function Analisar-oportunidade-juridico.
+export function useAnaliseJuridicaOportunidade(opportunityId: string | undefined, tipo: TipoAnaliseJuridica) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
-  const queryKey = [...QUERY_KEY, opportunityId]
+  const queryKey = [...QUERY_KEY, opportunityId, tipo]
 
   const query = useQuery({
     queryKey,
     enabled: !!user && !!opportunityId,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('opportunity_analysis')
+        .from('opportunity_analysis_juridica')
         .select('*')
         .eq('opportunity_id', opportunityId!)
+        .eq('tipo', tipo)
         .maybeSingle()
       if (error) throw error
       return data ? fromRow(data) : null
@@ -82,24 +83,10 @@ export function useOpportunityAnalysis(opportunityId?: string) {
   const analisar = useMutation({
     mutationFn: async () => {
       if (!opportunityId) throw new Error('Oportunidade não informada')
-      const { error } = await supabase.functions.invoke('Analisar-oportunidade', { body: { opportunityId } })
+      const { error } = await supabase.functions.invoke('Analisar-oportunidade-juridico', { body: { opportunityId, tipo } })
       if (error) throw error
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey })
-    },
-  })
-
-  // Apaga o resultado da análise guardado pra esta oportunidade — usado
-  // quando o edital que gerou aquela análise é removido (ou trocado por
-  // outro), mesma ideia de limparAnalise em useBiddingAnalysis.ts.
-  const limparAnalise = useMutation({
-    mutationFn: async () => {
-      if (!opportunityId) throw new Error('Oportunidade não informada')
-      const { error } = await supabase.from('opportunity_analysis').delete().eq('opportunity_id', opportunityId)
-      if (error) throw error
-    },
-    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey })
     },
   })
@@ -109,6 +96,25 @@ export function useOpportunityAnalysis(opportunityId?: string) {
     isLoading: query.isLoading,
     travado,
     analisar,
-    limparAnalise,
   }
+}
+
+// Apaga as 3 análises jurídicas (Esclarecimentos/Impugnações/Raio-X) de uma
+// oportunidade de uma vez — usado quando o edital que gerou essas análises
+// é removido, mesma ideia de useLimparAnaliseJuridica.
+export function useLimparAnaliseJuridicaOportunidade(opportunityId: string | undefined) {
+  const queryClient = useQueryClient()
+
+  const limpar = useMutation({
+    mutationFn: async () => {
+      if (!opportunityId) throw new Error('Oportunidade não informada')
+      const { error } = await supabase.from('opportunity_analysis_juridica').delete().eq('opportunity_id', opportunityId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [...QUERY_KEY, opportunityId] })
+    },
+  })
+
+  return { limpar }
 }
