@@ -46,11 +46,6 @@ const FORM_VAZIO = {
   clientId: '',
   platformId: '',
   novaPlataformaNome: '',
-  titulo: '',
-  numeroEdital: '',
-  dataSessao: '',
-  dataEnvioCliente: '',
-  diasAvisoPrazo: '7',
 }
 
 const NOVA_PLATAFORMA = '__nova__'
@@ -59,11 +54,12 @@ const NOVA_PLATAFORMA = '__nova__'
 // (a mesma de sempre — só rodando antes de existir uma licitação de
 // verdade), registro da resposta do cliente e conversão em licitação.
 function OportunidadeDetalhe({
-  opportunity, podeEditar, onVisualizar,
+  opportunity, podeEditar, onVisualizar, onExcluida,
 }: {
   opportunity: Opportunity
   podeEditar: boolean
   onVisualizar: (nome: string, storagePath: string) => void
+  onExcluida?: () => void
 }) {
   const navigate = useNavigate()
   const { marcarResposta, deleteOpportunity, converterEmLicitacao, updateOpportunity } = useOpportunities()
@@ -75,8 +71,11 @@ function OportunidadeDetalhe({
   const [motivoRecusa, setMotivoRecusa] = useState('')
   const [mostrarRecusa, setMostrarRecusa] = useState(false)
   const [confirmandoConversao, setConfirmandoConversao] = useState(false)
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false)
   const [diasAviso, setDiasAviso] = useState(String(opportunity.diasAvisoPrazo))
   const [titulo, setTitulo] = useState(opportunity.titulo)
+  const [numeroEdital, setNumeroEdital] = useState(opportunity.numeroEdital ?? '')
+  const [dataSessao, setDataSessao] = useState(opportunity.dataSessao ?? '')
   const [erro, setErro] = useState<string | null>(null)
 
   const edital = files.find((f) => f.category === 'Edital')
@@ -94,6 +93,18 @@ function OportunidadeDetalhe({
     const valor = titulo.trim()
     if (!valor || valor === opportunity.titulo) return
     updateOpportunity.mutate({ ...opportunity, titulo: valor })
+  }
+
+  const handleSalvarNumeroEdital = () => {
+    const valor = numeroEdital.trim() || null
+    if (valor === (opportunity.numeroEdital ?? null)) return
+    updateOpportunity.mutate({ ...opportunity, numeroEdital: valor })
+  }
+
+  const handleSalvarDataSessao = () => {
+    const valor = dataSessao || null
+    if (valor === (opportunity.dataSessao ?? null)) return
+    updateOpportunity.mutate({ ...opportunity, dataSessao: valor })
   }
 
   // Quando a oportunidade nasce sem título (fluxo atual: pode salvar só com
@@ -141,20 +152,27 @@ function OportunidadeDetalhe({
 
   return (
     <div className="border-t border-base-800 px-4 py-3.5 flex flex-col gap-3.5 bg-base-900/30">
-      <div>
-        <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Título / Objeto</p>
-        {podeEditar ? (
-          <Input
-            placeholder="Ex: Fornecimento de postes de madeira tratada"
-            value={titulo}
-            onChange={(e) => setTitulo(e.target.value)}
-            onBlur={handleSalvarTitulo}
-          />
-        ) : (
-          <p className="text-[13px] text-base-200">{opportunity.titulo || '(sem título)'}</p>
-        )}
-        {!opportunity.titulo.trim() && (
-          <p className="text-[11px] text-base-500 italic mt-1">Sem título ainda — envie o edital e analise com IA abaixo pra preencher automaticamente, ou digite aqui.</p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1">
+          <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Título / Objeto</p>
+          {podeEditar ? (
+            <Input
+              placeholder="Ex: Fornecimento de postes de madeira tratada"
+              value={titulo}
+              onChange={(e) => setTitulo(e.target.value)}
+              onBlur={handleSalvarTitulo}
+            />
+          ) : (
+            <p className="text-[13px] text-base-200">{opportunity.titulo || '(sem título)'}</p>
+          )}
+          {!opportunity.titulo.trim() && (
+            <p className="text-[11px] text-base-500 italic mt-1">Sem título ainda — envie o edital e analise com IA abaixo pra preencher automaticamente, ou digite aqui.</p>
+          )}
+        </div>
+        {podeEditar && !opportunity.biddingId && (
+          <button onClick={() => setConfirmandoExclusao(true)} className="flex items-center gap-1 text-[11px] text-base-500 hover:text-negative-400 shrink-0 pt-4">
+            <Trash2 className="w-3.5 h-3.5" /> Excluir oportunidade
+          </button>
         )}
       </div>
 
@@ -196,18 +214,19 @@ function OportunidadeDetalhe({
           ) : <span className="text-[11px] text-base-500 italic">opcional, não enviado</span>}
         </div>
         <div>
+          <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Nº Edital</p>
+          <Input value={numeroEdital} onChange={(e) => setNumeroEdital(e.target.value)} onBlur={handleSalvarNumeroEdital} disabled={!podeEditar} placeholder="Opcional" />
+        </div>
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Data da sessão</p>
+          <Input type="date" value={dataSessao} onChange={(e) => setDataSessao(e.target.value)} onBlur={handleSalvarDataSessao} disabled={!podeEditar} />
+        </div>
+        <div>
           <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Avisar com quantos dias</p>
           <div className="flex items-center gap-1.5">
             <Input type="number" min="0" value={diasAviso} onChange={(e) => setDiasAviso(e.target.value)} onBlur={handleSalvarDiasAviso} disabled={!podeEditar} className="w-16 py-1" />
             <span className="text-[11px] text-base-500">dias antes</span>
           </div>
-        </div>
-        <div className="flex items-end justify-end">
-          {podeEditar && !opportunity.biddingId && (
-            <button onClick={() => deleteOpportunity.mutate(opportunity)} className="flex items-center gap-1 text-[11px] text-base-500 hover:text-negative-400">
-              <Trash2 className="w-3.5 h-3.5" /> Excluir
-            </button>
-          )}
         </div>
       </div>
 
@@ -304,6 +323,19 @@ function OportunidadeDetalhe({
         onCancel={() => setConfirmandoConversao(false)}
         onConfirm={handleConverter}
       />
+
+      <ConfirmDialog
+        open={confirmandoExclusao}
+        title="Excluir Oportunidade"
+        description="Isso apaga esta oportunidade — edital/TR enviados, análises rodadas e a resposta do cliente registrada. Não afeta nenhuma licitação já existente. Não pode ser desfeito."
+        confirmLabel="Excluir"
+        danger
+        isLoading={deleteOpportunity.isPending}
+        onCancel={() => setConfirmandoExclusao(false)}
+        onConfirm={() => deleteOpportunity.mutate(opportunity, {
+          onSuccess: () => { setConfirmandoExclusao(false); onExcluida?.() },
+        })}
+      />
     </div>
   )
 }
@@ -354,37 +386,51 @@ export default function OportunidadesPanel() {
     }
   }
 
-  const handleSalvarNova = async () => {
+  // Cliente + plataforma já bastam pra existir uma oportunidade — o resto
+  // (título, edital/TR, análise por IA) é preenchido depois, na própria
+  // linha recém-criada. Por isso a criação acontece assim que os dois
+  // estiverem escolhidos, sem um botão "Salvar" no meio: o usuário não
+  // devia precisar de um passo extra só pra chegar no upload do edital.
+  const [criandoPlataforma, setCriandoPlataforma] = useState(false)
+
+  const criarOportunidade = async (clientId: string, platformId: string) => {
     setErroForm(null)
-    if (!form.clientId) return
     try {
-      let platformId = form.platformId
-      if (platformId === NOVA_PLATAFORMA) {
-        if (!form.novaPlataformaNome.trim()) return
-        platformId = await addPlatform.mutateAsync({ nome: form.novaPlataformaNome.trim() })
-      }
-      if (!platformId) return
-      // Título é opcional aqui de propósito: o fluxo normal é enviar o
-      // edital e analisar com IA já na sequência (linha recém-criada abre
-      // sozinha, ver abaixo) — o objeto identificado pela IA vira o título
-      // automaticamente (ver efeito em OportunidadeDetalhe). Sem isso, o
-      // cadastro forçava resumir o objeto ANTES de sequer poder anexar o
-      // edital, na ordem errada.
-      const novaId = await addOpportunity.mutateAsync({
-        clientId: form.clientId,
-        platformId,
-        titulo: form.titulo.trim(),
-        numeroEdital: form.numeroEdital.trim() || null,
-        dataSessao: form.dataSessao || null,
-        dataEnvioCliente: form.dataEnvioCliente || null,
-        diasAvisoPrazo: form.diasAvisoPrazo ? parseInt(form.diasAvisoPrazo, 10) : 7,
-      })
+      const novaId = await addOpportunity.mutateAsync({ clientId, platformId, titulo: '' })
       setMostrarForm(false)
       setForm(FORM_VAZIO)
       setExpandedId(novaId)
       setNovaOportunidadeId(novaId)
     } catch (err) {
       setErroForm(mensagemDeErro(err))
+    }
+  }
+
+  const handleClienteChange = (clientId: string) => {
+    setForm((f) => ({ ...f, clientId }))
+    if (clientId && form.platformId && form.platformId !== NOVA_PLATAFORMA) {
+      criarOportunidade(clientId, form.platformId)
+    }
+  }
+
+  const handlePlataformaChange = (platformId: string) => {
+    setForm((f) => ({ ...f, platformId }))
+    if (platformId && platformId !== NOVA_PLATAFORMA && form.clientId) {
+      criarOportunidade(form.clientId, platformId)
+    }
+  }
+
+  const handleCriarComNovaPlataforma = async () => {
+    setErroForm(null)
+    if (!form.clientId || !form.novaPlataformaNome.trim()) return
+    setCriandoPlataforma(true)
+    try {
+      const platformId = await addPlatform.mutateAsync({ nome: form.novaPlataformaNome.trim() })
+      await criarOportunidade(form.clientId, platformId)
+    } catch (err) {
+      setErroForm(mensagemDeErro(err))
+    } finally {
+      setCriandoPlataforma(false)
     }
   }
 
@@ -431,14 +477,14 @@ export default function OportunidadesPanel() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Cliente *</label>
-              <Select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })}>
+              <Select value={form.clientId} onChange={(e) => handleClienteChange(e.target.value)} disabled={addOpportunity.isPending}>
                 <option value="">— Selecione —</option>
                 {clients.filter((c) => c.isActive).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </Select>
             </div>
             <div>
               <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Plataforma *</label>
-              <Select value={form.platformId} onChange={(e) => setForm({ ...form, platformId: e.target.value })}>
+              <Select value={form.platformId} onChange={(e) => handlePlataformaChange(e.target.value)} disabled={addOpportunity.isPending}>
                 <option value="">— Selecione —</option>
                 {platforms.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
                 <option value={NOVA_PLATAFORMA}>+ Nova plataforma...</option>
@@ -446,34 +492,16 @@ export default function OportunidadesPanel() {
             </div>
           </div>
           {form.platformId === NOVA_PLATAFORMA && (
-            <Input placeholder="Nome da nova plataforma" value={form.novaPlataformaNome} onChange={(e) => setForm({ ...form, novaPlataformaNome: e.target.value })} />
+            <div className="flex items-center gap-2">
+              <Input placeholder="Nome da nova plataforma" value={form.novaPlataformaNome} onChange={(e) => setForm({ ...form, novaPlataformaNome: e.target.value })} />
+              <Button onClick={handleCriarComNovaPlataforma} disabled={!form.clientId || !form.novaPlataformaNome.trim() || criandoPlataforma}>
+                {criandoPlataforma ? 'Criando...' : 'Criar'}
+              </Button>
+            </div>
           )}
-          <div>
-            <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Título / objeto resumido</label>
-            <Input placeholder="Opcional — pode deixar em branco e enviar o edital direto, a IA preenche depois de analisar" value={form.titulo} onChange={(e) => setForm({ ...form, titulo: e.target.value })} />
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Nº Edital</label>
-              <Input value={form.numeroEdital} onChange={(e) => setForm({ ...form, numeroEdital: e.target.value })} />
-            </div>
-            <div>
-              <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Data da sessão</label>
-              <Input type="date" value={form.dataSessao} onChange={(e) => setForm({ ...form, dataSessao: e.target.value })} />
-            </div>
-            <div>
-              <label className="text-[10px] uppercase tracking-wider text-accent-400 font-bold block mb-1">Avisar faltando quantos dias</label>
-              <Input type="number" min="0" value={form.diasAvisoPrazo} onChange={(e) => setForm({ ...form, diasAvisoPrazo: e.target.value })} />
-            </div>
-          </div>
+          {addOpportunity.isPending && <p className="text-[11px] text-base-500 italic">Criando...</p>}
           {erroForm && <p className="text-[11px] text-negative-400">{erroForm}</p>}
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => { setMostrarForm(false); setForm(FORM_VAZIO) }}>Cancelar</Button>
-            <Button onClick={handleSalvarNova} disabled={!form.clientId || addOpportunity.isPending}>
-              {addOpportunity.isPending ? 'Salvando...' : 'Salvar'}
-            </Button>
-          </div>
-          <p className="text-[11px] text-base-500">Depois de salvar, a linha já abre pra você enviar o edital/TR e rodar a análise por IA.</p>
+          <p className="text-[11px] text-base-500">Assim que escolher cliente e plataforma, a oportunidade já é criada aqui embaixo, pronta pra você enviar o edital/TR e rodar a análise por IA — o título, o nº do edital etc. você preenche depois, na própria linha.</p>
         </div>
       )}
 
@@ -481,10 +509,17 @@ export default function OportunidadesPanel() {
         <div className="bg-base-850/60 border-2 border-accent-500/40 rounded-lg overflow-hidden">
           <div className="flex items-center justify-between gap-3 px-3 py-2.5 bg-accent-500/10">
             <p className="text-[12px] font-semibold text-accent-300">Oportunidade criada — envie o edital e analise abaixo</p>
-            <button onClick={() => setNovaOportunidadeId(null)} className="text-base-500 hover:text-base-300 shrink-0"><X className="w-3.5 h-3.5" /></button>
+            <button onClick={() => setNovaOportunidadeId(null)} className="text-base-500 hover:text-base-300 shrink-0" title="Continuar depois — fica salva na lista abaixo">
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
           {novaOportunidade ? (
-            <OportunidadeDetalhe opportunity={novaOportunidade} podeEditar={podeEditar} onVisualizar={handleVisualizar} />
+            <OportunidadeDetalhe
+              opportunity={novaOportunidade}
+              podeEditar={podeEditar}
+              onVisualizar={handleVisualizar}
+              onExcluida={() => setNovaOportunidadeId(null)}
+            />
           ) : (
             <p className="text-[12px] text-base-500 italic px-4 py-3.5">Carregando...</p>
           )}
