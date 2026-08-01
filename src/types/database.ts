@@ -1591,6 +1591,50 @@ export type Database = {
           },
         ]
       }
+      opportunity_analysis_juridica: {
+        Row: {
+          created_at: string
+          erro_mensagem: string | null
+          id: string
+          opportunity_id: string
+          resultado: Json | null
+          status: string
+          tipo: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          erro_mensagem?: string | null
+          id?: string
+          opportunity_id: string
+          resultado?: Json | null
+          status?: string
+          tipo: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          erro_mensagem?: string | null
+          id?: string
+          opportunity_id?: string
+          resultado?: Json | null
+          status?: string
+          tipo?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opportunity_analysis_juridica_opportunity_id_fkey"
+            columns: ["opportunity_id"]
+            isOneToOne: false
+            referencedRelation: "opportunities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payment_methods: {
         Row: {
           created_at: string
