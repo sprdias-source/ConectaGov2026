@@ -322,10 +322,19 @@ export default function OportunidadesPanel() {
   const [visualizando, setVisualizando] = useState<{ nome: string; url: string | null } | null>(null)
   const { getDownloadUrl } = useAttachedFiles('oportunidade')
 
+  // Oportunidade recém-criada: em vez de cair escondida em algum lugar da
+  // lista ordenada por prazo (às vezes lá embaixo), fica "presa" bem onde o
+  // formulário estava, já aberta com os campos de Edital/TR — é ISSO que
+  // precisa aparecer na hora, sem o usuário precisar procurar a linha nova
+  // na lista. Fica ali até o usuário fechar de propósito; depois disso ela
+  // passa a aparecer normalmente, ordenada com as demais.
+  const [novaOportunidadeId, setNovaOportunidadeId] = useState<string | null>(null)
+  const novaOportunidade = novaOportunidadeId ? opportunities.find((o) => o.id === novaOportunidadeId) ?? null : null
+
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? 'Cliente removido'
   const platformInfo = (id: string) => platforms.find((p) => p.id === id)
 
-  const ordenadas = [...opportunities].sort((a, b) => {
+  const ordenadas = [...opportunities].filter((o) => o.id !== novaOportunidadeId).sort((a, b) => {
     const statusA = calcOpportunityStatus(a)
     const statusB = calcOpportunityStatus(b)
     const peso = { vencida: 0, urgente: 1, aguardando: 2, resolvida: 3 }
@@ -373,6 +382,7 @@ export default function OportunidadesPanel() {
       setMostrarForm(false)
       setForm(FORM_VAZIO)
       setExpandedId(novaId)
+      setNovaOportunidadeId(novaId)
     } catch (err) {
       setErroForm(mensagemDeErro(err))
     }
@@ -464,6 +474,20 @@ export default function OportunidadesPanel() {
             </Button>
           </div>
           <p className="text-[11px] text-base-500">Depois de salvar, a linha já abre pra você enviar o edital/TR e rodar a análise por IA.</p>
+        </div>
+      )}
+
+      {novaOportunidadeId && (
+        <div className="bg-base-850/60 border-2 border-accent-500/40 rounded-lg overflow-hidden">
+          <div className="flex items-center justify-between gap-3 px-3 py-2.5 bg-accent-500/10">
+            <p className="text-[12px] font-semibold text-accent-300">Oportunidade criada — envie o edital e analise abaixo</p>
+            <button onClick={() => setNovaOportunidadeId(null)} className="text-base-500 hover:text-base-300 shrink-0"><X className="w-3.5 h-3.5" /></button>
+          </div>
+          {novaOportunidade ? (
+            <OportunidadeDetalhe opportunity={novaOportunidade} podeEditar={podeEditar} onVisualizar={handleVisualizar} />
+          ) : (
+            <p className="text-[12px] text-base-500 italic px-4 py-3.5">Carregando...</p>
+          )}
         </div>
       )}
 
