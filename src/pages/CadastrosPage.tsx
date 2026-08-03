@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { FolderKanban, Users, Gavel, Wallet, FileText, Globe, Send } from 'lucide-react'
 import { PageHeader, Card } from '../components/ui/Primitives'
@@ -16,6 +16,31 @@ import OportunidadesPanel from '../components/oportunidades/OportunidadesPanel'
 type Tab = 'clientes' | 'licitacoes' | 'contas' | 'documentos' | 'plataformas' | 'oportunidades'
 const TABS_VALIDAS: Tab[] = ['clientes', 'licitacoes', 'contas', 'documentos', 'plataformas', 'oportunidades']
 
+const TABS_INFO: Record<Tab, { label: string; icon: typeof Users }> = {
+  clientes: { label: 'Clientes', icon: Users },
+  licitacoes: { label: 'Licitações', icon: Gavel },
+  contas: { label: 'Contas & Cartões', icon: Wallet },
+  documentos: { label: 'Documentos de Habilitação', icon: FileText },
+  plataformas: { label: 'Plataformas', icon: Globe },
+  oportunidades: { label: 'Oportunidades', icon: Send },
+}
+
+// A ordem das abas é só uma preferência de exibição — guardada no
+// navegador, não no banco (não é dado da conta, é do dispositivo).
+const ORDEM_ABAS_STORAGE_KEY = 'conectagov.cadastros.ordemAbas'
+
+function ordemAbasSalva(): Tab[] {
+  try {
+    const salvo = JSON.parse(localStorage.getItem(ORDEM_ABAS_STORAGE_KEY) ?? 'null')
+    if (Array.isArray(salvo) && salvo.length === TABS_VALIDAS.length && TABS_VALIDAS.every((t) => salvo.includes(t))) {
+      return salvo as Tab[]
+    }
+  } catch {
+    // localStorage inacessível (modo privado etc.) — cai pra ordem padrão
+  }
+  return TABS_VALIDAS
+}
+
 export default function CadastrosPage() {
   const [searchParams] = useSearchParams()
   // Permite chegar direto numa aba com um cliente já selecionado via link
@@ -28,14 +53,71 @@ export default function CadastrosPage() {
   const { biddings } = useBiddings()
   const { accounts } = useFinancialAccounts()
 
-  const tabs: { key: Tab; label: string; icon: typeof Users; count?: number }[] = [
-    { key: 'clientes', label: 'Clientes', icon: Users, count: clients.length },
-    { key: 'licitacoes', label: 'Licitações', icon: Gavel, count: biddings.length },
-    { key: 'contas', label: 'Contas & Cartões', icon: Wallet, count: accounts.length },
-    { key: 'documentos', label: 'Documentos de Habilitação', icon: FileText },
-    { key: 'plataformas', label: 'Plataformas', icon: Globe },
-    { key: 'oportunidades', label: 'Oportunidades', icon: Send },
-  ]
+  const [ordemAbas, setOrdemAbas] = useState<Tab[]>(ordemAbasSalva)
+  const [abaArrastando, setAbaArrastando] = useState<Tab | null>(null)
+  // Ref (não state) de propósito: precisa estar atualizado de forma síncrona
+  // pro clique que o navegador dispara logo depois do pointerup de um
+  // arraste — se fosse state, o clique podia ler o valor de antes de
+  // reordenar e trocar de aba sem querer assim que o usuário soltasse.
+  const houveArrasteRef = useRef(false)
+  // Só conta como arraste depois de mover alguns pixels — sem isso, um
+  // toque rápido (tap) no celular já dispara pointermove com 1px de
+  // diferença e a aba nunca abriria com um clique normal.
+  const inicioArrasteRef = useRef({ x: 0, y: 0 })
+
+  useEffect(() => {
+    localStorage.setItem(ORDEM_ABAS_STORAGE_KEY, JSON.stringify(ordemAbas))
+  }, [ordemAbas])
+
+  const contagens: Partial<Record<Tab, number>> = {
+    clientes: clients.length,
+    licitacoes: biddings.length,
+    contas: accounts.length,
+  }
+
+  // Reordenação por arraste (mouse e toque, via Pointer Events) — ao
+  // arrastar uma aba por cima de outra, troca as duas de posição na hora
+  // (mesma sensação de reordenar apps na tela inicial do celular), sem
+  // depender de nenhuma lib extra pra isso.
+  const handlePointerDownAba = (e: React.PointerEvent<HTMLButtonElement>) => {
+    houveArrasteRef.current = false
+    inicioArrasteRef.current = { x: e.clientX, y: e.clientY }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  const handlePointerMoveAba = (key: Tab) => (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+    const dx = e.clientX - inicioArrasteRef.current.x
+    const dy = e.clientY - inicioArrasteRef.current.y
+    if (!houveArrasteRef.current && Math.hypot(dx, dy) < 6) return
+    houveArrasteRef.current = true
+    if (abaArrastando !== key) setAbaArrastando(key)
+
+    const alvo = document.elementsFromPoint(e.clientX, e.clientY)
+      .find((el): el is HTMLElement => el instanceof HTMLElement && !!el.dataset.tabKey && el.dataset.tabKey !== key)
+    if (!alvo) return
+    const overKey = alvo.dataset.tabKey as Tab
+    const rect = alvo.getBoundingClientRect()
+    const antesDoAlvo = e.clientX < rect.left + rect.width / 2
+
+    setOrdemAbas((atual) => {
+      const semArrastada = atual.filter((k) => k !== key)
+      const idxAlvo = semArrastada.indexOf(overKey)
+      const novo = [...semArrastada]
+      novo.splice(antesDoAlvo ? idxAlvo : idxAlvo + 1, 0, key)
+      return novo
+    })
+  }
+
+  const handlePointerUpAba = () => setAbaArrastando(null)
+
+  const handleClickAba = (key: Tab) => () => {
+    if (houveArrasteRef.current) {
+      houveArrasteRef.current = false
+      return
+    }
+    setTab(key)
+  }
 
   const selectedClient = clients.find((c) => c.id === selectedClientId)
 
@@ -45,25 +127,37 @@ export default function CadastrosPage() {
 
       <div className="px-6 mt-3">
         <div className="flex gap-1.5 border-b border-base-800 mb-5 overflow-x-auto">
-          {tabs.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-[13px] font-semibold whitespace-nowrap transition border-b-2 -mb-px ${
-                tab === t.key
-                  ? 'text-accent-300 border-accent-400'
-                  : 'text-base-400 border-transparent hover:text-base-200'
-              }`}
-            >
-              <t.icon className="w-4 h-4" />
-              {t.label}
-              {t.count !== undefined && (
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${tab === t.key ? 'bg-accent-500/15 text-accent-300' : 'bg-base-800 text-base-500'}`}>
-                  {t.count}
-                </span>
-              )}
-            </button>
-          ))}
+          {ordemAbas.map((key) => {
+            const info = TABS_INFO[key]
+            const contagem = contagens[key]
+            return (
+              <button
+                key={key}
+                data-tab-key={key}
+                onClick={handleClickAba(key)}
+                onPointerDown={handlePointerDownAba}
+                onPointerMove={handlePointerMoveAba(key)}
+                onPointerUp={handlePointerUpAba}
+                onPointerCancel={handlePointerUpAba}
+                title="Arraste pra reordenar as abas"
+                className={`flex items-center gap-2 px-4 py-2.5 text-[13px] font-semibold whitespace-nowrap transition border-b-2 -mb-px touch-none select-none cursor-grab active:cursor-grabbing ${
+                  abaArrastando === key ? 'opacity-60' : ''
+                } ${
+                  tab === key
+                    ? 'text-accent-300 border-accent-400'
+                    : 'text-base-400 border-transparent hover:text-base-200'
+                }`}
+              >
+                <info.icon className="w-4 h-4" />
+                {info.label}
+                {contagem !== undefined && (
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${tab === key ? 'bg-accent-500/15 text-accent-300' : 'bg-base-800 text-base-500'}`}>
+                    {contagem}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
 
         {tab === 'clientes' && <ClientsTab />}
