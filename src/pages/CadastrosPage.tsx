@@ -11,6 +11,7 @@ import BiddingsTab from '../components/cadastros/BiddingsTab'
 import AccountsTab from '../components/cadastros/AccountsTab'
 import HabilitacaoChecklist from '../components/documentos/HabilitacaoChecklist'
 import ClientPlatformsPanel from '../components/plataformas/ClientPlatformsPanel'
+import PlatformsCatalogPanel from '../components/plataformas/PlatformsCatalogPanel'
 import OportunidadesPanel from '../components/oportunidades/OportunidadesPanel'
 
 type Tab = 'clientes' | 'licitacoes' | 'contas' | 'documentos' | 'plataformas' | 'oportunidades'
@@ -199,32 +200,38 @@ export default function CadastrosPage() {
         )}
 
         {tab === 'plataformas' && (
-          <div className="flex flex-col gap-4">
-            <Card className="p-4">
-              <p className="text-[11px] uppercase tracking-wider text-base-500 font-bold mb-2">
-                Selecione o cliente
-              </p>
-              <Select
-                value={selectedClientId}
-                onChange={(e) => setSelectedClientId(e.target.value)}
-                className="max-w-sm"
-              >
-                <option value="">— Selecione um cliente —</option>
-                {clients.filter((c) => c.isActive).map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </Select>
+          <div className="flex flex-col gap-6">
+            <Card className="p-5">
+              <PlatformsCatalogPanel />
             </Card>
 
-            {selectedClient ? (
-              <Card className="p-5">
-                <ClientPlatformsPanel clientId={selectedClient.id} clientName={selectedClient.name} />
+            <div className="flex flex-col gap-4">
+              <Card className="p-4">
+                <p className="text-[11px] uppercase tracking-wider text-base-500 font-bold mb-2">
+                  Vincular cliente a uma plataforma — selecione o cliente
+                </p>
+                <Select
+                  value={selectedClientId}
+                  onChange={(e) => setSelectedClientId(e.target.value)}
+                  className="max-w-sm"
+                >
+                  <option value="">— Selecione um cliente —</option>
+                  {clients.filter((c) => c.isActive).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </Select>
               </Card>
-            ) : (
-              <div className="text-center py-12 text-base-500 text-[13px]">
-                Selecione um cliente acima para gerenciar as plataformas assinadas.
-              </div>
-            )}
+
+              {selectedClient ? (
+                <Card className="p-5">
+                  <ClientPlatformsPanel clientId={selectedClient.id} clientName={selectedClient.name} />
+                </Card>
+              ) : (
+                <div className="text-center py-12 text-base-500 text-[13px]">
+                  Selecione um cliente acima pra vincular a uma plataforma do catálogo.
+                </div>
+              )}
+            </div>
           </div>
         )}
 

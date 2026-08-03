@@ -9,8 +9,6 @@ import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import { mensagemDeErro } from '../../lib/errors'
 import type { ClientPlatform, PlatformStatus, PlatformTipo } from '../../types/domain'
 
-const NOVA_PLATAFORMA = '__nova__'
-
 function StatusBadge({ status }: { status: PlatformStatus }) {
   const map: Record<PlatformStatus, string> = {
     ativa: 'bg-positive-500/15 text-positive-400 border-positive-500/30',
@@ -30,8 +28,6 @@ function StatusBadge({ status }: { status: PlatformStatus }) {
 
 const FORM_VAZIO = {
   platformId: '',
-  novaPlataformaNome: '',
-  novaPlataformaUrl: '',
   tipo: 'paga' as PlatformTipo,
   valorMensalidade: '',
   dataVencimento: '',
@@ -48,7 +44,7 @@ interface Props {
 }
 
 export default function ClientPlatformsPanel({ clientId, clientName }: Props) {
-  const { platforms, addPlatform } = usePlatforms()
+  const { platforms } = usePlatforms()
   const { clientPlatforms, addClientPlatform, updateClientPlatform, deleteClientPlatform } = useClientPlatforms(clientId)
   const { nivel: nivelCadastros } = usePermissaoFerramenta('cadastros')
   const podeEditar = nivelCadastros === 'edicao'
@@ -70,8 +66,6 @@ export default function ClientPlatformsPanel({ clientId, clientName }: Props) {
     setEditandoId(cp.id)
     setForm({
       platformId: cp.platformId,
-      novaPlataformaNome: '',
-      novaPlataformaUrl: '',
       tipo: cp.tipo,
       valorMensalidade: cp.valorMensalidade != null ? String(cp.valorMensalidade) : '',
       dataVencimento: cp.dataVencimento ?? '',
@@ -93,20 +87,10 @@ export default function ClientPlatformsPanel({ clientId, clientName }: Props) {
 
   const handleSalvar = async () => {
     setErro(null)
+    if (!form.platformId) return
     try {
-      let platformId = form.platformId
-      if (platformId === NOVA_PLATAFORMA) {
-        if (!form.novaPlataformaNome.trim()) return
-        platformId = await addPlatform.mutateAsync({
-          nome: form.novaPlataformaNome.trim(),
-          url: form.novaPlataformaUrl.trim() || null,
-          tipoPadrao: form.tipo,
-        })
-      }
-      if (!platformId) return
-
       const payload = {
-        platformId,
+        platformId: form.platformId,
         tipo: form.tipo,
         valorMensalidade: form.tipo === 'paga' && form.valorMensalidade ? parseFloat(form.valorMensalidade) : null,
         dataVencimento: form.dataVencimento || null,
@@ -130,7 +114,7 @@ export default function ClientPlatformsPanel({ clientId, clientName }: Props) {
     }
   }
 
-  const salvando = addClientPlatform.isPending || updateClientPlatform.isPending || addPlatform.isPending
+  const salvando = addClientPlatform.isPending || updateClientPlatform.isPending
 
   return (
     <div className="flex flex-col gap-4">
@@ -178,8 +162,10 @@ export default function ClientPlatformsPanel({ clientId, clientName }: Props) {
               >
                 <option value="">— Selecione —</option>
                 {platforms.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
-                <option value={NOVA_PLATAFORMA}>+ Nova plataforma...</option>
               </Select>
+              {platforms.length === 0 && (
+                <p className="text-[11px] text-base-500 italic mt-1">Nenhuma plataforma no catálogo ainda — cadastre uma no Catálogo de Plataformas acima antes de vincular.</p>
+              )}
             </div>
             <div>
               <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Tipo</label>
@@ -189,19 +175,6 @@ export default function ClientPlatformsPanel({ clientId, clientName }: Props) {
               </Select>
             </div>
           </div>
-
-          {form.platformId === NOVA_PLATAFORMA && (
-            <div className="grid grid-cols-2 gap-3 bg-base-900/40 border border-base-800 rounded-lg p-3">
-              <div>
-                <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Nome da plataforma *</label>
-                <Input placeholder="Ex: Portal de Compras Públicas" value={form.novaPlataformaNome} onChange={(e) => setForm({ ...form, novaPlataformaNome: e.target.value })} />
-              </div>
-              <div>
-                <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Site (opcional)</label>
-                <Input placeholder="portaldecompraspublicas.com.br" value={form.novaPlataformaUrl} onChange={(e) => setForm({ ...form, novaPlataformaUrl: e.target.value })} />
-              </div>
-            </div>
-          )}
 
           <div className="grid grid-cols-3 gap-3">
             {form.tipo === 'paga' && (
@@ -249,7 +222,7 @@ export default function ClientPlatformsPanel({ clientId, clientName }: Props) {
             <Button variant="secondary" onClick={fechar}>Cancelar</Button>
             <Button
               onClick={handleSalvar}
-              disabled={salvando || !form.platformId || (form.platformId === NOVA_PLATAFORMA && !form.novaPlataformaNome.trim())}
+              disabled={salvando || !form.platformId}
             >
               {salvando ? 'Salvando...' : 'Salvar'}
             </Button>
