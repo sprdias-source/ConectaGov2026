@@ -1046,7 +1046,7 @@ function construirPreenchimento(analise: AnaliseEdital, itensAtuais: BiddingItem
 }
 
 function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding; temEdital: boolean; podeEditar: boolean }) {
-  const { analysis, analisar, travado } = useBiddingAnalysis(bidding.id)
+  const { analysis, analisar, travado, alternarItemParticipando, definirTodosParticipando } = useBiddingAnalysis(bidding.id)
   const { updateBidding } = useBiddings()
   const { items: itensAtuais } = useBiddingItems(bidding.id)
   const { showToast } = useToast()
@@ -1119,7 +1119,11 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
             </div>
           )}
 
-          <AnaliseEditalResumo analise={analise} />
+          <AnaliseEditalResumo
+            analise={analise}
+            onToggleItem={podeEditar ? (idx) => alternarItemParticipando.mutate(idx) : undefined}
+            onToggleTodos={podeEditar ? (participando) => definirTodosParticipando.mutate(participando) : undefined}
+          />
 
           {(analise.checklistDocumentacao?.length ?? 0) > 0 && (
             <p className="text-[11px] text-base-500 italic">

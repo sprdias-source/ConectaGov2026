@@ -34,9 +34,19 @@ export function converterDataParaISO(texto?: string): string | null {
 // Mesma transformação usada pelo botão manual "Preencher Licitação com estes
 // Dados", pelo auto-import de itens, e pela conversão de Oportunidade em
 // Licitação — só os itens, sem mexer em nenhum outro campo.
+//
+// Filtra pelos itens marcados como "participando" (ver AnaliseEdital.itens
+// em types/domain.ts) — o edital às vezes traz itens/lotes que a empresa não
+// vai disputar, e esse é o único lugar por onde os três fluxos acima passam,
+// então filtrar aqui garante que Cadastrar Proposta/Proposta Readequada
+// nunca vejam um item que o usuário já desmarcou na análise.
 export function mapearItensDaAnalise(analise: AnaliseEdital): Partial<BiddingItem>[] | null {
   if (!analise.itens?.length) return null
-  return analise.itens.map((it, idx) => ({
+  const selecionados = analise.itens
+    .map((it, idx) => ({ it, idx }))
+    .filter(({ it }) => it.participando !== false)
+  if (!selecionados.length) return null
+  return selecionados.map(({ it, idx }) => ({
     numeroItem: it.numero != null ? String(it.numero) : String(idx + 1),
     descricao: it.descricao,
     unidade: it.unidade ?? null,
