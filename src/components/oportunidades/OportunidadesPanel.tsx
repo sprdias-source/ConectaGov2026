@@ -20,6 +20,7 @@ import { useClients } from '../../hooks/useClients'
 import { useAttachedFiles } from '../../hooks/useAttachedFiles'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import { mensagemDeErro } from '../../lib/errors'
+import { mapearItensDaAnalise } from '../../lib/analiseEdital'
 import type { AnaliseEdital, Opportunity, OpportunityStatus } from '../../types/domain'
 
 function StatusPill({ status, opportunity }: { status: OpportunityStatus; opportunity: Opportunity }) {
@@ -64,7 +65,7 @@ function OportunidadeDetalhe({
   const navigate = useNavigate()
   const { marcarResposta, deleteOpportunity, converterEmLicitacao, updateOpportunity } = useOpportunities()
   const { files, uploadFile, deleteFile } = useAttachedFiles('oportunidade', opportunity.id)
-  const { analysis, analisar, travado, limparAnalise } = useOpportunityAnalysis(opportunity.id)
+  const { analysis, analisar, travado, limparAnalise, alternarItemParticipando, definirTodosParticipando } = useOpportunityAnalysis(opportunity.id)
   const [tipoJuridicoAtivo, setTipoJuridicoAtivo] = useState<TipoAnaliseJuridica>('esclarecimento')
   const { analysis: analiseJuridica, analisar: analisarJuridica, travado: travadoJuridica } = useAnaliseJuridicaOportunidade(opportunity.id, tipoJuridicoAtivo)
   const { limpar: limparAnaliseJuridica } = useLimparAnaliseJuridicaOportunidade(opportunity.id)
@@ -249,7 +250,11 @@ function OportunidadeDetalhe({
 
       {analise && (
         <div className="border-t border-base-800/60 pt-3.5">
-          <AnaliseEditalResumo analise={analise} />
+          <AnaliseEditalResumo
+            analise={analise}
+            onToggleItem={podeEditar ? (idx) => alternarItemParticipando.mutate(idx) : undefined}
+            onToggleTodos={podeEditar ? (participando) => definirTodosParticipando.mutate(participando) : undefined}
+          />
         </div>
       )}
 
@@ -315,7 +320,7 @@ function OportunidadeDetalhe({
         title="Converter em Licitação"
         description={
           analise
-            ? `Cria a licitação já preenchida com o que a IA identificou (objeto: "${analise.objeto ?? opportunity.titulo}"${analise.itens?.length ? `, ${analise.itens.length} itens` : ''}) e ela entra direto no Kanban, na etapa "Análise de Edital".`
+            ? `Cria a licitação já preenchida com o que a IA identificou (objeto: "${analise.objeto ?? opportunity.titulo}"${mapearItensDaAnalise(analise)?.length ? `, ${mapearItensDaAnalise(analise)!.length} de ${analise.itens?.length} itens selecionados` : ''}) e ela entra direto no Kanban, na etapa "Análise de Edital".`
             : `Não há uma análise de IA rodada ainda — a licitação vai nascer só com o título e o cliente desta oportunidade. Você pode rodar a análise antes de converter, ou preencher os dados depois na própria licitação.`
         }
         confirmLabel="Converter e ir pro Kanban"

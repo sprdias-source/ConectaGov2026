@@ -49,9 +49,19 @@ export function SecaoTexto({ label, texto }: { label: string; texto?: string | n
 // exata visualização usada no Kanban (LicitacaoPage) e na fase de
 // Oportunidade (OportunidadesPanel), já que as duas rodam a mesma análise
 // (Analisar-edital / Analisar-oportunidade) sobre o mesmo schema.
-export function AnaliseEditalResumo({ analise }: { analise: AnaliseEdital }) {
+//
+// onToggleItem/onToggleTodos são opcionais de propósito: só quem pode
+// editar (e só depois que a análise já rodou) passa essas props — sem elas,
+// a tabela de itens fica só leitura, sem a coluna de checkbox.
+export function AnaliseEditalResumo({ analise, onToggleItem, onToggleTodos }: {
+  analise: AnaliseEdital
+  onToggleItem?: (index: number) => void
+  onToggleTodos?: (participando: boolean) => void
+}) {
   const localOuFormaEntrega = [analise.formaEntrega, analise.localEntrega].filter(Boolean).join(' — ')
   const marcasTexto = Array.isArray(analise.marcasPreAprovadas) ? analise.marcasPreAprovadas.join(', ') : analise.marcasPreAprovadas
+  const totalItens = analise.itens?.length ?? 0
+  const itensSelecionados = analise.itens?.filter((it) => it.participando !== false).length ?? 0
 
   return (
     <div className="flex flex-col gap-4">
@@ -82,11 +92,26 @@ export function AnaliseEditalResumo({ analise }: { analise: AnaliseEdital }) {
 
       {!!analise.itens?.length && (
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">Itens Identificados</p>
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+            <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">
+              Itens Identificados
+              {onToggleItem && (
+                <span className="normal-case font-normal text-base-400"> — {itensSelecionados} de {totalItens} selecionados pra participar</span>
+              )}
+            </p>
+            {onToggleTodos && (
+              <div className="flex items-center gap-2 text-[11px]">
+                <button type="button" onClick={() => onToggleTodos(true)} className="text-accent-300 hover:text-accent-200">Marcar todos</button>
+                <span className="text-base-700">·</span>
+                <button type="button" onClick={() => onToggleTodos(false)} className="text-accent-300 hover:text-accent-200">Desmarcar todos</button>
+              </div>
+            )}
+          </div>
           <div className="overflow-x-auto bg-base-850/60 border border-base-800 rounded-xl">
             <table className="w-full text-[12px]">
               <thead>
                 <tr className="text-base-500 border-b border-base-800">
+                  {onToggleItem && <th className="text-left font-semibold px-3 py-2 w-8">Part.</th>}
                   <th className="text-left font-semibold px-3 py-2">Item</th>
                   <th className="text-left font-semibold px-3 py-2">Descrição</th>
                   <th className="text-right font-semibold px-3 py-2">Qtd.</th>
@@ -94,14 +119,28 @@ export function AnaliseEditalResumo({ analise }: { analise: AnaliseEdital }) {
                 </tr>
               </thead>
               <tbody>
-                {analise.itens.map((it, idx) => (
-                  <tr key={idx} className="border-t border-base-800/60">
-                    <td className="px-3 py-2 text-base-300">{it.numero ?? idx + 1}</td>
-                    <td className="px-3 py-2 text-base-300">{it.descricao}</td>
-                    <td className="px-3 py-2 text-right text-base-400">{it.quantidade ?? '—'}{it.unidade ? ` ${it.unidade}` : ''}</td>
-                    <td className="px-3 py-2 text-right font-mono text-base-400">{it.valorReferencia != null ? formatBRL(Number(it.valorReferencia)) : '—'}</td>
-                  </tr>
-                ))}
+                {analise.itens.map((it, idx) => {
+                  const participando = it.participando !== false
+                  return (
+                    <tr key={idx} className={`border-t border-base-800/60 ${!participando ? 'opacity-50' : ''}`}>
+                      {onToggleItem && (
+                        <td className="px-3 py-2">
+                          <input
+                            type="checkbox"
+                            checked={participando}
+                            onChange={() => onToggleItem(idx)}
+                            className="accent-accent-500 cursor-pointer"
+                            title={participando ? 'Vamos participar deste item' : 'Não vamos participar deste item'}
+                          />
+                        </td>
+                      )}
+                      <td className="px-3 py-2 text-base-300">{it.numero ?? idx + 1}</td>
+                      <td className={`px-3 py-2 text-base-300 ${!participando ? 'line-through' : ''}`}>{it.descricao}</td>
+                      <td className="px-3 py-2 text-right text-base-400">{it.quantidade ?? '—'}{it.unidade ? ` ${it.unidade}` : ''}</td>
+                      <td className="px-3 py-2 text-right font-mono text-base-400">{it.valorReferencia != null ? formatBRL(Number(it.valorReferencia)) : '—'}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

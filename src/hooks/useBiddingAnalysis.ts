@@ -121,11 +121,45 @@ export function useBiddingAnalysis(biddingId?: string) {
     },
   })
 
+  // Liga/desliga "participando" de um item — o edital às vezes traz itens
+  // que a empresa não vai disputar (ver mapearItensDaAnalise, o único ponto
+  // por onde essa flag é lida na hora de preencher bidding_items de
+  // verdade). Mexe só no array de itens dentro do JSON, sem tocar em mais
+  // nada da análise.
+  const alternarItemParticipando = useMutation({
+    mutationFn: async (index: number) => {
+      if (!biddingId) throw new Error('Licitação não informada')
+      const atual = analysis?.analise as { itens?: { participando?: boolean }[] } | null | undefined
+      if (!atual?.itens?.[index]) throw new Error('Item não encontrado na análise')
+      const itens = atual.itens.map((it, i) => (i === index ? { ...it, participando: it.participando === false } : it))
+      const { error } = await supabase.from('bidding_analysis').update({ analise: { ...atual, itens } }).eq('bidding_id', biddingId)
+      if (error) throw error
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+  })
+
+  // Marcar/desmarcar todos de uma vez — útil quando só um ou dois itens do
+  // meio de uma lista grande são exceção (mais rápido que desmarcar um por
+  // um a partir do padrão "todos participam").
+  const definirTodosParticipando = useMutation({
+    mutationFn: async (participando: boolean) => {
+      if (!biddingId) throw new Error('Licitação não informada')
+      const atual = analysis?.analise as { itens?: { participando?: boolean }[] } | null | undefined
+      if (!atual?.itens?.length) return
+      const itens = atual.itens.map((it) => ({ ...it, participando }))
+      const { error } = await supabase.from('bidding_analysis').update({ analise: { ...atual, itens } }).eq('bidding_id', biddingId)
+      if (error) throw error
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+  })
+
   return {
     analysis,
     isLoading: query.isLoading,
     travado,
     analisar,
     limparAnalise,
+    alternarItemParticipando,
+    definirTodosParticipando,
   }
 }

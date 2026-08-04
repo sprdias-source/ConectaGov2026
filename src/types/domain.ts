@@ -549,7 +549,11 @@ export interface AnaliseEdital {
     observacoes?: string
   }
   resumoTecnico?: string
-  itens?: { numero?: string | number; idPortal?: string | number; lote?: string | number; descricao: string; unidade?: string; quantidade?: number; valorReferencia?: number }[]
+  // Ausente (undefined) conta como participando — opt-out, não opt-in, pra
+  // não mudar o comportamento de nenhuma análise já feita antes deste campo
+  // existir. Só marca false quem o usuário desmarcou de propósito na tela
+  // (ver AnaliseEditalResumo) porque não vai disputar aquele item/lote.
+  itens?: { numero?: string | number; idPortal?: string | number; lote?: string | number; descricao: string; unidade?: string; quantidade?: number; valorReferencia?: number; participando?: boolean }[]
   validadeProposta?: string
   catalogo?: string
   garantias?: string
