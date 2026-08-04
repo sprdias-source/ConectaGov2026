@@ -486,6 +486,35 @@ export interface Opportunity {
   diasAvisoPrazo: number
   biddingId: string | null
   observacoes: string | null
+  // Preenchido só quando esta oportunidade nasceu de um edital do fluxo
+  // Editais Licitei (ver LicitaiEdital) — permite que aceitar/recusar aqui
+  // reflita de volta no status daquele edital, sem tela duplicada.
+  licitaiEditalId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type LicitaiEditalStatus = 'novo' | 'linkado' | 'oportunidade' | 'aceito' | 'recusado'
+
+// Edital trazido de uma busca no Licitei (robô externo, fora deste app) —
+// dados crus até ser linkado manualmente a um cliente e, dali, virar uma
+// Oportunidade. Só vira uma Bidding de verdade quando o cliente aceitar
+// (ver biddingId, preenchido só nesse momento, mesmo padrão de Opportunity).
+export interface LicitaiEdital {
+  id: string
+  userId: string
+  numeroEdital: string | null
+  orgao: string | null
+  objeto: string | null
+  modalidade: string | null
+  dataSessao: string | null
+  linkLicitei: string | null
+  status: LicitaiEditalStatus
+  clientId: string | null
+  biddingId: string | null
+  // Preenchido depois que o robô baixa o PDF e sobe pro bucket
+  // client-documents, na pasta do cliente linkado.
+  editalStoragePath: string | null
   createdAt: string
   updatedAt: string
 }

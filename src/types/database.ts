@@ -1393,6 +1393,72 @@ export type Database = {
           },
         ]
       }
+      licitei_editais: {
+        Row: {
+          bidding_id: string | null
+          client_id: string | null
+          created_at: string
+          data_sessao: string | null
+          edital_storage_path: string | null
+          id: string
+          link_licitei: string | null
+          modalidade: string | null
+          numero_edital: string | null
+          objeto: string | null
+          orgao: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bidding_id?: string | null
+          client_id?: string | null
+          created_at?: string
+          data_sessao?: string | null
+          edital_storage_path?: string | null
+          id?: string
+          link_licitei?: string | null
+          modalidade?: string | null
+          numero_edital?: string | null
+          objeto?: string | null
+          orgao?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bidding_id?: string | null
+          client_id?: string | null
+          created_at?: string
+          data_sessao?: string | null
+          edital_storage_path?: string | null
+          id?: string
+          link_licitei?: string | null
+          modalidade?: string | null
+          numero_edital?: string | null
+          objeto?: string | null
+          orgao?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "licitei_editais_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "licitei_editais_bidding_id_fkey"
+            columns: ["bidding_id"]
+            isOneToOne: false
+            referencedRelation: "biddings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       modelos_documentos: {
         Row: {
           categoria: string
@@ -1481,6 +1547,7 @@ export type Database = {
           data_sessao: string | null
           dias_aviso_prazo: number
           id: string
+          licitei_edital_id: string | null
           motivo_recusa: string | null
           numero_edital: string | null
           observacoes: string | null
@@ -1499,6 +1566,7 @@ export type Database = {
           data_sessao?: string | null
           dias_aviso_prazo?: number
           id?: string
+          licitei_edital_id?: string | null
           motivo_recusa?: string | null
           numero_edital?: string | null
           observacoes?: string | null
@@ -1517,6 +1585,7 @@ export type Database = {
           data_sessao?: string | null
           dias_aviso_prazo?: number
           id?: string
+          licitei_edital_id?: string | null
           motivo_recusa?: string | null
           numero_edital?: string | null
           observacoes?: string | null
@@ -1546,6 +1615,13 @@ export type Database = {
             columns: ["bidding_id"]
             isOneToOne: false
             referencedRelation: "biddings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "opportunities_licitei_edital_id_fkey"
+            columns: ["licitei_edital_id"]
+            isOneToOne: true
+            referencedRelation: "licitei_editais"
             referencedColumns: ["id"]
           },
         ]

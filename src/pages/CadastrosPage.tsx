@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { FolderKanban, Users, Gavel, Wallet, FileText, Globe, Send } from 'lucide-react'
+import { FolderKanban, Users, Gavel, Wallet, FileText, Globe, Send, Bot } from 'lucide-react'
 import { PageHeader, Card } from '../components/ui/Primitives'
 import { Select } from '../components/ui/FormControls'
 import { useClients } from '../hooks/useClients'
@@ -13,9 +13,10 @@ import HabilitacaoChecklist from '../components/documentos/HabilitacaoChecklist'
 import ClientPlatformsPanel from '../components/plataformas/ClientPlatformsPanel'
 import PlatformsCatalogPanel from '../components/plataformas/PlatformsCatalogPanel'
 import OportunidadesPanel from '../components/oportunidades/OportunidadesPanel'
+import LicitaiEditaisPanel from '../components/licitei/LicitaiEditaisPanel'
 
-type Tab = 'clientes' | 'licitacoes' | 'contas' | 'documentos' | 'plataformas' | 'oportunidades'
-const TABS_VALIDAS: Tab[] = ['clientes', 'licitacoes', 'contas', 'documentos', 'plataformas', 'oportunidades']
+type Tab = 'clientes' | 'licitacoes' | 'contas' | 'documentos' | 'plataformas' | 'oportunidades' | 'licitei'
+const TABS_VALIDAS: Tab[] = ['clientes', 'licitacoes', 'contas', 'documentos', 'plataformas', 'oportunidades', 'licitei']
 
 const TABS_INFO: Record<Tab, { label: string; icon: typeof Users }> = {
   clientes: { label: 'Clientes', icon: Users },
@@ -24,6 +25,7 @@ const TABS_INFO: Record<Tab, { label: string; icon: typeof Users }> = {
   documentos: { label: 'Documentos de Habilitação', icon: FileText },
   plataformas: { label: 'Plataformas', icon: Globe },
   oportunidades: { label: 'Oportunidades', icon: Send },
+  licitei: { label: 'Editais Licitei', icon: Bot },
 }
 
 // A ordem das abas é só uma preferência de exibição — guardada no
@@ -236,6 +238,7 @@ export default function CadastrosPage() {
         )}
 
         {tab === 'oportunidades' && <OportunidadesPanel />}
+        {tab === 'licitei' && <LicitaiEditaisPanel />}
       </div>
     </div>
   )

@@ -7,7 +7,7 @@ import type { Database } from '../types/database'
 import type {
   Client, ClientPrefeitura, Bidding, BiddingItem, FinancialAccount, Empenho, Transaction,
   Employee, Contract, Receipt, AttachedFile, AuditLog, Category, PaymentMethod, ClientDocument, BiddingChecklistItem, AtestadoTecnico, ModeloDocumento, ContractMarco, PersonalEvent,
-  Platform, ClientPlatform, Opportunity,
+  Platform, ClientPlatform, Opportunity, LicitaiEdital, LicitaiEditalStatus,
 } from '../types/domain'
 import { todayLocalISO } from './dateUtils'
 
@@ -604,6 +604,7 @@ export const fromOpportunityRow = (r: Row<'opportunities'>): Opportunity => ({
   diasAvisoPrazo: r.dias_aviso_prazo,
   biddingId: r.bidding_id,
   observacoes: r.observacoes,
+  licitaiEditalId: r.licitei_edital_id,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 })
@@ -624,6 +625,40 @@ export const toOpportunityInsert = (
   dias_aviso_prazo: o.diasAvisoPrazo ?? 7,
   bidding_id: o.biddingId ?? null,
   observacoes: o.observacoes ?? null,
+  licitei_edital_id: o.licitaiEditalId ?? null,
+})
+
+export const fromLicitaiEditalRow = (r: Row<'licitei_editais'>): LicitaiEdital => ({
+  id: r.id,
+  userId: r.user_id,
+  numeroEdital: r.numero_edital,
+  orgao: r.orgao,
+  objeto: r.objeto,
+  modalidade: r.modalidade,
+  dataSessao: r.data_sessao,
+  linkLicitei: r.link_licitei,
+  status: r.status as LicitaiEditalStatus,
+  clientId: r.client_id,
+  biddingId: r.bidding_id,
+  editalStoragePath: r.edital_storage_path,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+})
+
+export const toLicitaiEditalInsert = (
+  e: Partial<LicitaiEdital>, userId: string
+): Database['public']['Tables']['licitei_editais']['Insert'] => ({
+  user_id: userId,
+  numero_edital: e.numeroEdital ?? null,
+  orgao: e.orgao ?? null,
+  objeto: e.objeto ?? null,
+  modalidade: e.modalidade ?? null,
+  data_sessao: e.dataSessao ?? null,
+  link_licitei: e.linkLicitei ?? null,
+  status: e.status ?? 'novo',
+  client_id: e.clientId ?? null,
+  bidding_id: e.biddingId ?? null,
+  edital_storage_path: e.editalStoragePath ?? null,
 })
 
 export const fromModeloDocumentoRow = (r: Row<'modelos_documentos'>): ModeloDocumento => ({

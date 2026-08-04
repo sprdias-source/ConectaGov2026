@@ -65,6 +65,7 @@ export function useOpportunities() {
       dataEnvioCliente?: string | null
       diasAvisoPrazo?: number
       observacoes?: string | null
+      licitaiEditalId?: string | null
     }) => {
       if (!user) throw new Error('Não autenticado')
       const { data, error } = await supabase
@@ -107,8 +108,23 @@ export function useOpportunities() {
         })
         .eq('id', opportunity.id)
       if (error) throw error
+
+      // Reflete a recusa de volta no edital Licitei que originou esta
+      // oportunidade (se houver) — "aceita" só é refletida lá na conversão
+      // em licitação de verdade (ver converterEmLicitacao), já que só aí
+      // existe um bidding_id pra gravar junto.
+      if (resposta === 'recusada' && opportunity.licitaiEditalId) {
+        const { error: licitaiError } = await supabase
+          .from('licitei_editais')
+          .update({ status: 'recusado' })
+          .eq('id', opportunity.licitaiEditalId)
+        if (licitaiError) throw licitaiError
+      }
     },
-    onSuccess: invalidate,
+    onSuccess: (_, { opportunity }) => {
+      invalidate()
+      if (opportunity.licitaiEditalId) queryClient.invalidateQueries({ queryKey: ['licitei_editais'] })
+    },
   })
 
   const deleteOpportunity = useMutation({
@@ -188,13 +204,26 @@ export function useOpportunities() {
         .eq('id', opportunity.id)
       if (opportunityError) throw opportunityError
 
-      return { biddingId: novoBiddingId, objeto: biddingPartial.objeto, orgao: biddingPartial.orgao }
+      // Fecha o ciclo do edital Licitei que originou esta oportunidade (se
+      // houver): vira 'aceito' e grava o bidding_id de verdade — é assim
+      // que a aba Editais Licitei sabe que este edital não é mais uma
+      // oportunidade pendente, virou uma licitação de fato.
+      if (opportunity.licitaiEditalId) {
+        const { error: licitaiError } = await supabase
+          .from('licitei_editais')
+          .update({ status: 'aceito', bidding_id: novoBiddingId })
+          .eq('id', opportunity.licitaiEditalId)
+        if (licitaiError) throw licitaiError
+      }
+
+      return { biddingId: novoBiddingId, objeto: biddingPartial.objeto, orgao: biddingPartial.orgao, licitaiEditalId: opportunity.licitaiEditalId }
     },
-    onSuccess: ({ objeto, orgao }) => {
+    onSuccess: ({ objeto, orgao, licitaiEditalId }) => {
       invalidate()
       queryClient.invalidateQueries({ queryKey: ['biddings'] })
       queryClient.invalidateQueries({ queryKey: ['bidding_items'] })
       queryClient.invalidateQueries({ queryKey: ['attached_files'] })
+      if (licitaiEditalId) queryClient.invalidateQueries({ queryKey: ['licitei_editais'] })
       logEvent('Criou Licitação', `Convertida a partir de uma oportunidade — "${objeto}"${orgao ? ` (Órgão: ${orgao})` : ''}`)
     },
   })
