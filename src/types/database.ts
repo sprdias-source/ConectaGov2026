@@ -1393,9 +1393,43 @@ export type Database = {
           },
         ]
       }
+      licitei_buscas: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          filtros: Json
+          id: string
+          nome: string
+          ultima_execucao_em: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          filtros?: Json
+          id?: string
+          nome: string
+          ultima_execucao_em?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          filtros?: Json
+          id?: string
+          nome?: string
+          ultima_execucao_em?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       licitei_editais: {
         Row: {
           bidding_id: string | null
+          busca_id: string | null
           client_id: string | null
           created_at: string
           data_sessao: string | null
@@ -1412,6 +1446,7 @@ export type Database = {
         }
         Insert: {
           bidding_id?: string | null
+          busca_id?: string | null
           client_id?: string | null
           created_at?: string
           data_sessao?: string | null
@@ -1428,6 +1463,7 @@ export type Database = {
         }
         Update: {
           bidding_id?: string | null
+          busca_id?: string | null
           client_id?: string | null
           created_at?: string
           data_sessao?: string | null
@@ -1448,6 +1484,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "licitei_editais_busca_id_fkey"
+            columns: ["busca_id"]
+            isOneToOne: false
+            referencedRelation: "licitei_buscas"
             referencedColumns: ["id"]
           },
           {

@@ -9,6 +9,7 @@ import ErrorAlert from '../ui/ErrorAlert'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import PdfViewerModal from '../ui/PdfViewerModal'
 import { useLicitaiEditais } from '../../hooks/useLicitaiEditais'
+import LicitaiBuscasPanel from './LicitaiBuscasPanel'
 import { useClients } from '../../hooks/useClients'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import { supabase } from '../../lib/supabase'
@@ -235,7 +236,12 @@ export default function LicitaiEditaisPanel() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
+      <div className="bg-base-850/30 border border-base-800 rounded-xl p-4">
+        <LicitaiBuscasPanel podeEditar={podeEditar} />
+      </div>
+
+      <div className="flex flex-col gap-4 border-t border-base-800 pt-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h3 className="text-sm font-bold text-base-100">Editais Licitei</h3>
@@ -343,6 +349,7 @@ export default function LicitaiEditaisPanel() {
       )}
 
       <PdfViewerModal open={!!visualizando} onClose={() => setVisualizando(null)} nome={visualizando?.nome ?? ''} url={visualizando?.url ?? null} />
+      </div>
     </div>
   )
 }

@@ -515,6 +515,53 @@ export interface LicitaiEdital {
   // Preenchido depois que o robô baixa o PDF e sobe pro bucket
   // client-documents, na pasta do cliente linkado.
   editalStoragePath: string | null
+  // Qual busca salva trouxe este edital — nulo pros cadastrados manualmente.
+  buscaId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+// Espelha 1:1 o painel "Filtros de Pesquisa" do Licitei (app.liciei.com.br)
+// — cada campo aqui existe pra virar, depois, um preenchimento automático
+// daquele formulário pelo robô. Tudo opcional: uma busca salva pode usar só
+// uma parte dos filtros, igual no próprio Licitei.
+export interface LicitaiBuscaFiltros {
+  palavraChave?: string | null
+  tipoData?: 'abertura' | 'publicacao' | 'encerramento' | null
+  periodo?: 'hoje' | '7_dias' | '30_dias' | '6_meses' | 'personalizado' | null
+  periodoInicio?: string | null
+  periodoFim?: string | null
+  somenteRecebendoProposta?: boolean
+  modalidade?: string | null
+  localizacaoModo?: 'estados_cidades' | 'raio_distancia'
+  estado?: string | null
+  cidade?: string | null
+  enderecoRaio?: string | null
+  raioKm?: number | null
+  portal?: string | null
+  registroPreco?: 'sim' | 'nao' | null
+  tipo?: ('material' | 'servico')[]
+  palavrasIndesejadas?: string | null
+  codigoUasg?: string | null
+  numeroCompra?: string | null
+  valorCompraMin?: number | null
+  valorCompraMax?: number | null
+  valorItemMin?: number | null
+  valorItemMax?: number | null
+  modoDisputa?: string | null
+  esfera?: 'federal' | 'estadual' | 'municipal' | null
+  orgao?: string | null
+}
+
+// Uma busca salva e nomeada no Licitei — o robô (próxima etapa) loga,
+// aplica estes filtros e grava o que encontrar em LicitaiEdital.
+export interface LicitaiBusca {
+  id: string
+  userId: string
+  nome: string
+  ativo: boolean
+  filtros: LicitaiBuscaFiltros
+  ultimaExecucaoEm: string | null
   createdAt: string
   updatedAt: string
 }
