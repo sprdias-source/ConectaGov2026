@@ -536,7 +536,8 @@ export interface LicitaiBuscaFiltros {
   localizacaoModo?: 'estados_cidades' | 'raio_distancia'
   estado?: string | null
   cidade?: string | null
-  enderecoRaio?: string | null
+  // No modo raio_distancia, "cidade" é o centro do raio — mesmo campo
+  // usado no modo estados_cidades, só que sem o "estado" junto.
   raioKm?: number | null
   portal?: string | null
   registroPreco?: 'sim' | 'nao' | null

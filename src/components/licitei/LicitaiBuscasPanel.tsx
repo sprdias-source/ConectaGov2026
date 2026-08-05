@@ -41,8 +41,7 @@ const FILTROS_VAZIO: LicitaiBuscaFiltros = {
   localizacaoModo: 'estados_cidades',
   estado: '',
   cidade: '',
-  enderecoRaio: '',
-  raioKm: null,
+  raioKm: 200,
   portal: '',
   registroPreco: null,
   tipo: [],
@@ -145,14 +144,25 @@ function FormularioFiltros({ filtros, onChange }: {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-col gap-3">
             <div>
-              <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Endereço ou CEP</label>
-              <Input value={filtros.enderecoRaio ?? ''} onChange={(e) => set('enderecoRaio', e.target.value)} />
+              <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Cidade (centro do raio)</label>
+              <Input placeholder="Selecionar cidade" value={filtros.cidade ?? ''} onChange={(e) => set('cidade', e.target.value)} />
             </div>
             <div>
-              <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Raio (km)</label>
-              <Input type="number" min="0" value={filtros.raioKm ?? ''} onChange={(e) => set('raioKm', numOrNull(e.target.value))} />
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Raio de distância</label>
+                <span className="text-[12px] font-semibold text-base-200">{filtros.raioKm ?? 0} km</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={500}
+                step={10}
+                value={filtros.raioKm ?? 0}
+                onChange={(e) => set('raioKm', Number(e.target.value))}
+                className="w-full accent-accent-500"
+              />
             </div>
           </div>
         )}
