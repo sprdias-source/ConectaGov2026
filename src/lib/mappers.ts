@@ -3,11 +3,11 @@
 // explícita para que qualquer mudança de schema tenha um único lugar para
 // ajustar — evita o tipo de bug onde campos ficam "meio sincronizados".
 
-import type { Database } from '../types/database'
+import type { Database, Json } from '../types/database'
 import type {
   Client, ClientPrefeitura, Bidding, BiddingItem, FinancialAccount, Empenho, Transaction,
   Employee, Contract, Receipt, AttachedFile, AuditLog, Category, PaymentMethod, ClientDocument, BiddingChecklistItem, AtestadoTecnico, ModeloDocumento, ContractMarco, PersonalEvent,
-  Platform, ClientPlatform, Opportunity, LicitaiEdital, LicitaiEditalStatus,
+  Platform, ClientPlatform, Opportunity, LicitaiEdital, LicitaiEditalStatus, LicitaiBusca, LicitaiBuscaFiltros,
 } from '../types/domain'
 import { todayLocalISO } from './dateUtils'
 
@@ -641,6 +641,7 @@ export const fromLicitaiEditalRow = (r: Row<'licitei_editais'>): LicitaiEdital =
   clientId: r.client_id,
   biddingId: r.bidding_id,
   editalStoragePath: r.edital_storage_path,
+  buscaId: r.busca_id,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 })
@@ -659,6 +660,28 @@ export const toLicitaiEditalInsert = (
   client_id: e.clientId ?? null,
   bidding_id: e.biddingId ?? null,
   edital_storage_path: e.editalStoragePath ?? null,
+  busca_id: e.buscaId ?? null,
+})
+
+export const fromLicitaiBuscaRow = (r: Row<'licitei_buscas'>): LicitaiBusca => ({
+  id: r.id,
+  userId: r.user_id,
+  nome: r.nome,
+  ativo: r.ativo,
+  filtros: (r.filtros as LicitaiBuscaFiltros | null) ?? {},
+  ultimaExecucaoEm: r.ultima_execucao_em,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+})
+
+export const toLicitaiBuscaInsert = (
+  b: Partial<LicitaiBusca>, userId: string
+): Database['public']['Tables']['licitei_buscas']['Insert'] => ({
+  user_id: userId,
+  nome: b.nome ?? '',
+  ativo: b.ativo ?? true,
+  filtros: (b.filtros ?? {}) as Json,
+  ultima_execucao_em: b.ultimaExecucaoEm ?? null,
 })
 
 export const fromModeloDocumentoRow = (r: Row<'modelos_documentos'>): ModeloDocumento => ({

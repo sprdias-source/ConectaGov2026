@@ -9,6 +9,8 @@ import ErrorAlert from '../ui/ErrorAlert'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import PdfViewerModal from '../ui/PdfViewerModal'
 import { useLicitaiEditais } from '../../hooks/useLicitaiEditais'
+import { useDispararRoboLicitei } from '../../hooks/useDispararRoboLicitei'
+import LicitaiBuscasPanel from './LicitaiBuscasPanel'
 import { useClients } from '../../hooks/useClients'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import { supabase } from '../../lib/supabase'
@@ -45,6 +47,7 @@ function EditalDetalhe({ edital, podeEditar, onVisualizar }: {
   const navigate = useNavigate()
   const { clients } = useClients()
   const { linkarCliente, deleteLicitaiEdital, enviarParaOportunidades } = useLicitaiEditais()
+  const { disparar, disparando, erro: erroRobo, aviso: avisoRobo } = useDispararRoboLicitei()
   const [clientIdSelecionado, setClientIdSelecionado] = useState(edital.clientId ?? '')
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -122,15 +125,21 @@ function EditalDetalhe({ edital, podeEditar, onVisualizar }: {
           </button>
         ) : (
           podeEditar && (
-            <span title="Robô de download ainda não configurado — em breve">
-              <Button variant="secondary" disabled>
-                <Download className="w-3.5 h-3.5" /> Baixar Edital
+            <span title={edital.clientId ? undefined : 'Linke um cliente antes de baixar o edital'}>
+              <Button
+                variant="secondary"
+                onClick={() => disparar({ modo: 'baixar_edital', editalId: edital.id })}
+                disabled={!edital.clientId || disparando}
+              >
+                <Download className="w-3.5 h-3.5" /> {disparando ? 'Disparando...' : 'Baixar Edital'}
               </Button>
             </span>
           )
         )}
       </div>
 
+      {erroRobo && <p className="text-[11px] text-negative-400">Não consegui disparar o robô: {erroRobo}</p>}
+      {avisoRobo && <p className="text-[11px] text-accent-300">{avisoRobo}</p>}
       {erro && <p className="text-[11px] text-negative-400">{erro}</p>}
 
       <div className="flex items-center justify-between pt-1 border-t border-base-800/60">
@@ -235,7 +244,12 @@ export default function LicitaiEditaisPanel() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
+      <div className="bg-base-850/30 border border-base-800 rounded-xl p-4">
+        <LicitaiBuscasPanel podeEditar={podeEditar} />
+      </div>
+
+      <div className="flex flex-col gap-4 border-t border-base-800 pt-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h3 className="text-sm font-bold text-base-100">Editais Licitei</h3>
@@ -258,7 +272,7 @@ export default function LicitaiEditaisPanel() {
       <div className="bg-base-850/40 border border-base-800 rounded-lg px-3 py-2.5 flex items-start gap-2">
         <Bot className="w-3.5 h-3.5 text-base-500 shrink-0 mt-0.5" />
         <p className="text-[11px] text-base-500">
-          O robô que busca editais no Licitei automaticamente ainda não está configurado — por enquanto, cadastre manualmente com "Adicionar manualmente" acima.
+          O robô roda em segundo plano no GitHub Actions e pode levar alguns minutos — use "Rodar Busca" numa busca salva acima, ou cadastre um edital manualmente com "Adicionar manualmente".
         </p>
       </div>
 
@@ -343,6 +357,7 @@ export default function LicitaiEditaisPanel() {
       )}
 
       <PdfViewerModal open={!!visualizando} onClose={() => setVisualizando(null)} nome={visualizando?.nome ?? ''} url={visualizando?.url ?? null} />
+      </div>
     </div>
   )
 }

@@ -5,7 +5,7 @@
 // import de itens) quanto na conversão de uma Oportunidade em Licitação.
 import type { AnaliseEdital, Bidding, BiddingItem, BiddingModalidade } from '../types/domain'
 
-const MODALIDADES_VALIDAS: BiddingModalidade[] = [
+export const MODALIDADES_VALIDAS: BiddingModalidade[] = [
   'Pregão Eletrônico', 'Pregão Presencial', 'Concorrência Pública', 'Tomada de Preços',
   'Convite', 'Leilão', 'Diálogo Competitivo', 'Dispensa de Licitação', 'Inexigibilidade',
 ]
