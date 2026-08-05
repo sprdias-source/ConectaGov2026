@@ -1,0 +1,33 @@
+name: Robô Licitei — Baixar Edital
+
+on:
+  repository_dispatch:
+    types: [robo-licitei-baixar-edital]
+
+jobs:
+  baixar-edital-licitei:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Instalar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Instalar dependências e navegador
+        run: |
+          npm install playwright @supabase/supabase-js
+          npx playwright install --with-deps chromium
+
+      - name: Rodar robô Licitei (baixar edital)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          LICITEI_USUARIO: ${{ secrets.LICITEI_USUARIO }}
+          LICITEI_SENHA: ${{ secrets.LICITEI_SENHA }}
+          EDITAL_ID: ${{ github.event.client_payload.editalId }}
+          USER_ID: ${{ github.event.client_payload.userId }}
+        run: node scripts/robos/baixar-edital-licitei.cjs

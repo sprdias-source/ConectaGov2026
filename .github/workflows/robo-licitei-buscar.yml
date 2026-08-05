@@ -1,0 +1,33 @@
+name: Robô Licitei — Buscar
+
+on:
+  repository_dispatch:
+    types: [robo-licitei-buscar]
+
+jobs:
+  buscar-licitei:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Instalar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Instalar dependências e navegador
+        run: |
+          npm install playwright @supabase/supabase-js
+          npx playwright install --with-deps chromium
+
+      - name: Rodar robô Licitei (buscar)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          LICITEI_USUARIO: ${{ secrets.LICITEI_USUARIO }}
+          LICITEI_SENHA: ${{ secrets.LICITEI_SENHA }}
+          BUSCA_ID: ${{ github.event.client_payload.buscaId }}
+          USER_ID: ${{ github.event.client_payload.userId }}
+        run: node scripts/robos/buscar-licitei.cjs

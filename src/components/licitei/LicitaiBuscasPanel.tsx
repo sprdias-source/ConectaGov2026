@@ -4,6 +4,7 @@ import { Button, Input, Select } from '../ui/FormControls'
 import ErrorAlert from '../ui/ErrorAlert'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import { useLicitaiBuscas } from '../../hooks/useLicitaiBuscas'
+import { useDispararRoboLicitei } from '../../hooks/useDispararRoboLicitei'
 import { MODALIDADES_VALIDAS } from '../../lib/analiseEdital'
 import { mensagemDeErro } from '../../lib/errors'
 import type { LicitaiBusca, LicitaiBuscaFiltros } from '../../types/domain'
@@ -266,6 +267,7 @@ function FormularioFiltros({ filtros, onChange }: {
 
 function BuscaDetalhe({ busca, podeEditar }: { busca: LicitaiBusca; podeEditar: boolean }) {
   const { updateBusca, alternarAtivo, deleteBusca } = useLicitaiBuscas()
+  const { disparar, disparando, erro: erroRobo, aviso: avisoRobo } = useDispararRoboLicitei()
   const [filtros, setFiltros] = useState<LicitaiBuscaFiltros>(busca.filtros)
   const [nome, setNome] = useState(busca.nome)
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false)
@@ -288,14 +290,14 @@ function BuscaDetalhe({ busca, podeEditar }: { busca: LicitaiBusca; podeEditar: 
       <FormularioFiltros filtros={filtros} onChange={setFiltros} />
 
       {erro && <p className="text-[11px] text-negative-400">{erro}</p>}
+      {erroRobo && <p className="text-[11px] text-negative-400">Não consegui disparar o robô: {erroRobo}</p>}
+      {avisoRobo && <p className="text-[11px] text-accent-300">{avisoRobo}</p>}
 
       <div className="flex items-center justify-between pt-1 border-t border-base-800/60">
         <div className="flex items-center gap-2">
-          <span title="Robô ainda não configurado — em breve">
-            <Button disabled>
-              <Play className="w-3.5 h-3.5" /> Rodar Busca
-            </Button>
-          </span>
+          <Button onClick={() => disparar({ modo: 'buscar', buscaId: busca.id })} disabled={!podeEditar || disparando}>
+            <Play className="w-3.5 h-3.5" /> {disparando ? 'Disparando...' : 'Rodar Busca'}
+          </Button>
           {busca.ultimaExecucaoEm && (
             <span className="text-[11px] text-base-500">Última execução: {new Date(busca.ultimaExecucaoEm).toLocaleString('pt-BR')}</span>
           )}
