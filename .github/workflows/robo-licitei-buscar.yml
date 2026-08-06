@@ -30,4 +30,14 @@ jobs:
           LICITEI_SENHA: ${{ secrets.LICITEI_SENHA }}
           BUSCA_ID: ${{ github.event.client_payload.buscaId }}
           USER_ID: ${{ github.event.client_payload.userId }}
+          DIAG_DIR: ${{ github.workspace }}/diagnostico
         run: node scripts/robos/buscar-licitei.cjs
+
+      - name: Subir diagnóstico (só existe se algo falhou)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostico-licitei-buscar
+          path: diagnostico/
+          if-no-files-found: ignore
+          retention-days: 5

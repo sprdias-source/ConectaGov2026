@@ -30,4 +30,14 @@ jobs:
           LICITEI_SENHA: ${{ secrets.LICITEI_SENHA }}
           EDITAL_ID: ${{ github.event.client_payload.editalId }}
           USER_ID: ${{ github.event.client_payload.userId }}
+          DIAG_DIR: ${{ github.workspace }}/diagnostico
         run: node scripts/robos/baixar-edital-licitei.cjs
+
+      - name: Subir diagnóstico (só existe se algo falhou)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostico-licitei-baixar-edital
+          path: diagnostico/
+          if-no-files-found: ignore
+          retention-days: 5

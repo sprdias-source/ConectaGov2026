@@ -11,6 +11,7 @@ const { chromium } = require('playwright')
 const { createClient } = require('@supabase/supabase-js')
 const { loginLicitei } = require('./licitei-login.cjs')
 const { aplicarFiltros } = require('./licitei-filtros.cjs')
+const { iniciarCaptura, salvarDiagnostico } = require('./licitei-diagnostico.cjs')
 
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -49,6 +50,7 @@ async function main() {
 
   const browser = await chromium.launch()
   const page = await browser.newPage()
+  const captura = iniciarCaptura(page)
 
   try {
     console.log(`Buscando "${busca.nome}"...`)
@@ -105,6 +107,7 @@ async function main() {
     console.log(`Concluído em ${Math.round((Date.now() - inicio) / 1000)}s — ${novos} novo(s), ${jaExistiam} já cadastrado(s).`)
   } catch (err) {
     console.error('Erro no robô Licitei (buscar):', err)
+    await salvarDiagnostico(page, 'buscar-falha', captura)
     process.exitCode = 1
   } finally {
     await browser.close()
