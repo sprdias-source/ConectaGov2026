@@ -82,6 +82,15 @@ Deno.serve(async (req: Request) => {
       clientPayload = { editalId, userId: user.id }
     }
 
+    // Log ANTES do fetch: confirma no painel do Supabase (Edge Functions →
+    // Logs) exatamente pra onde e com qual PAT (só o tamanho, nunca o
+    // valor) a gente está mandando o dispatch — sem isso, uma rodada que
+    // "dá certo" (200/204) mas não gera run nenhuma no Actions não deixa
+    // nenhuma pista de qual parte da chamada está errada.
+    console.log(
+      `[disparar] Enviando dispatch: owner=${GITHUB_OWNER} repo=${GITHUB_REPO} event_type=${eventType} GITHUB_PAT.length=${GITHUB_PAT?.length ?? 'undefined'}`
+    )
+
     const dispatchRes = await fetch(
       `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/dispatches`,
       {
@@ -94,9 +103,11 @@ Deno.serve(async (req: Request) => {
         body: JSON.stringify({ event_type: eventType, client_payload: clientPayload }),
       }
     )
+    const corpoResposta = await dispatchRes.text()
+    console.log(`[disparar] GitHub respondeu: status=${dispatchRes.status} corpo="${corpoResposta}"`)
+
     if (!dispatchRes.ok) {
-      const detalhe = await dispatchRes.text()
-      throw new Error(`GitHub recusou o disparo (${dispatchRes.status}): ${detalhe}`)
+      throw new Error(`GitHub recusou o disparo (${dispatchRes.status}): ${corpoResposta}`)
     }
 
     return json({ started: true })
