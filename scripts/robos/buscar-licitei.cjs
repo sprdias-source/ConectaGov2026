@@ -58,8 +58,19 @@ async function main() {
 
     // Assumido: a tela de busca fica em /dashboard/pesquisar — ajustar aqui
     // se a URL real do Licitei for outra (confirmar na primeira rodada).
-    await page.goto('https://app.licitei.com.br/dashboard/pesquisar', { waitUntil: 'domcontentloaded', timeout: 30000 })
+    // 'networkidle' (mesma lição do login): dá tempo da SPA hidratar antes
+    // da gente tentar preencher os filtros — 'domcontentloaded' sozinho
+    // pode resolver antes do formulário de fato existir na tela.
+    await page.goto('https://app.licitei.com.br/dashboard/pesquisar', { waitUntil: 'networkidle', timeout: 30000 })
+    console.log(`[buscar] Depois de navegar — URL: ${page.url()} | título: "${await page.title()}"`)
+    // Captura incondicional (sucesso ou falha): os campos de filtro falham
+    // silenciosamente um a um (try/catch próprio, ver licitei-filtros.cjs),
+    // então sem isso uma rodada "bem sucedida" com 0 resultados não deixa
+    // nenhuma evidência de qual página realmente carregou.
+    await salvarDiagnostico(page, 'apos-navegar-pesquisar', captura)
+
     await aplicarFiltros(page, busca.filtros || {})
+    await salvarDiagnostico(page, 'apos-filtros', captura)
     await page.waitForTimeout(2500) // dá tempo da lista recarregar depois dos filtros
 
     const cards = page.locator('div.grid.gap-6 header a')
