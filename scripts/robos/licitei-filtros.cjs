@@ -4,11 +4,17 @@
 // num try/catch próprio: se um seletor não bater (o Licitei pode reorganizar
 // a tela), o robô avisa no log e segue preenchendo o resto, em vez de
 // travar a busca inteira por causa de um único filtro.
+//
+// Timeout curto (6s) de propósito: o padrão do Playwright é 30s por ação,
+// e com ~20 campos possíveis isso pode significar minutos inteiros
+// desperdiçados esperando por campos que simplesmente não existem na tela
+// (ex: página errada). Se o campo existe, 6s é mais que suficiente.
+const TIMEOUT_CAMPO = 6000
 
 async function preencherTexto(page, placeholder, valor) {
   if (!valor) return
   try {
-    await page.getByPlaceholder(placeholder).first().fill(String(valor))
+    await page.getByPlaceholder(placeholder).first().fill(String(valor), { timeout: TIMEOUT_CAMPO })
   } catch (err) {
     console.warn(`[filtros] não consegui preencher "${placeholder}": ${err.message}`)
   }
@@ -17,8 +23,8 @@ async function preencherTexto(page, placeholder, valor) {
 async function selecionarComboBox(page, placeholder, valorTexto) {
   if (!valorTexto) return
   try {
-    await page.getByPlaceholder(placeholder).first().click()
-    await page.getByRole('option', { name: valorTexto, exact: false }).first().click()
+    await page.getByPlaceholder(placeholder).first().click({ timeout: TIMEOUT_CAMPO })
+    await page.getByRole('option', { name: valorTexto, exact: false }).first().click({ timeout: TIMEOUT_CAMPO })
   } catch (err) {
     console.warn(`[filtros] não consegui selecionar "${valorTexto}" em "${placeholder}": ${err.message}`)
   }
@@ -26,7 +32,7 @@ async function selecionarComboBox(page, placeholder, valorTexto) {
 
 async function clicarCheckboxPeloLabel(page, texto) {
   try {
-    await page.getByText(texto, { exact: true }).first().click()
+    await page.getByText(texto, { exact: true }).first().click({ timeout: TIMEOUT_CAMPO })
   } catch (err) {
     console.warn(`[filtros] não consegui marcar o checkbox "${texto}": ${err.message}`)
   }
@@ -34,8 +40,8 @@ async function clicarCheckboxPeloLabel(page, texto) {
 
 async function preencherMinMax(page, indice, min, max) {
   try {
-    if (min != null) await page.getByPlaceholder('Min').nth(indice).fill(String(min))
-    if (max != null) await page.getByPlaceholder('Max').nth(indice).fill(String(max))
+    if (min != null) await page.getByPlaceholder('Min').nth(indice).fill(String(min), { timeout: TIMEOUT_CAMPO })
+    if (max != null) await page.getByPlaceholder('Max').nth(indice).fill(String(max), { timeout: TIMEOUT_CAMPO })
   } catch (err) {
     console.warn(`[filtros] não consegui preencher valor min/max (índice ${indice}): ${err.message}`)
   }
@@ -58,7 +64,7 @@ async function aplicarFiltros(page, filtros) {
     if (filtros.raioKm != null) {
       try {
         const slider = page.locator('[role="slider"]').first()
-        await slider.focus()
+        await slider.focus({ timeout: TIMEOUT_CAMPO })
         for (let i = 0; i < 50; i++) await page.keyboard.press('ArrowLeft')
         const passos = Math.round(filtros.raioKm / 10)
         for (let i = 0; i < passos; i++) await page.keyboard.press('ArrowRight')
