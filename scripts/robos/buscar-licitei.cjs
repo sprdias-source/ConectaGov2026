@@ -56,13 +56,42 @@ async function main() {
     console.log(`Buscando "${busca.nome}"...`)
     await loginLicitei(page)
 
-    // Assumido: a tela de busca fica em /dashboard/pesquisar — ajustar aqui
-    // se a URL real do Licitei for outra (confirmar na primeira rodada).
-    // 'networkidle' (mesma lição do login): dá tempo da SPA hidratar antes
-    // da gente tentar preencher os filtros — 'domcontentloaded' sozinho
-    // pode resolver antes do formulário de fato existir na tela.
-    await page.goto('https://app.licitei.com.br/dashboard/pesquisar', { waitUntil: 'networkidle', timeout: 30000 })
-    console.log(`[buscar] Depois de navegar — URL: ${page.url()} | título: "${await page.title()}"`)
+    console.log(`[buscar] Pós-login — URL: ${page.url()} | título: "${await page.title()}"`)
+    await salvarDiagnostico(page, 'pos-login', captura)
+
+    // NÃO fazer page.goto() pra uma URL adivinhada aqui: uma rodada real
+    // mostrou que isso força um reload completo da página e derruba a
+    // sessão de volta pra tela de login — o Licitei guarda o estado de
+    // login em memória do lado do cliente (SPA), não só em cookie de
+    // sessão, então um hard-reload pra uma URL "chutada" é destrutivo.
+    // Em vez disso, navega clicando dentro da própria aplicação, como um
+    // usuário real faria.
+    try {
+      const textosNav = await page
+        .locator('nav a, nav button, header a, header button, aside a, aside button, [role="navigation"] a, [role="navigation"] button')
+        .allTextContents()
+      console.log('[buscar] Textos de navegação encontrados pós-login:', JSON.stringify([...new Set(textosNav.map((t) => t.trim()).filter(Boolean))]))
+    } catch (err) {
+      console.warn('[buscar] Não consegui listar a navegação pós-login:', err.message)
+    }
+
+    const candidatosPesquisa = ['Pesquisar', 'Pesquisa', 'Nova pesquisa', 'Buscar', 'Filtros de Pesquisa', 'Editais']
+    let achouNavPesquisa = false
+    for (const nome of candidatosPesquisa) {
+      const link = page.getByRole('link', { name: nome, exact: false }).or(page.getByRole('button', { name: nome, exact: false })).first()
+      if (await link.count().catch(() => 0)) {
+        console.log(`[buscar] Clicando em navegação "${nome}" pra ir pra pesquisa...`)
+        await link.click({ timeout: 6000 }).catch((err) => console.warn(`[buscar] falha ao clicar em "${nome}": ${err.message}`))
+        achouNavPesquisa = true
+        break
+      }
+    }
+    if (!achouNavPesquisa) {
+      console.warn('[buscar] Não achei nenhum link/botão de navegação óbvio pra pesquisa — ver a lista de "Textos de navegação" acima pra descobrir o nome certo.')
+    }
+    await page.waitForTimeout(1500)
+
+    console.log(`[buscar] Depois de tentar navegar pra pesquisa — URL: ${page.url()} | título: "${await page.title()}"`)
     // Captura incondicional (sucesso ou falha): os campos de filtro falham
     // silenciosamente um a um (try/catch próprio, ver licitei-filtros.cjs),
     // então sem isso uma rodada "bem sucedida" com 0 resultados não deixa
