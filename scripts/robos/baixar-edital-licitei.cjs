@@ -8,6 +8,7 @@ const fs = require('fs/promises')
 const { chromium } = require('playwright')
 const { createClient } = require('@supabase/supabase-js')
 const { loginLicitei } = require('./licitei-login.cjs')
+const { iniciarCaptura, salvarDiagnostico } = require('./licitei-diagnostico.cjs')
 
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -39,6 +40,7 @@ async function main() {
 
   const browser = await chromium.launch()
   const page = await browser.newPage()
+  const captura = iniciarCaptura(page)
 
   try {
     await loginLicitei(page)
@@ -85,6 +87,7 @@ async function main() {
     console.log(`Concluído em ${Math.round((Date.now() - inicio) / 1000)}s — "${nomeArquivo}" salvo em ${storagePath}.`)
   } catch (err) {
     console.error('Erro no robô Licitei (baixar edital):', err)
+    await salvarDiagnostico(page, 'baixar-edital-falha', captura)
     process.exitCode = 1
   } finally {
     await browser.close()
