@@ -253,7 +253,18 @@ async function fetchComRetry(url: string, init: RequestInit, tentativas = 4): Pr
       if (res.ok) return res
       // 4xx (exceto 429) é erro de requisição — tentar de novo não resolve.
       if (res.status < 500 && res.status !== 429) return res
-      ultimoErro = new Error(`HTTP ${res.status}: ${await res.text()}`)
+      const corpo = await res.text()
+      // 429 de COTA DIÁRIA esgotada (ex: limite de 20 requisições/dia do
+      // tier gratuito, "GenerateRequestsPerDayPerProjectPerModel") não se
+      // resolve tentando de novo em segundos — só reseta depois de um
+      // tempo bem maior que qualquer backoff daqui. Retentar só atrasaria
+      // um erro que já é certo nesta run; melhor mostrar na hora. Rate
+      // limit comum (por minuto/segundo, sem "PerDay" na resposta) continua
+      // sendo retentado normalmente.
+      if (res.status === 429 && corpo.includes('PerDay')) {
+        return new Response(corpo, { status: res.status, statusText: res.statusText, headers: res.headers })
+      }
+      ultimoErro = new Error(`HTTP ${res.status}: ${corpo}`)
     } catch (err) {
       ultimoErro = err
     }
