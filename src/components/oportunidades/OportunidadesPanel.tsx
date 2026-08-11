@@ -64,6 +64,7 @@ function OportunidadeDetalhe({
 }) {
   const navigate = useNavigate()
   const { marcarResposta, deleteOpportunity, converterEmLicitacao, updateOpportunity } = useOpportunities()
+  const { platforms } = usePlatforms()
   const { files, uploadFile, deleteFile } = useAttachedFiles('oportunidade', opportunity.id)
   const { analysis, analisar, travado, limparAnalise, alternarItemParticipando, definirTodosParticipando } = useOpportunityAnalysis(opportunity.id)
   const [tipoJuridicoAtivo, setTipoJuridicoAtivo] = useState<TipoAnaliseJuridica>('esclarecimento')
@@ -107,6 +108,16 @@ function OportunidadeDetalhe({
     if (valor === (opportunity.dataSessao ?? null)) return
     updateOpportunity.mutate({ ...opportunity, dataSessao: valor })
   }
+
+  const handleTrocarPlataforma = (platformId: string) => {
+    if (!platformId || platformId === opportunity.platformId) return
+    updateOpportunity.mutate({ ...opportunity, platformId })
+  }
+
+  // Sempre inclui a plataforma atual da oportunidade nas opções, mesmo se
+  // ela tiver sido inativada no catálogo depois — senão o select ficaria
+  // sem nenhuma opção selecionada pra oportunidades antigas.
+  const opcoesPlataforma = platforms.filter((p) => p.ativo || p.id === opportunity.platformId)
 
   // Quando a oportunidade nasce sem título (fluxo atual: pode salvar só com
   // cliente/plataforma, direto pro upload/análise do edital, sem precisar
@@ -177,7 +188,19 @@ function OportunidadeDetalhe({
         )}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Plataforma</p>
+          {podeEditar ? (
+            <Select value={opportunity.platformId} onChange={(e) => handleTrocarPlataforma(e.target.value)} disabled={updateOpportunity.isPending}>
+              {opcoesPlataforma.map((p) => (
+                <option key={p.id} value={p.id}>{p.nome}{!p.ativo ? ' (inativa)' : ''}</option>
+              ))}
+            </Select>
+          ) : (
+            <p className="text-[13px] text-base-200">{platforms.find((p) => p.id === opportunity.platformId)?.nome ?? 'Plataforma removida'}</p>
+          )}
+        </div>
         <div>
           <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Edital (PDF)</p>
           {edital ? (
@@ -453,11 +476,11 @@ export default function OportunidadesPanel() {
         )}
       </div>
 
-      {platforms.length > 0 && (
+      {platforms.some((p) => p.ativo) && (
         <Card className="p-3">
           <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">Plataformas que participamos</p>
           <div className="flex flex-wrap gap-2">
-            {platforms.map((p) => (
+            {platforms.filter((p) => p.ativo).map((p) => (
               <span key={p.id} className="flex items-center gap-1.5 text-[11.5px] text-base-300 bg-base-850/60 border border-base-800 rounded-lg px-2.5 py-1.5">
                 <Globe className="w-3 h-3 text-accent-400" /> {p.nome}
                 {p.url && (
@@ -491,7 +514,7 @@ export default function OportunidadesPanel() {
               <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Plataforma *</label>
               <Select value={form.platformId} onChange={(e) => handlePlataformaChange(e.target.value)} disabled={addOpportunity.isPending}>
                 <option value="">— Selecione —</option>
-                {platforms.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                {platforms.filter((p) => p.ativo).map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
                 <option value={NOVA_PLATAFORMA}>+ Nova plataforma...</option>
               </Select>
             </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ExternalLink, Globe, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { ExternalLink, EyeOff, Globe, Pencil, Power, Plus, Trash2, X } from 'lucide-react'
 import { Button, Input, Select } from '../ui/FormControls'
 import ErrorAlert from '../ui/ErrorAlert'
 import ConfirmDialog from '../ui/ConfirmDialog'
@@ -15,14 +15,19 @@ const FORM_VAZIO = {
   valorPadrao: '',
 }
 
-// Mensagem melhor pra violação da FK client_platforms.platform_id (on
-// delete restrict, de propósito — ver migração 012): o erro cru do
-// Postgres cita nome de tabela/constraint que não significa nada pro
-// usuário final.
+// Mensagem melhor pra violação das FKs client_platforms.platform_id e
+// opportunities.platform_id (ambas "on delete restrict" de propósito — ver
+// migrações 012 e 013): o erro cru do Postgres cita nome de
+// tabela/constraint que não significa nada pro usuário final. Nesses
+// casos, sugere inativar em vez de excluir — é a alternativa que não
+// exige desfazer vínculos já existentes.
 function mensagemErroExclusao(err: unknown): string {
   const bruta = mensagemDeErro(err)
   if (bruta.includes('client_platforms')) {
-    return 'Essa plataforma ainda tem cliente(s) vinculado(s) — desvincule ou exclua as assinaturas antes de apagar do catálogo.'
+    return 'Essa plataforma ainda tem cliente(s) vinculado(s) — desvincule ou exclua as assinaturas antes de apagar do catálogo, ou use "Inativar" em vez de excluir.'
+  }
+  if (bruta.includes('opportunities')) {
+    return 'Essa plataforma ainda tem oportunidade(s) cadastrada(s) — edite a plataforma dessas oportunidades antes de apagar do catálogo, ou use "Inativar" em vez de excluir.'
   }
   return bruta
 }
@@ -32,7 +37,7 @@ function mensagemErroExclusao(err: unknown): string {
 // dessas plataformas (com login, mensalidade e vencimento próprios daquele
 // cliente) é feito à parte, na assinatura por cliente logo abaixo.
 export default function PlatformsCatalogPanel() {
-  const { platforms, isLoading, addPlatform, updatePlatform, deletePlatform } = usePlatforms()
+  const { platforms, isLoading, addPlatform, updatePlatform, deletePlatform, alternarAtivo } = usePlatforms()
   const { nivel } = usePermissaoFerramenta('cadastros')
   const podeEditar = nivel === 'edicao'
 
@@ -115,7 +120,7 @@ export default function PlatformsCatalogPanel() {
         )}
       </div>
 
-      <ErrorAlert error={addPlatform.error || updatePlatform.error} />
+      <ErrorAlert error={addPlatform.error || updatePlatform.error || alternarAtivo.error} />
 
       {mostrarForm && podeEditar && (
         <div className="bg-base-850/60 border border-accent-500/20 rounded-xl px-4 py-3.5 flex flex-col gap-3">
@@ -168,11 +173,14 @@ export default function PlatformsCatalogPanel() {
       ) : (
         <div className="flex flex-col gap-1.5">
           {platforms.map((p) => (
-            <div key={p.id} className="flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-lg px-3 py-2.5">
-              <Globe className="w-4 h-4 text-accent-400 shrink-0" />
+            <div key={p.id} className={`flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-lg px-3 py-2.5 ${!p.ativo ? 'opacity-60' : ''}`}>
+              {p.ativo ? <Globe className="w-4 h-4 text-accent-400 shrink-0" /> : <EyeOff className="w-4 h-4 text-base-500 shrink-0" />}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[13px] font-medium text-base-200 truncate">{p.nome}</span>
+                  {!p.ativo && (
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full border bg-base-800 text-base-400 border-base-700">Inativa</span>
+                  )}
                   {p.url && (
                     <a href={p.url.startsWith('http') ? p.url : `https://${p.url}`} target="_blank" rel="noreferrer" className="text-accent-400 hover:text-accent-300">
                       <ExternalLink className="w-3 h-3" />
@@ -187,6 +195,9 @@ export default function PlatformsCatalogPanel() {
                 <div className="flex items-center gap-1 shrink-0">
                   <button onClick={() => abrirEdicao(p)} title="Editar" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
                     <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => alternarAtivo.mutate(p)} title={p.ativo ? 'Inativar' : 'Ativar'} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                    <Power className="w-3.5 h-3.5" />
                   </button>
                   <button onClick={() => { setErroExclusao(null); setExcluindo(p) }} title="Excluir" className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
                     <Trash2 className="w-3.5 h-3.5" />

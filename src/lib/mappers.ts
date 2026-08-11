@@ -542,6 +542,7 @@ export const fromPlatformRow = (r: Row<'platforms'>): Platform => ({
   url: r.url,
   tipoPadrao: r.tipo_padrao as Platform['tipoPadrao'],
   valorPadrao: r.valor_padrao !== null ? Number(r.valor_padrao) : null,
+  ativo: r.ativo,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 })
@@ -554,6 +555,7 @@ export const toPlatformInsert = (
   url: p.url ?? null,
   tipo_padrao: p.tipoPadrao ?? 'paga',
   valor_padrao: p.valorPadrao ?? null,
+  ativo: p.ativo ?? true,
 })
 
 export const fromClientPlatformRow = (r: Row<'client_platforms'>): ClientPlatform => ({

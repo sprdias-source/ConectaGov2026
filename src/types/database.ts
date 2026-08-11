@@ -866,6 +866,7 @@ export type Database = {
       }
       platforms: {
         Row: {
+          ativo: boolean
           created_at: string
           id: string
           nome: string
@@ -876,6 +877,7 @@ export type Database = {
           valor_padrao: number | null
         }
         Insert: {
+          ativo?: boolean
           created_at?: string
           id?: string
           nome: string
@@ -886,6 +888,7 @@ export type Database = {
           valor_padrao?: number | null
         }
         Update: {
+          ativo?: boolean
           created_at?: string
           id?: string
           nome?: string
