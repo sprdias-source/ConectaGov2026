@@ -231,6 +231,34 @@ async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeByte
   return file as { name: string; uri: string }
 }
 
+// Gemini ocasionalmente responde 503 "model is currently experiencing
+// high demand" (ou 429 de limite de taxa) — erro transitório do lado do
+// Google, não do nosso código, que hoje exigia o usuário clicar em
+// "Analisar novamente" manualmente pra um problema que costuma se
+// resolver sozinho em segundos. Tenta de novo automaticamente (backoff
+// exponencial) antes de desistir. Só usado na chamada de generateContent
+// (corpo é um JSON simples, seguro de reenviar) — não nos uploads de
+// arquivo, cujo corpo é uma stream que não dá pra reler depois de falhar.
+async function fetchComRetry(url: string, init: RequestInit, tentativas = 4): Promise<Response> {
+  let ultimoErro: unknown
+  for (let i = 0; i < tentativas; i++) {
+    try {
+      const res = await fetch(url, init)
+      if (res.ok) return res
+      // 4xx (exceto 429) é erro de requisição — tentar de novo não resolve.
+      if (res.status < 500 && res.status !== 429) return res
+      ultimoErro = new Error(`HTTP ${res.status}: ${await res.text()}`)
+    } catch (err) {
+      ultimoErro = err
+    }
+    if (i < tentativas - 1) {
+      console.warn(`[retry] Gemini falhou (tentativa ${i + 1}/${tentativas}), tentando de novo em breve...`, ultimoErro)
+      await new Promise((r) => setTimeout(r, 1500 * 2 ** i))
+    }
+  }
+  throw ultimoErro instanceof Error ? ultimoErro : new Error(String(ultimoErro))
+}
+
 async function apagarArquivoGemini(fileName: string) {
   try {
     await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${GEMINI_API_KEY}`, { method: 'DELETE' })
@@ -308,7 +336,7 @@ Deno.serve(async (req: Request) => {
 
     const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, edital.name)
 
-    const genRes = await fetch(
+    const genRes = await fetchComRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
