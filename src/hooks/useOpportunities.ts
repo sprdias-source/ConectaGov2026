@@ -54,19 +54,22 @@ export function useOpportunities() {
   })
 
   // Município vem da análise por IA (opportunity_analysis.analise.municipio),
-  // não da própria oportunidade — busca à parte, leve (só as duas colunas
-  // que interessam), pra alimentar a listagem sem precisar carregar a
-  // análise inteira de cada oportunidade.
+  // não da própria oportunidade — busca à parte, leve (projeção JSON do
+  // PostgREST: só extrai o texto de analise->>municipio, sem baixar o
+  // JSONB inteiro — que pode ter itens, checklist e textos longos), pra
+  // alimentar a listagem sem carregar a análise inteira de cada oportunidade.
   const municipiosQuery = useQuery({
     queryKey: [...QUERY_KEY, 'municipios'],
     enabled: !!user,
     queryFn: async () => {
-      const { data, error } = await supabase.from('opportunity_analysis').select('opportunity_id, analise')
+      const { data, error } = await supabase
+        .from('opportunity_analysis')
+        .select('opportunity_id, municipio:analise->>municipio')
+        .returns<{ opportunity_id: string; municipio: string | null }[]>()
       if (error) throw error
       const map: Record<string, string> = {}
       for (const row of data) {
-        const municipio = (row.analise as AnaliseEdital | null)?.municipio
-        if (municipio) map[row.opportunity_id] = municipio
+        if (row.municipio) map[row.opportunity_id] = row.municipio
       }
       return map
     },
