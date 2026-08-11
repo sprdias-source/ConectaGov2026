@@ -161,7 +161,9 @@ export default function ClientPlatformsPanel({ clientId, clientName }: Props) {
                 }}
               >
                 <option value="">— Selecione —</option>
-                {platforms.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                {platforms.filter((p) => p.ativo || p.id === form.platformId).map((p) => (
+                  <option key={p.id} value={p.id}>{p.nome}{!p.ativo ? ' (inativa)' : ''}</option>
+                ))}
               </Select>
               {platforms.length === 0 && (
                 <p className="text-[11px] text-base-500 italic mt-1">Nenhuma plataforma no catálogo ainda — cadastre uma no Catálogo de Plataformas acima antes de vincular.</p>

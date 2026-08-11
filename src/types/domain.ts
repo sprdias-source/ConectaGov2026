@@ -434,6 +434,7 @@ export interface Platform {
   url: string | null
   tipoPadrao: PlatformTipo
   valorPadrao: number | null
+  ativo: boolean
   createdAt: string
   updatedAt: string
 }
