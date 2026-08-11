@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Globe, Plus, X, ChevronDown, ChevronRight, Upload, Eye, Trash2, Sparkles,
+  Globe, MapPin, Plus, X, ChevronDown, ChevronRight, Upload, Eye, Trash2, Sparkles,
   Check, XCircle, ArrowRight, ExternalLink,
 } from 'lucide-react'
 import { Button, Input, Select } from '../ui/FormControls'
@@ -369,7 +369,7 @@ function OportunidadeDetalhe({
 }
 
 export default function OportunidadesPanel() {
-  const { opportunities, isLoading, addOpportunity } = useOpportunities()
+  const { opportunities, municipioPorOportunidade, isLoading, addOpportunity } = useOpportunities()
   const { platforms, addPlatform } = usePlatforms()
   const { clients } = useClients()
   const { nivel } = usePermissaoFerramenta('cadastros')
@@ -564,13 +564,24 @@ export default function OportunidadesPanel() {
             const status = calcOpportunityStatus(o)
             const aberto = expandedId === o.id
             const plataforma = platformInfo(o.platformId)
+            const municipio = municipioPorOportunidade[o.id]
             return (
-              <div key={o.id} className="bg-base-850/60 border border-base-800 rounded-lg overflow-hidden">
-                <button onClick={() => setExpandedId(aberto ? null : o.id)} className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-base-850 transition">
+              <div key={o.id} className="bg-base-850/60 border border-base-800 rounded-lg overflow-hidden hover:border-base-700 transition-colors">
+                <button onClick={() => setExpandedId(aberto ? null : o.id)} className="w-full flex items-center gap-3 px-3.5 py-3 text-left hover:bg-base-850 transition">
                   {aberto ? <ChevronDown className="w-3.5 h-3.5 text-base-500 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-base-500 shrink-0" />}
                   <div className="flex-1 min-w-0">
                     <p className="text-[13px] font-medium text-base-200 truncate">{clientName(o.clientId)} — {o.titulo || '(sem título)'}</p>
-                    <p className="text-[11px] text-base-500 truncate">{plataforma?.nome ?? 'Plataforma removida'}{o.numeroEdital ? ` · Edital ${o.numeroEdital}` : ''}</p>
+                    <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                      <span className="flex items-center gap-1 text-[11px] text-base-500">
+                        <Globe className="w-3 h-3 shrink-0" /> {plataforma?.nome ?? 'Plataforma removida'}
+                      </span>
+                      {municipio && (
+                        <span className="flex items-center gap-1 text-[11px] text-base-500">
+                          <MapPin className="w-3 h-3 shrink-0" /> {municipio}
+                        </span>
+                      )}
+                      {o.numeroEdital && <span className="text-[11px] text-base-500">Edital {o.numeroEdital}</span>}
+                    </div>
                   </div>
                   {o.dataSessao && (
                     <span className="text-[11px] font-mono text-base-400 shrink-0 hidden sm:inline">
