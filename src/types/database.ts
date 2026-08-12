@@ -1586,7 +1586,7 @@ export type Database = {
       opportunities: {
         Row: {
           bidding_id: string | null
-          client_id: string
+          client_id: string | null
           created_at: string
           data_envio_cliente: string | null
           data_resposta: string | null
@@ -1597,7 +1597,7 @@ export type Database = {
           motivo_recusa: string | null
           numero_edital: string | null
           observacoes: string | null
-          platform_id: string
+          platform_id: string | null
           resposta: string
           titulo: string
           updated_at: string
@@ -1605,7 +1605,7 @@ export type Database = {
         }
         Insert: {
           bidding_id?: string | null
-          client_id: string
+          client_id?: string | null
           created_at?: string
           data_envio_cliente?: string | null
           data_resposta?: string | null
@@ -1616,7 +1616,7 @@ export type Database = {
           motivo_recusa?: string | null
           numero_edital?: string | null
           observacoes?: string | null
-          platform_id: string
+          platform_id?: string | null
           resposta?: string
           titulo: string
           updated_at?: string
@@ -1624,7 +1624,7 @@ export type Database = {
         }
         Update: {
           bidding_id?: string | null
-          client_id?: string
+          client_id?: string | null
           created_at?: string
           data_envio_cliente?: string | null
           data_resposta?: string | null
@@ -1635,7 +1635,7 @@ export type Database = {
           motivo_recusa?: string | null
           numero_edital?: string | null
           observacoes?: string | null
-          platform_id?: string
+          platform_id?: string | null
           resposta?: string
           titulo?: string
           updated_at?: string
