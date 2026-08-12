@@ -364,6 +364,7 @@ export type Database = {
           descricao: string
           ganhou: boolean
           id: string
+          lote: string | null
           marca: string | null
           numero_item: string
           quantidade: number
@@ -380,6 +381,7 @@ export type Database = {
           descricao: string
           ganhou?: boolean
           id?: string
+          lote?: string | null
           marca?: string | null
           numero_item: string
           quantidade?: number
@@ -396,6 +398,7 @@ export type Database = {
           descricao?: string
           ganhou?: boolean
           id?: string
+          lote?: string | null
           marca?: string | null
           numero_item?: string
           quantidade?: number
@@ -494,6 +497,7 @@ export type Database = {
           valor_licitado: number
           valor_ofertado: number | null
           valor_ofertado_real: number | null
+          valor_participacao: number | null
         }
         Insert: {
           client_id: string
@@ -528,6 +532,7 @@ export type Database = {
           valor_licitado?: number
           valor_ofertado?: number | null
           valor_ofertado_real?: number | null
+          valor_participacao?: number | null
         }
         Update: {
           client_id?: string
@@ -562,6 +567,7 @@ export type Database = {
           valor_licitado?: number
           valor_ofertado?: number | null
           valor_ofertado_real?: number | null
+          valor_participacao?: number | null
         }
         Relationships: [
           {

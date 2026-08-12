@@ -36,7 +36,7 @@ import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import BiddingItemsEditor from '../components/cadastros/BiddingItemsEditor'
 import { stringifyCsvPortal, textoParaBlobLatin1, formatarNumeroPtBR, HEADER_PORTAL_COMPRAS } from '../lib/csvPortalCompras'
 import { parseFlexibleNumber } from '../lib/numberParsing'
-import { mapearCamposDaAnalise, mapearItensDaAnalise } from '../lib/analiseEdital'
+import { mapearCamposDaAnalise, mapearItensDaAnalise, somarValorLicitado } from '../lib/analiseEdital'
 import { useToast } from '../hooks/useToast'
 import { CERT_CONFIG } from '../types/domain'
 import type { AnaliseEdital, Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingStatus } from '../types/domain'
@@ -1036,11 +1036,19 @@ function construirPreenchimento(analise: AnaliseEdital, itensAtuais: BiddingItem
   if (campos.modalidade) resumo.push('Modalidade')
   if (campos.dataAbertura) resumo.push('Data do Pregão')
   if (campos.diasValidadeProposta) resumo.push('Validade da Proposta')
+  if (campos.valorLicitado != null) resumo.push('Valor Total do Edital')
 
   const itensMapeados = mapearItensDaAnalise(analise)
   const temItensNaAnalise = !!itensMapeados
   const itens: Partial<BiddingItem>[] = itensMapeados ?? itensAtuais
-  if (temItensNaAnalise) resumo.push(`Itens/Lotes (${itensMapeados!.length})`)
+  if (temItensNaAnalise) {
+    resumo.push(`Itens/Lotes (${itensMapeados!.length})`)
+    // "Valor que Vamos Participar" começa igual à soma dos itens que a IA
+    // extraiu — o usuário ainda pode editar depois, e o alerta de
+    // divergência (BiddingFormModal) avisa se ficar dessincronizado.
+    campos.valorParticipacao = somarValorLicitado(itensMapeados!)
+    resumo.push('Valor que Vamos Participar')
+  }
 
   return { campos, itens, substituiItens: temItensNaAnalise, resumo }
 }
@@ -1558,7 +1566,7 @@ export default function LicitacaoPage() {
           <>
             {painelStatus}
             <ResultadoLicitacao bidding={bidding} />
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
               <Card className="p-3">
                 <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Modalidade</p>
                 <p className="text-[13px] text-base-200">{bidding.modalidade}</p>
@@ -1568,8 +1576,12 @@ export default function LicitacaoPage() {
                 <p className="text-[13px] text-base-200">{new Date(bidding.dataAbertura + 'T12:00:00').toLocaleDateString('pt-BR')}</p>
               </Card>
               <Card className="p-3">
-                <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Valor Licitado</p>
+                <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Valor Total do Edital</p>
                 <p className="text-[13px] font-mono text-base-200">{formatBRL(bidding.valorLicitado)}</p>
+              </Card>
+              <Card className="p-3">
+                <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Valor de Participação</p>
+                <p className="text-[13px] font-mono text-base-200">{bidding.valorParticipacao != null ? formatBRL(bidding.valorParticipacao) : '—'}</p>
               </Card>
               <Card className="p-3">
                 <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Disputa</p>

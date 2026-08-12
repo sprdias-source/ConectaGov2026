@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { fromOpportunityRow, toOpportunityInsert, toBiddingInsert, toBiddingItemInsert } from '../lib/mappers'
-import { mapearCamposDaAnalise, mapearItensDaAnalise } from '../lib/analiseEdital'
+import { mapearCamposDaAnalise, mapearItensDaAnalise, somarValorLicitado } from '../lib/analiseEdital'
 import { useAuth } from './useAuth'
 import { useAuditLog } from './useAuditLog'
 import { todayLocalISO } from '../lib/dateUtils'
@@ -183,6 +183,10 @@ export function useOpportunities() {
 
       const campos = analise ? mapearCamposDaAnalise(analise) : {}
       const itens = analise ? mapearItensDaAnalise(analise) : null
+      // "Valor que Vamos Participar" começa igual à soma dos itens extraídos
+      // pela IA (mesma regra do botão "Preencher Licitação com estes Dados"
+      // em LicitacaoPage.tsx) — editável depois na tela da licitação.
+      if (itens?.length) campos.valorParticipacao = somarValorLicitado(itens)
 
       const biddingPartial = {
         ...campos,

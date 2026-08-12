@@ -299,8 +299,13 @@ export default function BiddingsTab() {
   const valoresNode = (b: Bidding): ReactNode => (
     <div className="flex flex-col gap-0.5">
       <span className="font-mono font-semibold text-base-200 text-[13px]">{formatBRL(b.valorLicitado)}</span>
+      {b.valorParticipacao != null && (
+        <span className="text-[10px] text-base-500">
+          Participando: <span className="font-mono text-base-400">{formatBRL(b.valorParticipacao)}</span>
+        </span>
+      )}
       <span className="text-[10px] text-base-500">
-        Ofertado: {b.valorOfertadoReal ? <span className="font-mono text-positive-400">{formatBRL(b.valorOfertadoReal)}</span> : '—'}
+        Ganho: {b.valorOfertadoReal ? <span className="font-mono text-positive-400">{formatBRL(b.valorOfertadoReal)}</span> : '—'}
       </span>
     </div>
   )
