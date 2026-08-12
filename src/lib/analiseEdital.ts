@@ -48,6 +48,7 @@ export function mapearItensDaAnalise(analise: AnaliseEdital): Partial<BiddingIte
   if (!selecionados.length) return null
   return selecionados.map(({ it, idx }) => ({
     numeroItem: it.numero != null ? String(it.numero) : String(idx + 1),
+    lote: it.lote != null ? String(it.lote) : null,
     descricao: it.descricao,
     unidade: it.unidade ?? null,
     quantidade: it.quantidade ?? 1,
@@ -56,6 +57,16 @@ export function mapearItensDaAnalise(analise: AnaliseEdital): Partial<BiddingIte
     valorUnitarioLicitado: it.valorReferencia ?? 0,
     valorUnitarioOfertado: null,
   }))
+}
+
+// Soma o valor total dos itens (quantidade × valor unitário licitado) — usado
+// pra preencher automaticamente "Valor que Vamos Participar" a partir dos
+// itens selecionados na análise. Nunca usado pra "Valor Total do Edital":
+// esse vem direto de AnaliseEdital.valorTotalEstimado, tal como declarado no
+// próprio documento, porque a soma dos itens pode se perder (itens não
+// selecionados, lotes, etc).
+export function somarValorLicitado(itens: Partial<BiddingItem>[]): number {
+  return itens.reduce((s, i) => s + (i.quantidade ?? 0) * (i.valorUnitarioLicitado ?? 0), 0)
 }
 
 // Só os campos que a análise conseguiu identificar (nunca sobrescreve com
@@ -74,5 +85,6 @@ export function mapearCamposDaAnalise(analise: AnaliseEdital): Partial<Bidding> 
   const dataISO = converterDataParaISO(analise.data)
   if (dataISO) campos.dataAbertura = dataISO
   if (analise.validadeProposta) campos.diasValidadeProposta = analise.validadeProposta
+  if (analise.valorTotalEstimado != null) campos.valorLicitado = analise.valorTotalEstimado
   return campos
 }

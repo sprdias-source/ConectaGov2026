@@ -47,7 +47,7 @@ export default function BiddingItemsEditor({
   const addRow = () => {
     emitChange([
       ...drafts,
-      { _key: newKey(), numeroItem: String(drafts.length + 1), descricao: '', unidade: 'UN', quantidade: 1, marca: '', referencia: '', valorUnitarioLicitado: 0, valorUnitarioOfertado: null, ganhou: false },
+      { _key: newKey(), numeroItem: String(drafts.length + 1), lote: '', descricao: '', unidade: 'UN', quantidade: 1, marca: '', referencia: '', valorUnitarioLicitado: 0, valorUnitarioOfertado: null, ganhou: false },
     ])
   }
 
@@ -106,6 +106,7 @@ export default function BiddingItemsEditor({
           imported.push({
             _key: newKey(),
             numeroItem: String(get('item', 'nº', 'numero', 'número') ?? idx + 1),
+            lote: String(get('lote') ?? '') || undefined,
             descricao,
             unidade: String(get('unidade', 'un', 'und') ?? 'UN'),
             quantidade: qtd ?? 1,
@@ -138,11 +139,163 @@ export default function BiddingItemsEditor({
   const totalLicitado = drafts.reduce((s, d) => s + (d.quantidade ?? 0) * (d.valorUnitarioLicitado ?? 0), 0)
   const totalOfertado = drafts.reduce((s, d) => s + (d.quantidade ?? 0) * (d.valorUnitarioOfertado ?? d.valorUnitarioLicitado ?? 0), 0)
 
+  // Quando a disputa é por lote, agrupa os itens pelo campo "lote" (na ordem
+  // em que cada lote apareceu pela primeira vez) pra mostrar um subtotal
+  // logo abaixo de cada grupo — assim fica fácil conferir o valor de cada
+  // lote sem precisar somar manualmente.
+  const gruposPorLote = tipoDisputa === 'Lote'
+    ? (() => {
+        const mapa = new Map<string, ItemDraft[]>()
+        for (const d of drafts) {
+          const chave = (d.lote ?? '').trim() || 'Sem lote'
+          if (!mapa.has(chave)) mapa.set(chave, [])
+          mapa.get(chave)!.push(d)
+        }
+        return Array.from(mapa.entries()).map(([lote, itens]) => ({
+          lote,
+          itens,
+          subtotalLicitado: itens.reduce((s, d) => s + (d.quantidade ?? 0) * (d.valorUnitarioLicitado ?? 0), 0),
+          subtotalOfertado: itens.reduce((s, d) => s + (d.quantidade ?? 0) * (d.valorUnitarioOfertado ?? d.valorUnitarioLicitado ?? 0), 0),
+        }))
+      })()
+    : null
+
+  const renderLinhaDesktop = (d: ItemDraft) => (
+    <tr key={d._key} className="border-t border-base-800">
+      <td className="px-2 py-1.5">
+        <Input value={d.numeroItem ?? ''} onChange={(e) => updateRow(d._key, { numeroItem: e.target.value })} className="!py-1 !px-2 text-[12px]" />
+      </td>
+      {tipoDisputa === 'Lote' && (
+        <td className="px-2 py-1.5">
+          <Input value={d.lote ?? ''} onChange={(e) => updateRow(d._key, { lote: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="1" />
+        </td>
+      )}
+      <td className="px-2 py-1.5">
+        <Input value={d.descricao ?? ''} onChange={(e) => updateRow(d._key, { descricao: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="Descrição do item" />
+      </td>
+      <td className="px-2 py-1.5">
+        <Input value={d.unidade ?? ''} onChange={(e) => updateRow(d._key, { unidade: e.target.value })} className="!py-1 !px-2 text-[12px]" />
+      </td>
+      <td className="px-2 py-1.5">
+        <Input type="number" value={d.quantidade ?? ''} onChange={(e) => updateRow(d._key, { quantidade: parseFloat(e.target.value) || 0 })} className="!py-1 !px-2 text-[12px]" />
+      </td>
+      <td className="px-2 py-1.5">
+        <Input value={d.marca ?? ''} onChange={(e) => updateRow(d._key, { marca: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
+      </td>
+      <td className="px-2 py-1.5">
+        <Input value={d.referencia ?? ''} onChange={(e) => updateRow(d._key, { referencia: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
+      </td>
+      <td className="px-2 py-1.5">
+        <Input type="number" step="0.01" value={d.valorUnitarioLicitado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioLicitado: parseFloat(e.target.value) || 0 })} className="!py-1 !px-2 text-[12px]" />
+      </td>
+      <td className="px-2 py-1.5">
+        <Input type="number" step="0.01" value={d.valorUnitarioOfertado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioOfertado: parseFloat(e.target.value) || undefined })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
+      </td>
+      <td className="px-2 py-1.5 text-center">
+        <input
+          type="checkbox"
+          checked={d.ganhou ?? false}
+          onChange={(e) => updateRow(d._key, { ganhou: e.target.checked })}
+          title="Marcar se este item foi ganho nesta disputa"
+          className="w-4 h-4 accent-accent-500 cursor-pointer"
+        />
+      </td>
+      <td className="px-2 py-1.5 text-center">
+        <button type="button" onClick={() => removeRow(d._key)} className="text-base-500 hover:text-negative-400 transition">
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </td>
+    </tr>
+  )
+
+  const renderSubtotalDesktop = (lote: string, subtotalLicitado: number, subtotalOfertado: number) => (
+    <tr key={`subtotal-${lote}`} className="bg-accent-500/10 border-t border-accent-400/30">
+      <td colSpan={7} className="px-2 py-1.5 text-right text-[11px] font-bold text-accent-300">Subtotal do Lote {lote}:</td>
+      <td className="px-2 py-1.5 font-mono font-bold text-base-200">{formatBRL(subtotalLicitado)}</td>
+      <td className="px-2 py-1.5 font-mono font-bold text-accent-300">{formatBRL(subtotalOfertado)}</td>
+      <td colSpan={2} />
+    </tr>
+  )
+
+  const renderCardMobile = (d: ItemDraft) => (
+    <div key={d._key} className="border border-base-700/50 rounded-lg p-3 bg-base-900/40 flex flex-col gap-2.5">
+      <div className="flex items-center gap-2">
+        <div className="w-14 shrink-0">
+          <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Nº</p>
+          <Input value={d.numeroItem ?? ''} onChange={(e) => updateRow(d._key, { numeroItem: e.target.value })} className="!py-1.5 !px-2 text-[13px]" />
+        </div>
+        {tipoDisputa === 'Lote' && (
+          <div className="w-16 shrink-0">
+            <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Lote</p>
+            <Input value={d.lote ?? ''} onChange={(e) => updateRow(d._key, { lote: e.target.value })} className="!py-1.5 !px-2 text-[13px]" placeholder="1" />
+          </div>
+        )}
+        <div className="flex-1">
+          <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Descrição</p>
+          <Input value={d.descricao ?? ''} onChange={(e) => updateRow(d._key, { descricao: e.target.value })} className="!py-1.5 !px-2 text-[13px]" placeholder="Descrição do item" />
+        </div>
+        <button type="button" onClick={() => removeRow(d._key)} className="self-end mb-2 p-1.5 text-base-500 hover:text-negative-400 transition shrink-0">
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2.5">
+        <div>
+          <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Unidade</p>
+          <Input value={d.unidade ?? ''} onChange={(e) => updateRow(d._key, { unidade: e.target.value })} className="!py-1.5 !px-2 text-[13px]" />
+        </div>
+        <div>
+          <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Quantidade</p>
+          <Input type="number" value={d.quantidade ?? ''} onChange={(e) => updateRow(d._key, { quantidade: parseFloat(e.target.value) || 0 })} className="!py-1.5 !px-2 text-[13px]" />
+        </div>
+        <div>
+          <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Marca</p>
+          <Input value={d.marca ?? ''} onChange={(e) => updateRow(d._key, { marca: e.target.value })} className="!py-1.5 !px-2 text-[13px]" placeholder="—" />
+        </div>
+        <div>
+          <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Modelo</p>
+          <Input value={d.referencia ?? ''} onChange={(e) => updateRow(d._key, { referencia: e.target.value })} className="!py-1.5 !px-2 text-[13px]" placeholder="—" />
+        </div>
+        <div>
+          <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Vl. Unit. Licitado</p>
+          <Input type="number" step="0.01" value={d.valorUnitarioLicitado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioLicitado: parseFloat(e.target.value) || 0 })} className="!py-1.5 !px-2 text-[13px]" />
+        </div>
+        <div>
+          <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Vl. Unit. Ofertado</p>
+          <Input type="number" step="0.01" value={d.valorUnitarioOfertado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioOfertado: parseFloat(e.target.value) || undefined })} className="!py-1.5 !px-2 text-[13px]" placeholder="—" />
+        </div>
+      </div>
+
+      <label className="flex items-center gap-2 text-[12px] text-base-300 pt-1 border-t border-base-800">
+        <input
+          type="checkbox"
+          checked={d.ganhou ?? false}
+          onChange={(e) => updateRow(d._key, { ganhou: e.target.checked })}
+          className="w-4 h-4 accent-accent-500 cursor-pointer"
+        />
+        Ganhamos este item
+      </label>
+    </div>
+  )
+
+  const renderSubtotalMobile = (lote: string, subtotalLicitado: number, subtotalOfertado: number) => (
+    <div key={`subtotal-${lote}`} className="border border-accent-500/25 rounded-lg p-2.5 bg-accent-500/10 flex items-center justify-between text-[11px]">
+      <span className="font-bold text-accent-300">Subtotal do Lote {lote}:</span>
+      <div className="flex flex-col items-end gap-0.5">
+        <span className="font-mono font-bold text-base-200">{formatBRL(subtotalLicitado)}</span>
+        <span className="font-mono font-bold text-accent-300">{formatBRL(subtotalOfertado)}</span>
+      </div>
+    </div>
+  )
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <p className="text-[12px] text-base-400">
-          {tipoDisputa === 'Lote' ? 'Lotes' : 'Itens'} cadastrados: <strong className="text-base-200">{drafts.length}</strong>
+          Itens cadastrados: <strong className="text-base-200">{drafts.length}</strong>
+          {tipoDisputa === 'Lote' && gruposPorLote && (
+            <span className="ml-1.5 text-base-500">em {gruposPorLote.length} lote(s)</span>
+          )}
         </p>
         <div className="flex gap-2">
           <label className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-accent-300 bg-base-850 border border-base-700 rounded-lg px-3 py-1.5 cursor-pointer transition">
@@ -150,7 +303,7 @@ export default function BiddingItemsEditor({
             <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileUpload} />
           </label>
           <button type="button" onClick={addRow} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-950 bg-accent-500 hover:bg-accent-400 rounded-lg px-3 py-1.5 transition">
-            <Plus className="w-3.5 h-3.5" /> Adicionar {tipoDisputa === 'Lote' ? 'Lote' : 'Item'}
+            <Plus className="w-3.5 h-3.5" /> Adicionar Item
           </button>
         </div>
       </div>
@@ -158,7 +311,7 @@ export default function BiddingItemsEditor({
       {drafts.length === 0 ? (
         <div className="border border-dashed border-base-700 rounded-lg py-8 flex flex-col items-center text-base-500 text-[12px]">
           <FileSpreadsheet className="w-6 h-6 mb-2 opacity-50" />
-          Nenhum {tipoDisputa === 'Lote' ? 'lote' : 'item'} cadastrado. Adicione manualmente ou importe uma planilha.
+          Nenhum item cadastrado. Adicione manualmente ou importe uma planilha.
         </div>
       ) : (
         <>
@@ -171,6 +324,7 @@ export default function BiddingItemsEditor({
               <thead>
                 <tr className="bg-base-850 text-left">
                   <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-16">Nº</th>
+                  {tipoDisputa === 'Lote' && <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-20">Lote</th>}
                   <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500">Descrição</th>
                   <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-20">Unid.</th>
                   <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-20">Qtd.</th>
@@ -183,52 +337,16 @@ export default function BiddingItemsEditor({
                 </tr>
               </thead>
               <tbody>
-                {drafts.map((d) => (
-                  <tr key={d._key} className="border-t border-base-800">
-                    <td className="px-2 py-1.5">
-                      <Input value={d.numeroItem ?? ''} onChange={(e) => updateRow(d._key, { numeroItem: e.target.value })} className="!py-1 !px-2 text-[12px]" />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <Input value={d.descricao ?? ''} onChange={(e) => updateRow(d._key, { descricao: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="Descrição do item" />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <Input value={d.unidade ?? ''} onChange={(e) => updateRow(d._key, { unidade: e.target.value })} className="!py-1 !px-2 text-[12px]" />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <Input type="number" value={d.quantidade ?? ''} onChange={(e) => updateRow(d._key, { quantidade: parseFloat(e.target.value) || 0 })} className="!py-1 !px-2 text-[12px]" />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <Input value={d.marca ?? ''} onChange={(e) => updateRow(d._key, { marca: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <Input value={d.referencia ?? ''} onChange={(e) => updateRow(d._key, { referencia: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <Input type="number" step="0.01" value={d.valorUnitarioLicitado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioLicitado: parseFloat(e.target.value) || 0 })} className="!py-1 !px-2 text-[12px]" />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <Input type="number" step="0.01" value={d.valorUnitarioOfertado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioOfertado: parseFloat(e.target.value) || undefined })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
-                    </td>
-                    <td className="px-2 py-1.5 text-center">
-                      <input
-                        type="checkbox"
-                        checked={d.ganhou ?? false}
-                        onChange={(e) => updateRow(d._key, { ganhou: e.target.checked })}
-                        title="Marcar se este item foi ganho nesta disputa"
-                        className="w-4 h-4 accent-accent-500 cursor-pointer"
-                      />
-                    </td>
-                    <td className="px-2 py-1.5 text-center">
-                      <button type="button" onClick={() => removeRow(d._key)} className="text-base-500 hover:text-negative-400 transition">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {gruposPorLote
+                  ? gruposPorLote.flatMap((g) => [
+                      ...g.itens.map(renderLinhaDesktop),
+                      renderSubtotalDesktop(g.lote, g.subtotalLicitado, g.subtotalOfertado),
+                    ])
+                  : drafts.map(renderLinhaDesktop)}
               </tbody>
               <tfoot>
                 <tr className="border-t border-base-700 bg-base-850/60">
-                  <td colSpan={6} className="px-2 py-2 text-right text-[11px] font-bold text-base-400">Totais:</td>
+                  <td colSpan={tipoDisputa === 'Lote' ? 7 : 6} className="px-2 py-2 text-right text-[11px] font-bold text-base-400">Totais:</td>
                   <td className="px-2 py-2 font-mono font-bold text-base-200">{formatBRL(totalLicitado)}</td>
                   <td className="px-2 py-2 font-mono font-bold text-accent-300">{formatBRL(totalOfertado)}</td>
                   <td colSpan={2} />
@@ -240,60 +358,12 @@ export default function BiddingItemsEditor({
           {/* Celular: cada item vira um card com campos empilhados em largura
               total — nenhum valor fica espremido numa caixinha estreita. */}
           <div className="flex flex-col gap-3 md:hidden">
-            {drafts.map((d) => (
-              <div key={d._key} className="border border-base-700/50 rounded-lg p-3 bg-base-900/40 flex flex-col gap-2.5">
-                <div className="flex items-center gap-2">
-                  <div className="w-14 shrink-0">
-                    <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Nº</p>
-                    <Input value={d.numeroItem ?? ''} onChange={(e) => updateRow(d._key, { numeroItem: e.target.value })} className="!py-1.5 !px-2 text-[13px]" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Descrição</p>
-                    <Input value={d.descricao ?? ''} onChange={(e) => updateRow(d._key, { descricao: e.target.value })} className="!py-1.5 !px-2 text-[13px]" placeholder="Descrição do item" />
-                  </div>
-                  <button type="button" onClick={() => removeRow(d._key)} className="self-end mb-2 p-1.5 text-base-500 hover:text-negative-400 transition shrink-0">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div>
-                    <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Unidade</p>
-                    <Input value={d.unidade ?? ''} onChange={(e) => updateRow(d._key, { unidade: e.target.value })} className="!py-1.5 !px-2 text-[13px]" />
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Quantidade</p>
-                    <Input type="number" value={d.quantidade ?? ''} onChange={(e) => updateRow(d._key, { quantidade: parseFloat(e.target.value) || 0 })} className="!py-1.5 !px-2 text-[13px]" />
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Marca</p>
-                    <Input value={d.marca ?? ''} onChange={(e) => updateRow(d._key, { marca: e.target.value })} className="!py-1.5 !px-2 text-[13px]" placeholder="—" />
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Modelo</p>
-                    <Input value={d.referencia ?? ''} onChange={(e) => updateRow(d._key, { referencia: e.target.value })} className="!py-1.5 !px-2 text-[13px]" placeholder="—" />
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Vl. Unit. Licitado</p>
-                    <Input type="number" step="0.01" value={d.valorUnitarioLicitado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioLicitado: parseFloat(e.target.value) || 0 })} className="!py-1.5 !px-2 text-[13px]" />
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Vl. Unit. Ofertado</p>
-                    <Input type="number" step="0.01" value={d.valorUnitarioOfertado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioOfertado: parseFloat(e.target.value) || undefined })} className="!py-1.5 !px-2 text-[13px]" placeholder="—" />
-                  </div>
-                </div>
-
-                <label className="flex items-center gap-2 text-[12px] text-base-300 pt-1 border-t border-base-800">
-                  <input
-                    type="checkbox"
-                    checked={d.ganhou ?? false}
-                    onChange={(e) => updateRow(d._key, { ganhou: e.target.checked })}
-                    className="w-4 h-4 accent-accent-500 cursor-pointer"
-                  />
-                  Ganhamos este item
-                </label>
-              </div>
-            ))}
+            {gruposPorLote
+              ? gruposPorLote.flatMap((g) => [
+                  ...g.itens.map(renderCardMobile),
+                  renderSubtotalMobile(g.lote, g.subtotalLicitado, g.subtotalOfertado),
+                ])
+              : drafts.map(renderCardMobile)}
 
             <div className="border border-base-700/50 rounded-lg p-3 bg-base-850/60 flex items-center justify-between text-[12px]">
               <span className="font-bold text-base-400">Totais:</span>

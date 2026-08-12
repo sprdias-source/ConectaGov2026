@@ -6,6 +6,8 @@ import CurrencyInput from '../ui/CurrencyInput'
 import ErrorAlert from '../ui/ErrorAlert'
 import BiddingItemsEditor from './BiddingItemsEditor'
 import { useBiddingItems } from '../../hooks/useBiddingItems'
+import { somarValorLicitado } from '../../lib/analiseEdital'
+import { formatBRL } from '../../hooks/useAccountBalances'
 import type { Bidding, BiddingModalidade, BiddingTipo, BiddingStatus, BiddingEtapa, BiddingItem } from '../../types/domain'
 import type { Client } from '../../types/domain'
 
@@ -27,6 +29,7 @@ const emptyForm = (clients: Client[]): Partial<Bidding> => ({
   uf: '',
   valorLicitado: 0,
   valorOfertadoReal: null,
+  valorParticipacao: null,
   status: 'Em Andamento',
   dataAbertura: todayLocalISO(),
   dataCadastro: todayLocalISO(),
@@ -71,6 +74,14 @@ export default function BiddingFormModal({
   }, [open, savedItems])
 
   const isNaoMensalista = form.clientId && clientIsMensalista ? !clientIsMensalista(form.clientId) : false
+
+  // Soma dos itens selecionados na aba Itens/Lotes — usada só pra alertar o
+  // usuário quando "Valor que Vamos Participar" foi preenchido (manualmente
+  // ou pela IA) e diverge do que os itens somam agora, sem nunca sobrescrever
+  // o campo sozinho (o valor total do edital nunca vem dessa soma, só o de
+  // participação, e mesmo assim o usuário decide se aceita o recálculo).
+  const somaItens = somarValorLicitado(draftItems)
+  const divergeDaSomaItens = form.valorParticipacao != null && somaItens > 0 && Math.abs(form.valorParticipacao - somaItens) > 0.01
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
@@ -143,11 +154,22 @@ export default function BiddingFormModal({
               </div>
             </Field>
 
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Valor Licitado / Estimado (R$)">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <Field label="Valor Total do Edital (R$)">
                 <CurrencyInput value={form.valorLicitado ?? 0} onChange={(v) => setForm({ ...form, valorLicitado: v })} />
               </Field>
-              <Field label="Valor Ofertado (vencedor, R$)">
+              <Field label="Valor que Vamos Participar (R$)">
+                <CurrencyInput value={form.valorParticipacao ?? 0} onChange={(v) => setForm({ ...form, valorParticipacao: v || null })} />
+                {divergeDaSomaItens && (
+                  <p className="text-[11px] text-warning-400 mt-0.5">
+                    Os itens selecionados somam {formatBRL(somaItens)}.{' '}
+                    <button type="button" onClick={() => setForm({ ...form, valorParticipacao: somaItens })} className="underline font-semibold hover:text-warning-300">
+                      Usar valor calculado
+                    </button>
+                  </p>
+                )}
+              </Field>
+              <Field label="Valor Ganho de Fato (R$)">
                 <CurrencyInput value={form.valorOfertadoReal ?? 0} onChange={(v) => setForm({ ...form, valorOfertadoReal: v || null })} />
               </Field>
             </div>

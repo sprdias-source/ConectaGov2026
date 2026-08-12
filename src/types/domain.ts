@@ -95,6 +95,7 @@ export interface Bidding {
   dataAbertura: string
   dataCadastro: string
   valorOfertadoReal: number | null
+  valorParticipacao: number | null
   tipoDisputa: 'Item' | 'Lote'
   taxaParticipacao: number | null
   taxaParticipacaoLancada: boolean
@@ -119,6 +120,7 @@ export interface BiddingItem {
   userId: string
   biddingId: string
   numeroItem: string
+  lote: string | null
   descricao: string
   unidade: string | null
   quantidade: number
@@ -601,6 +603,10 @@ export interface AnaliseEdital {
     observacoes?: string
   }
   resumoTecnico?: string
+  // Valor total do edital tal como declarado no próprio documento (cláusula
+  // de valor estimado/máximo da licitação) — nunca calculado somando itens,
+  // porque o sistema pode se perder (itens não selecionados, lotes, etc).
+  valorTotalEstimado?: number
   // Ausente (undefined) conta como participando — opt-out, não opt-in, pra
   // não mudar o comportamento de nenhuma análise já feita antes deste campo
   // existir. Só marca false quem o usuário desmarcou de propósito na tela

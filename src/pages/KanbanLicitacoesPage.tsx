@@ -135,6 +135,9 @@ function CardLicitacao({
         <span className="text-[11px] font-mono font-semibold text-accent-300">{formatBRL(b.valorLicitado)}</span>
         <span className="text-[10px] text-base-500">{new Date(b.dataAbertura + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
       </div>
+      {b.valorParticipacao != null && (
+        <p className="text-[10px] text-base-500 -mt-1">Participando: <span className="font-mono text-base-400">{formatBRL(b.valorParticipacao)}</span></p>
+      )}
       {podeEditar && (
         <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-base-800">
           <button
@@ -432,7 +435,7 @@ export default function KanbanLicitacoesPage() {
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Objeto</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Cliente</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Órgão</th>
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Valor Licitado</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Valor Total do Edital</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Habilitação</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Etapa</th>
                       {podeEditar && <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Ações</th>}

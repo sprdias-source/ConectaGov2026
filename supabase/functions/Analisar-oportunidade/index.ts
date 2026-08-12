@@ -76,12 +76,14 @@ const ANALISE_SCHEMA = {
       },
     },
     resumoTecnico: { type: 'STRING' },
+    valorTotalEstimado: { type: 'NUMBER' },
     itens: {
       type: 'ARRAY',
       items: {
         type: 'OBJECT',
         properties: {
           numero: { type: 'STRING' },
+          lote: { type: 'STRING' },
           descricao: { type: 'STRING' },
           unidade: { type: 'STRING' },
           quantidade: { type: 'NUMBER' },
@@ -150,6 +152,10 @@ Para "modoDisputa", localize a cláusula do edital que define o MODO DE DISPUTA 
 - criterioEncerramento: resuma, em poucas palavras, o que efetivamente encerra a disputa (ex: "inatividade + tempo aleatório do sistema", "decisão do pregoeiro", "prazo fixo sem prorrogação");
 - observacoes: qualquer outra regra relevante da disputa que não caiba nos campos acima (ex: regra específica de desempate na fase de lances, retorno à fase de lances em caso de desclassificação, particularidades do modo combinado).
 Preencha só o que o próprio edital detalhar explicitamente — nunca complete uma regra com o que é "padrão" ou "comum" no mercado se o documento não disser isso.
+
+Para "valorTotalEstimado", extraia o valor total estimado/máximo da licitação exatamente como declarado no próprio edital (geralmente numa cláusula do tipo "Do Valor Estimado" ou no preâmbulo, ex: "R$ 1.234.567,89"). Traga o número tal como o edital afirma — NUNCA calcule somando os valores dos itens, mesmo que pareça dar no mesmo; se o edital não declarar esse valor total explicitamente, deixe null.
+
+Se a licitação for organizada em LOTES (grupos de itens que devem ser disputados/adjudicados em conjunto), preencha o campo "lote" de cada item com o número/identificação do lote ao qual ele pertence, exatamente como o edital o identifica (ex: "1", "Lote 01", "Lote II"). Se a licitação for por item individual (sem lotes), deixe "lote" vazio em todos os itens.
 
 ATENÇÃO ESPECIAL com unidades que têm expoente (m², m³, cm³, km² etc.) nos itens: releia a quantidade e a unidade completas com cuidado antes de preencher — o caractere de expoente (², ³) não pode cortar ou confundir o número nem a unidade ao lado dele. Exemplo: "405 m³" tem que virar quantidade 405 e unidade "m³" — nunca quantidade 4 e unidade "m", nem qualquer outra combinação truncada.
 
