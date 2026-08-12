@@ -26,7 +26,11 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!
-const GEMINI_MODEL = 'gemini-flash-latest'
+// Fixo em 2.5 (não 'gemini-flash-latest'): esse alias passou a apontar pro
+// modelo mais novo em preview (gemini-3.6-flash), cujo tier gratuito é de
+// só 20 requisições/dia. O 2.5 Flash, mesma chave/conta, tem tier gratuito
+// de 1.500/dia — praticamente resolve a cota sem precisar de outro provedor.
+const GEMINI_MODEL = 'gemini-2.5-flash'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
