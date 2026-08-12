@@ -43,7 +43,7 @@ export default function CentralPrazosPage() {
   const { platforms } = usePlatforms()
   const { opportunities, isLoading: loadingOpportunities } = useOpportunities()
 
-  const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? 'Cliente removido'
+  const clientName = (id: string | null) => id ? (clients.find((c) => c.id === id)?.name ?? 'Cliente removido') : 'Sem cliente definido'
 
   const itens = useMemo(() => {
     const hoje = todayLocalISO()

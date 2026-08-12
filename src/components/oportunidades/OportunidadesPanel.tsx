@@ -65,6 +65,7 @@ function OportunidadeDetalhe({
   const navigate = useNavigate()
   const { marcarResposta, deleteOpportunity, converterEmLicitacao, updateOpportunity } = useOpportunities()
   const { platforms } = usePlatforms()
+  const { clients } = useClients()
   const { files, uploadFile, deleteFile } = useAttachedFiles('oportunidade', opportunity.id)
   const { analysis, analisar, travado, limparAnalise, alternarItemParticipando, definirTodosParticipando } = useOpportunityAnalysis(opportunity.id)
   const [tipoJuridicoAtivo, setTipoJuridicoAtivo] = useState<TipoAnaliseJuridica>('esclarecimento')
@@ -110,13 +111,21 @@ function OportunidadeDetalhe({
   }
 
   const handleTrocarPlataforma = (platformId: string) => {
-    if (!platformId || platformId === opportunity.platformId) return
-    updateOpportunity.mutate({ ...opportunity, platformId })
+    const valor = platformId || null
+    if (valor === opportunity.platformId) return
+    updateOpportunity.mutate({ ...opportunity, platformId: valor })
   }
 
-  // Sempre inclui a plataforma atual da oportunidade nas opções, mesmo se
-  // ela tiver sido inativada no catálogo depois — senão o select ficaria
-  // sem nenhuma opção selecionada pra oportunidades antigas.
+  const handleTrocarCliente = (clientId: string) => {
+    const valor = clientId || null
+    if (valor === opportunity.clientId) return
+    updateOpportunity.mutate({ ...opportunity, clientId: valor })
+  }
+
+  // Sempre inclui a plataforma/cliente atual da oportunidade nas opções,
+  // mesmo se ela tiver sido inativada no catálogo depois (plataforma) —
+  // senão o select ficaria sem nenhuma opção selecionada pra oportunidades
+  // antigas.
   const opcoesPlataforma = platforms.filter((p) => p.ativo || p.id === opportunity.platformId)
 
   // Quando a oportunidade nasce sem título (fluxo atual: pode salvar só com
@@ -190,15 +199,29 @@ function OportunidadeDetalhe({
 
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <div>
+          <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Cliente</p>
+          {podeEditar ? (
+            <Select value={opportunity.clientId ?? ''} onChange={(e) => handleTrocarCliente(e.target.value)} disabled={updateOpportunity.isPending}>
+              <option value="">— Ainda não sei / depois —</option>
+              {clients.filter((c) => c.isActive || c.id === opportunity.clientId).map((c) => (
+                <option key={c.id} value={c.id}>{c.name}{!c.isActive ? ' (inativo)' : ''}</option>
+              ))}
+            </Select>
+          ) : (
+            <p className="text-[13px] text-base-200">{opportunity.clientId ? (clients.find((c) => c.id === opportunity.clientId)?.name ?? 'Cliente removido') : 'Sem cliente definido'}</p>
+          )}
+        </div>
+        <div>
           <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Plataforma</p>
           {podeEditar ? (
-            <Select value={opportunity.platformId} onChange={(e) => handleTrocarPlataforma(e.target.value)} disabled={updateOpportunity.isPending}>
+            <Select value={opportunity.platformId ?? ''} onChange={(e) => handleTrocarPlataforma(e.target.value)} disabled={updateOpportunity.isPending}>
+              <option value="">— Ainda não sei / depois —</option>
               {opcoesPlataforma.map((p) => (
                 <option key={p.id} value={p.id}>{p.nome}{!p.ativo ? ' (inativa)' : ''}</option>
               ))}
             </Select>
           ) : (
-            <p className="text-[13px] text-base-200">{platforms.find((p) => p.id === opportunity.platformId)?.nome ?? 'Plataforma removida'}</p>
+            <p className="text-[13px] text-base-200">{opportunity.platformId ? (platforms.find((p) => p.id === opportunity.platformId)?.nome ?? 'Plataforma removida') : 'Sem plataforma definida'}</p>
           )}
         </div>
         <div>
@@ -391,8 +414,8 @@ export default function OportunidadesPanel() {
   const [novaOportunidadeId, setNovaOportunidadeId] = useState<string | null>(null)
   const novaOportunidade = novaOportunidadeId ? opportunities.find((o) => o.id === novaOportunidadeId) ?? null : null
 
-  const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? 'Cliente removido'
-  const platformInfo = (id: string) => platforms.find((p) => p.id === id)
+  const clientName = (id: string | null) => id ? (clients.find((c) => c.id === id)?.name ?? 'Cliente removido') : 'Sem cliente definido'
+  const platformInfo = (id: string | null) => id ? platforms.find((p) => p.id === id) : undefined
 
   const ordenadas = [...opportunities].filter((o) => o.id !== novaOportunidadeId).sort((a, b) => {
     const statusA = calcOpportunityStatus(a)
@@ -414,14 +437,14 @@ export default function OportunidadesPanel() {
     }
   }
 
-  // Cliente + plataforma já bastam pra existir uma oportunidade — o resto
-  // (título, edital/TR, análise por IA) é preenchido depois, na própria
-  // linha recém-criada. Por isso a criação acontece assim que os dois
-  // estiverem escolhidos, sem um botão "Salvar" no meio: o usuário não
-  // devia precisar de um passo extra só pra chegar no upload do edital.
+  // Cliente e plataforma são OPCIONAIS na criação — às vezes o que se quer
+  // é só subir um edital e rodar a análise por IA antes mesmo de saber pra
+  // qual cliente aquilo vai. O resto (título, edital/TR, análise, e o
+  // próprio cliente/plataforma se ficaram em branco) é preenchido depois,
+  // na própria linha recém-criada.
   const [criandoPlataforma, setCriandoPlataforma] = useState(false)
 
-  const criarOportunidade = async (clientId: string, platformId: string) => {
+  const criarOportunidade = async (clientId: string | null, platformId: string | null) => {
     setErroForm(null)
     try {
       const novaId = await addOpportunity.mutateAsync({ clientId, platformId, titulo: '' })
@@ -450,11 +473,11 @@ export default function OportunidadesPanel() {
 
   const handleCriarComNovaPlataforma = async () => {
     setErroForm(null)
-    if (!form.clientId || !form.novaPlataformaNome.trim()) return
+    if (!form.novaPlataformaNome.trim()) return
     setCriandoPlataforma(true)
     try {
       const platformId = await addPlatform.mutateAsync({ nome: form.novaPlataformaNome.trim() })
-      await criarOportunidade(form.clientId, platformId)
+      await criarOportunidade(form.clientId || null, platformId)
     } catch (err) {
       setErroForm(mensagemDeErro(err))
     } finally {
@@ -504,16 +527,16 @@ export default function OportunidadesPanel() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Cliente *</label>
+              <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Cliente</label>
               <Select value={form.clientId} onChange={(e) => handleClienteChange(e.target.value)} disabled={addOpportunity.isPending}>
-                <option value="">— Selecione —</option>
+                <option value="">— Ainda não sei / depois —</option>
                 {clients.filter((c) => c.isActive).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </Select>
             </div>
             <div>
-              <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Plataforma *</label>
+              <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Plataforma</label>
               <Select value={form.platformId} onChange={(e) => handlePlataformaChange(e.target.value)} disabled={addOpportunity.isPending}>
-                <option value="">— Selecione —</option>
+                <option value="">— Ainda não sei / depois —</option>
                 {platforms.filter((p) => p.ativo).map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
                 <option value={NOVA_PLATAFORMA}>+ Nova plataforma...</option>
               </Select>
@@ -522,14 +545,20 @@ export default function OportunidadesPanel() {
           {form.platformId === NOVA_PLATAFORMA && (
             <div className="flex items-center gap-2">
               <Input placeholder="Nome da nova plataforma" value={form.novaPlataformaNome} onChange={(e) => setForm({ ...form, novaPlataformaNome: e.target.value })} />
-              <Button onClick={handleCriarComNovaPlataforma} disabled={!form.clientId || !form.novaPlataformaNome.trim() || criandoPlataforma}>
+              <Button onClick={handleCriarComNovaPlataforma} disabled={!form.novaPlataformaNome.trim() || criandoPlataforma}>
                 {criandoPlataforma ? 'Criando...' : 'Criar'}
               </Button>
             </div>
           )}
-          {addOpportunity.isPending && <p className="text-[11px] text-base-500 italic">Criando...</p>}
+          {form.platformId !== NOVA_PLATAFORMA && (
+            <div>
+              <Button onClick={() => criarOportunidade(form.clientId || null, form.platformId || null)} disabled={addOpportunity.isPending}>
+                {addOpportunity.isPending ? 'Criando...' : 'Criar oportunidade'}
+              </Button>
+            </div>
+          )}
           {erroForm && <p className="text-[11px] text-negative-400">{erroForm}</p>}
-          <p className="text-[11px] text-base-500">Assim que escolher cliente e plataforma, a oportunidade já é criada aqui embaixo, pronta pra você enviar o edital/TR e rodar a análise por IA — o título, o nº do edital etc. você preenche depois, na própria linha.</p>
+          <p className="text-[11px] text-base-500">Cliente e plataforma são opcionais — dá pra criar a oportunidade sem escolher nenhum dos dois e já ir direto pro upload do edital e a análise por IA. Se escolher os dois, a oportunidade já é criada na hora. Tudo (título, nº do edital, cliente/plataforma se ficaram em branco) dá pra preencher depois, na própria linha.</p>
         </div>
       )}
 

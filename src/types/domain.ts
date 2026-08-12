@@ -475,8 +475,11 @@ export type OpportunityResposta = 'pendente' | 'aceita' | 'recusada'
 export interface Opportunity {
   id: string
   userId: string
-  clientId: string
-  platformId: string
+  // Opcionais na criação: dá pra abrir a oportunidade e já analisar o
+  // edital antes de saber pra qual cliente/plataforma isso vai — só
+  // "converter em licitação" exige clientId preenchido (ver useOpportunities).
+  clientId: string | null
+  platformId: string | null
   titulo: string
   numeroEdital: string | null
   dataSessao: string | null

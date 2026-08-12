@@ -615,8 +615,8 @@ export const toOpportunityInsert = (
   o: Partial<Opportunity>, userId: string
 ): Database['public']['Tables']['opportunities']['Insert'] => ({
   user_id: userId,
-  client_id: o.clientId ?? '',
-  platform_id: o.platformId ?? '',
+  client_id: o.clientId ?? null,
+  platform_id: o.platformId ?? null,
   titulo: o.titulo ?? '',
   numero_edital: o.numeroEdital ?? null,
   data_sessao: o.dataSessao ?? null,

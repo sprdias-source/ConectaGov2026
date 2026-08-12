@@ -79,8 +79,8 @@ export function useOpportunities() {
 
   const addOpportunity = useMutation({
     mutationFn: async (o: {
-      clientId: string
-      platformId: string
+      clientId?: string | null
+      platformId?: string | null
       titulo: string
       numeroEdital?: string | null
       dataSessao?: string | null
@@ -167,6 +167,12 @@ export function useOpportunities() {
   const converterEmLicitacao = useMutation({
     mutationFn: async (opportunity: Opportunity) => {
       if (!user) throw new Error('Não autenticado')
+      // client_id é opcional na oportunidade (dá pra analisar um edital
+      // antes de saber o cliente), mas a licitação de verdade sempre
+      // pertence a um cliente — sem essa checagem, o erro só apareceria lá
+      // na frente, como uma violação de not-null crua do Postgres.
+      if (!opportunity.clientId) throw new Error('Selecione um cliente antes de converter em licitação.')
+      const clientId = opportunity.clientId
 
       const { data: analiseRow } = await supabase
         .from('opportunity_analysis')
@@ -180,7 +186,7 @@ export function useOpportunities() {
 
       const biddingPartial = {
         ...campos,
-        clientId: opportunity.clientId,
+        clientId,
         objeto: campos.objeto ?? opportunity.titulo,
         orgao: campos.orgao ?? '',
         numeroEdital: campos.numeroEdital ?? opportunity.numeroEdital ?? null,
