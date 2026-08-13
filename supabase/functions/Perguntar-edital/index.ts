@@ -25,7 +25,9 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!
-const GEMINI_MODEL = 'gemini-2.5-flash'
+// Ver o mesmo comentário em Analisar-edital/index.ts sobre por que é fixo
+// (não 'gemini-flash-latest') e por que já trocou uma vez de 2.5 pra 3.5.
+const GEMINI_MODEL = 'gemini-3.5-flash'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

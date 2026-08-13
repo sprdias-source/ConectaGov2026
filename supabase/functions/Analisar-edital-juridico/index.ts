@@ -18,15 +18,14 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!
-// Fixo em 2.5 de novo (não 'gemini-flash-latest'): esse alias passou a
-// apontar pro modelo mais novo em preview (gemini-3.6-flash), cujo tier
-// gratuito é de só 20 requisições/dia — o 2.5 Flash tem 1.500/dia, mesma
-// chave/conta. Ciente do motivo de termos trocado pro alias antes (evitar
-// quebrar quando uma versão fixa for descontinuada, como aconteceu em
-// jul/2026) — decisão consciente de novo trade-off: cota generosa agora,
-// às custas de precisar trocar o modelo manualmente se/quando o Google
-// descontinuar o 2.5 Flash.
-const GEMINI_MODEL = 'gemini-2.5-flash'
+// Fixo em 3.5 (não 'gemini-flash-latest' nem '2.5-flash'): o 2.5 Flash foi
+// de fato descontinuado pelo Google em 2026 ("model ... is no longer
+// available to new users", HTTP 404 NOT_FOUND) — exatamente o risco que
+// esse comentário já vinha alertando. Se isso voltar a acontecer com o
+// 3.5, troque de novo pro sucessor atual — nunca pro alias
+// 'gemini-flash-latest', que já apontou pra um preview com cota gratuita
+// de só 20 req/dia.
+const GEMINI_MODEL = 'gemini-3.5-flash'
 
 const TIPOS_VALIDOS = ['esclarecimento', 'impugnacao', 'raio_x'] as const
 type Tipo = typeof TIPOS_VALIDOS[number]
