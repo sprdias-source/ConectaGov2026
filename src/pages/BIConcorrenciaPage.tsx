@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import {
-  Target, TrendingUp, Award, Building2, Percent,
+  Target, TrendingUp, Award, Building2, Percent, Lightbulb,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -94,6 +94,50 @@ export default function BIConcorrenciaPage() {
       .slice(0, 6)
   }, [finalized, clients])
 
+  // Insights em texto, não só gráfico cru — a mesma leitura que um analista
+  // faria olhando os números acima, já pronta. Cada insight só entra com
+  // amostra mínima (2+ disputas), pra não tirar conclusão de um resultado
+  // isolado.
+  const insights = useMemo(() => {
+    const lista: string[] = []
+
+    const modalidadesComAmostra = byModalidade.filter((m) => m.total >= 2)
+    if (modalidadesComAmostra.length > 0) {
+      const melhor = modalidadesComAmostra.reduce((a, b) => (b.taxa > a.taxa ? b : a))
+      lista.push(`Sua melhor modalidade é ${melhor.modalidade}, com ${melhor.taxa}% de êxito em ${melhor.total} disputas.`)
+    }
+    if (modalidadesComAmostra.length > 1) {
+      const pior = modalidadesComAmostra.reduce((a, b) => (b.taxa < a.taxa ? b : a))
+      if (pior.taxa < 50) {
+        lista.push(`Em ${pior.modalidade} a taxa de êxito cai pra ${pior.taxa}% (${pior.total} disputas) — vale revisar a estratégia de preço nessa modalidade.`)
+      }
+    }
+    if (byCliente.length > 0) {
+      const topCliente = byCliente[0]
+      lista.push(`${topCliente.cliente} é o cliente mais rentável em licitações, com ${formatBRL(topCliente.valorGanho)} ganhos em ${topCliente.total} disputa(s).`)
+    }
+    if (byOrgao.length > 0) {
+      const topOrgao = byOrgao[0]
+      lista.push(`${topOrgao.orgao} é o órgão que mais gerou resultado, com ${formatBRL(topOrgao.valorGanho)} em contratos ganhos.`)
+    }
+    if (margemCompetitiva) {
+      if (margemCompetitiva.media > 15) {
+        lista.push(`Margem competitiva média de ${margemCompetitiva.media.toFixed(1)}% abaixo do valor licitado — pode haver espaço pra ofertar menos e ganhar disputas mais disputadas.`)
+      } else if (margemCompetitiva.media < 5) {
+        lista.push(`Margem competitiva apertada (${margemCompetitiva.media.toFixed(1)}% abaixo do valor licitado, em média) — atenção pra não comprometer a rentabilidade das próximas disputas.`)
+      }
+    }
+    if (finalized.length >= 3) {
+      if (overallWinRate >= 60) {
+        lista.push(`Taxa de êxito geral de ${overallWinRate}% está sólida — o padrão atual de seleção de editais vem funcionando.`)
+      } else if (overallWinRate < 30) {
+        lista.push(`Taxa de êxito geral de apenas ${overallWinRate}% — vale revisar os critérios de quais editais valem a pena disputar.`)
+      }
+    }
+
+    return lista
+  }, [byModalidade, byCliente, byOrgao, margemCompetitiva, overallWinRate, finalized])
+
   const radarData = useMemo(() => {
     if (finalized.length === 0) return []
     const portais = new Set(biddings.map((b) => b.portal).filter(Boolean))
@@ -151,6 +195,25 @@ export default function BIConcorrenciaPage() {
           <p className="text-[11px] text-base-500">prefeituras/entidades atendidas</p>
         </Card>
       </div>
+
+      {insights.length > 0 && (
+        <div className="px-6 mt-4">
+          <Card className="p-5 border-accent-500/25 bg-accent-500/5">
+            <div className="flex items-center gap-2 mb-2">
+              <Lightbulb className="w-4 h-4 text-accent-400" />
+              <h3 className="text-sm font-bold text-base-100">Insights</h3>
+            </div>
+            <ul className="flex flex-col gap-1.5">
+              {insights.map((texto, idx) => (
+                <li key={idx} className="text-[12.5px] text-base-300 flex items-start gap-2">
+                  <span className="text-accent-400 shrink-0 mt-0.5">•</span>
+                  {texto}
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 px-6 mt-4">
         <Card className="p-5">

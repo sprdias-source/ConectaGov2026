@@ -475,6 +475,8 @@ export const fromAuditLogRow = (r: Row<'audit_logs'>): AuditLog => ({
   userId: r.user_id,
   action: r.action,
   details: r.details,
+  entityType: r.entity_type,
+  entityId: r.entity_id,
   createdAt: r.created_at,
 })
 

@@ -122,9 +122,9 @@ export function useBiddings() {
     },
     onSuccess: ({ created, feeLaunched }) => {
       invalidate()
-      logEvent('Criou Licitação', `Iniciou licitação "${created.objeto}" no órgão "${created.orgao}" (Valor de R$ ${created.valorLicitado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`)
+      logEvent('Criou Licitação', `Iniciou licitação "${created.objeto}" no órgão "${created.orgao}" (Valor de R$ ${created.valorLicitado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`, { type: 'bidding', id: created.id })
       if (feeLaunched) {
-        logEvent('Lançou Taxa de Participação', `Gerou automaticamente a taxa de participação de R$ ${created.taxaParticipacao?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} para "${created.objeto}"`)
+        logEvent('Lançou Taxa de Participação', `Gerou automaticamente a taxa de participação de R$ ${created.taxaParticipacao?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} para "${created.objeto}"`, { type: 'bidding', id: created.id })
       }
     },
   })
@@ -157,9 +157,9 @@ export function useBiddings() {
     },
     onSuccess: ({ updated, feeLaunched }) => {
       invalidate(updated.id)
-      logEvent('Editou Licitação', `Atualizou licitação "${updated.objeto}" (Órgão: ${updated.orgao}) — status: ${updated.status}`)
+      logEvent('Editou Licitação', `Atualizou licitação "${updated.objeto}" (Órgão: ${updated.orgao}) — status: ${updated.status}`, { type: 'bidding', id: updated.id })
       if (feeLaunched) {
-        logEvent('Lançou Taxa de Participação', `Gerou automaticamente a taxa de participação de R$ ${updated.taxaParticipacao?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} para "${updated.objeto}"`)
+        logEvent('Lançou Taxa de Participação', `Gerou automaticamente a taxa de participação de R$ ${updated.taxaParticipacao?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} para "${updated.objeto}"`, { type: 'bidding', id: updated.id })
       }
     },
   })
@@ -172,7 +172,7 @@ export function useBiddings() {
     },
     onSuccess: (deleted) => {
       invalidate()
-      logEvent('Excluiu Licitação', `Removeu a licitação do órgão "${deleted.orgao}" referente ao objeto "${deleted.objeto}". Empenhos e lançamentos vinculados foram removidos automaticamente.`)
+      logEvent('Excluiu Licitação', `Removeu a licitação do órgão "${deleted.orgao}" referente ao objeto "${deleted.objeto}". Empenhos e lançamentos vinculados foram removidos automaticamente.`, { type: 'bidding', id: deleted.id })
     },
   })
 
@@ -191,7 +191,8 @@ export function useBiddings() {
       invalidate()
       logEvent(
         updated.isActive ? 'Reativou Licitação' : 'Inativou Licitação',
-        `${updated.isActive ? 'Reativou' : 'Inativou'} a licitação "${updated.objeto}"`
+        `${updated.isActive ? 'Reativou' : 'Inativou'} a licitação "${updated.objeto}"`,
+        { type: 'bidding', id: updated.id }
       )
     },
   })
@@ -215,7 +216,8 @@ export function useBiddings() {
       invalidate()
       logEvent(
         updated.modeloCustomizadoPath ? 'Enviou Modelo Próprio de Proposta' : 'Removeu Modelo Próprio de Proposta',
-        `Licitação "${updated.objeto}" (Órgão: ${updated.orgao})`
+        `Licitação "${updated.objeto}" (Órgão: ${updated.orgao})`,
+        { type: 'bidding', id: updated.id }
       )
     },
   })
@@ -236,7 +238,7 @@ export function useBiddings() {
     },
     onSuccess: (updated) => {
       invalidate()
-      logEvent('Atualizou Etapa da Licitação', `Licitação "${updated.objeto}" — nova etapa: ${updated.etapa}`)
+      logEvent('Atualizou Etapa da Licitação', `Licitação "${updated.objeto}" — nova etapa: ${updated.etapa}`, { type: 'bidding', id: updated.id })
     },
   })
 
@@ -262,7 +264,7 @@ export function useBiddings() {
     },
     onSuccess: (updated) => {
       invalidate()
-      logEvent('Registrou Resultado da Licitação', `Licitação "${updated.objeto}" — resultado: ${updated.status}${updated.motivoPerda ? ` (${updated.motivoPerda})` : ''}${updated.motivoDesistencia ? ` (${updated.motivoDesistencia})` : ''}`)
+      logEvent('Registrou Resultado da Licitação', `Licitação "${updated.objeto}" — resultado: ${updated.status}${updated.motivoPerda ? ` (${updated.motivoPerda})` : ''}${updated.motivoDesistencia ? ` (${updated.motivoDesistencia})` : ''}`, { type: 'bidding', id: updated.id })
     },
   })
 
