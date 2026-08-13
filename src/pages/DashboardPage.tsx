@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, BarChart, Bar,
+  BarChart, Bar,
 } from 'recharts'
 import { PageHeader, KpiCard, Card, StatusBadge } from '../components/ui/Primitives'
 import OperationPulse from '../components/dashboard/OperationPulse'
@@ -78,16 +78,21 @@ export default function DashboardPage() {
     return ((current - previous) / Math.abs(previous)) * 100
   }, [monthlyFlow, now])
 
-  const biddingFunnel = useMemo(() => {
+  // Funil real (sequencial — cada estágio é subconjunto do anterior), não
+  // uma composição solta: Total de licitações cadastradas -> Finalizadas
+  // (saíram de "Em Andamento", ganhando ou perdendo) -> Ganhou. "Em
+  // Andamento" fica fora do funil de desfecho porque ainda não tem
+  // resultado — é o mesmo corte já usado no cálculo de winRate abaixo (só
+  // entram na taxa as licitações já decididas).
+  const funilDesfecho = useMemo(() => {
     const total = biddings.length
+    const finalizadas = biddings.filter((b) => b.status !== 'Em Andamento').length
     const ganhou = biddings.filter((b) => b.status === 'Ganhou').length
-    const andamento = biddings.filter((b) => b.status === 'Em Andamento').length
-    const perdeu = biddings.filter((b) => b.status === 'Perdeu').length
     return [
-      { name: 'Em Andamento', value: andamento, color: 'var(--color-accent-400)' },
+      { name: 'Total de Licitações', value: total, color: 'var(--color-accent-400)' },
+      { name: 'Finalizadas', value: finalizadas, color: 'var(--color-warning-400)' },
       { name: 'Ganhou', value: ganhou, color: 'var(--color-positive-400)' },
-      { name: 'Perdeu', value: perdeu, color: 'var(--color-negative-400)' },
-    ].filter((d) => d.value > 0).map((d) => ({ ...d, total }))
+    ]
   }, [biddings])
 
   const categoryBreakdown = useMemo(() => {
@@ -218,41 +223,29 @@ export default function DashboardPage() {
         <Card className="p-5">
           <h3 className="text-sm font-bold text-base-100 mb-1">Funil de Licitações</h3>
           <p className="text-[12px] text-base-500 mb-3">Taxa de êxito: <span className="text-positive-400 font-semibold">{winRate}%</span></p>
-          {biddingFunnel.length === 0 ? (
-            <div className="flex items-center justify-center h-[200px] text-base-500 text-sm">Sem licitações cadastradas</div>
+          {funilDesfecho[0].value === 0 ? (
+            <div className="flex items-center justify-center h-[160px] text-base-500 text-sm">Sem licitações cadastradas</div>
           ) : (
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie
-                  data={biddingFunnel}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius={55}
-                  outerRadius={80}
-                  paddingAngle={3}
-                  strokeWidth={0}
-                >
-                  {biddingFunnel.map((entry) => (
-                    <Cell key={entry.name} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ background: 'var(--color-base-900)', border: '1px solid var(--color-base-700)', borderRadius: 8, fontSize: 12 }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+            <div className="flex flex-col gap-3 py-1">
+              {funilDesfecho.map((etapa) => {
+                const percentualDoTotal = funilDesfecho[0].value > 0 ? Math.round((etapa.value / funilDesfecho[0].value) * 100) : 0
+                return (
+                  <div key={etapa.name}>
+                    <div className="flex items-center justify-between text-[12px] mb-1">
+                      <span className="text-base-300">{etapa.name}</span>
+                      <span className="font-mono font-semibold text-base-200">{etapa.value} <span className="text-base-500">({percentualDoTotal}%)</span></span>
+                    </div>
+                    <div className="h-3 rounded-full bg-base-850 overflow-hidden">
+                      <div className="h-full rounded-full transition-all" style={{ width: `${percentualDoTotal}%`, background: etapa.color }} />
+                    </div>
+                  </div>
+                )
+              })}
+              <p className="text-[10px] text-base-500 italic mt-1">
+                {biddings.filter((b) => b.status === 'Em Andamento').length} licitação(ões) ainda em andamento, sem desfecho — não entram neste funil.
+              </p>
+            </div>
           )}
-          <div className="flex flex-col gap-1.5 mt-2">
-            {biddingFunnel.map((d) => (
-              <div key={d.name} className="flex items-center justify-between text-[12px]">
-                <span className="flex items-center gap-1.5 text-base-300">
-                  <span className="w-2 h-2 rounded-full" style={{ background: d.color }} />
-                  {d.name}
-                </span>
-                <span className="font-mono font-semibold text-base-200">{d.value}</span>
-              </div>
-            ))}
-          </div>
         </Card>
       </div>
 

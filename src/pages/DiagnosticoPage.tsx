@@ -1,7 +1,61 @@
+import { useState } from 'react'
 import { ShieldCheck, ShieldAlert, Loader2, RefreshCw } from 'lucide-react'
 import { PageHeader, Card } from '../components/ui/Primitives'
 import { useSchemaHealthCheck } from '../hooks/useSchemaHealthCheck'
+import { useAuditLog } from '../hooks/useAuditLog'
 import { useQueryClient } from '@tanstack/react-query'
+
+// Log de auditoria geral da conta — os eventos (logEvent, useAuditLog.ts)
+// já eram gravados desde sempre, só não existia nenhuma tela que os
+// mostrasse. Mostra os 200 mais recentes (mesmo limite já usado na query),
+// com filtro por texto — quem quiser o histórico de UMA licitação
+// específica encontra na aba "Histórico" dela (mais completo, sem esse
+// limite de 200).
+function LogAuditoria() {
+  const { logs, isLoading } = useAuditLog()
+  const [filtro, setFiltro] = useState('')
+
+  const filtrados = filtro.trim()
+    ? logs.filter((l) => `${l.action} ${l.details ?? ''}`.toLowerCase().includes(filtro.trim().toLowerCase()))
+    : logs
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+        <div>
+          <h3 className="text-sm font-bold text-base-100">Log de Auditoria</h3>
+          <p className="text-[12px] text-base-500">Últimos {logs.length} eventos registrados na conta — licitações, financeiro, clientes e mais.</p>
+        </div>
+        <input
+          type="text"
+          placeholder="Filtrar por texto..."
+          value={filtro}
+          onChange={(e) => setFiltro(e.target.value)}
+          className="bg-base-900 border border-base-700 rounded-lg px-3 py-1.5 text-[12px] text-base-100 focus:border-accent-400 outline-none w-56"
+        />
+      </div>
+      {isLoading ? (
+        <p className="text-[12px] text-base-500 italic py-4">Carregando...</p>
+      ) : filtrados.length === 0 ? (
+        <p className="text-[12px] text-base-500 italic py-4">Nenhum evento encontrado.</p>
+      ) : (
+        <div className="flex flex-col gap-1.5 max-h-[480px] overflow-y-auto">
+          {filtrados.map((log) => (
+            <div key={log.id} className="flex items-start justify-between gap-3 bg-base-850/60 border border-base-800 rounded-lg px-3 py-2">
+              <div className="min-w-0">
+                <p className="text-[12px] font-semibold text-base-200">{log.action}</p>
+                {log.details && <p className="text-[11px] text-base-400 mt-0.5">{log.details}</p>}
+              </div>
+              <p className="text-[10px] text-base-500 font-mono whitespace-nowrap shrink-0">
+                {new Date(log.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  )
+}
 
 export default function DiagnosticoPage() {
   const { data, isLoading, isFetching } = useSchemaHealthCheck()
@@ -71,6 +125,10 @@ export default function DiagnosticoPage() {
             </div>
           </Card>
         )}
+      </div>
+
+      <div className="px-6 mt-4">
+        <LogAuditoria />
       </div>
     </div>
   )

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { NAV_GROUPS, NAV_ITEMS } from './navConfig'
 import GlobalSearch from './GlobalSearch'
+import NotificationBell from './NotificationBell'
 import { useAuth } from '../../hooks/useAuth'
 import { useTheme } from '../../hooks/useTheme'
 import { useFinancialAccounts } from '../../hooks/useFinancialAccounts'
@@ -253,6 +254,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           >
             {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
+          <NotificationBell />
           <button
             onClick={() => setPatrimonioVisible((v) => !v)}
             className="p-1.5 text-base-400 hover:text-base-100 rounded"
@@ -369,6 +371,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 <span className="font-display font-bold text-sm tracking-tight">Conecta<span className="text-positive-400">Gov</span></span>
               </div>
               <div className="flex items-center gap-1">
+                <NotificationBell />
                 <button
                   onClick={toggleTheme}
                   title={theme === 'dark' ? 'Modo claro' : 'Modo escuro'}

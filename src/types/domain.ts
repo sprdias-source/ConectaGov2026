@@ -377,6 +377,8 @@ export interface AuditLog {
   userId: string
   action: string
   details: string | null
+  entityType: string | null
+  entityId: string | null
   createdAt: string
 }
 

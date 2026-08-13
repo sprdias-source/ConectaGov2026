@@ -4,7 +4,7 @@ import {
   ArrowLeft, FileText, Upload, Plus, Trash2, CheckCircle2, Circle, Download, Eye,
   AlertCircle, Loader2, Sparkles, Award, Check, History, ChevronDown, ChevronUp,
   ClipboardList, Gavel, Wallet, Send, CircleDot, FileSignature, Info, Activity, RefreshCw, Wand2,
-  Paperclip, FolderDown, X, FileSpreadsheet,
+  Paperclip, FolderDown, X, FileSpreadsheet, ScrollText, Copy, Printer,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
@@ -22,9 +22,12 @@ import { useBuscaCertidaoAutomatica } from '../hooks/useBuscaCertidaoAutomatica'
 import AcoesDocumentoManual from '../components/documentos/AcoesDocumentoManual'
 import DownloadDocumentosModal from '../components/licitacao/DownloadDocumentosModal'
 import { useBiddingAnalysis } from '../hooks/useBiddingAnalysis'
+import { useAuditLogPorEntidade } from '../hooks/useAuditLog'
 import { useAnaliseJuridicaEdital, useLimparAnaliseJuridica } from '../hooks/useAnaliseJuridicaEdital'
 import type { TipoAnaliseJuridica } from '../hooks/useAnaliseJuridicaEdital'
 import { AnaliseEditalResumo } from '../components/shared/AnaliseEditalResumo'
+import { PerguntaEditalPanel } from '../components/shared/PerguntaEditalPanel'
+import { usePerguntaEdital } from '../hooks/usePerguntaEdital'
 import { AnaliseJuridicaTabs } from '../components/shared/AnaliseJuridicaTabs'
 import { useBiddingItems } from '../hooks/useBiddingItems'
 import { useBiddingItemVersions } from '../hooks/useBiddingItemVersions'
@@ -39,7 +42,7 @@ import { parseFlexibleNumber } from '../lib/numberParsing'
 import { mapearCamposDaAnalise, mapearItensDaAnalise, somarValorLicitado, mensagemAmigavelErroAnalise } from '../lib/analiseEdital'
 import { useToast } from '../hooks/useToast'
 import { CERT_CONFIG } from '../types/domain'
-import type { AnaliseEdital, Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingStatus } from '../types/domain'
+import type { AnaliseEdital, Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingStatus, Client } from '../types/domain'
 
 const ETAPAS_TRILHA: BiddingEtapa[] = [
   'Análise de Edital',
@@ -67,6 +70,7 @@ const ABAS = [
   { key: 'proposta', label: 'Proposta Readequada', icon: Wallet },
   { key: 'documentos', label: 'Documentos Finais', icon: FileSignature },
   { key: 'sessao', label: 'Sessão Ao Vivo', icon: Activity },
+  { key: 'historico', label: 'Histórico', icon: ScrollText },
 ] as const
 type AbaKey = typeof ABAS[number]['key']
 
@@ -895,6 +899,149 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   )
 }
 
+type DeclaracaoTipo = 'fato_impeditivo' | 'menor_aprendiz' | 'elaboracao_independente'
+
+const DECLARACOES: { key: DeclaracaoTipo; label: string }[] = [
+  { key: 'fato_impeditivo', label: 'Inexistência de Fato Impeditivo' },
+  { key: 'menor_aprendiz', label: 'Art. 7º, XXXIII da CF (Menor Aprendiz)' },
+  { key: 'elaboracao_independente', label: 'Elaboração Independente de Proposta' },
+]
+
+// Texto padrão das declarações mais comuns exigidas em habilitação — o
+// usuário ainda revisa e assina fora do sistema; isso só elimina a parte
+// repetitiva de digitar CNPJ/endereço/representante toda vez, reaproveitando
+// dados que já estão cadastrados no cliente e na licitação.
+function buildDeclaracaoTexto(tipo: DeclaracaoTipo, opts: {
+  clientName: string
+  clientCnpj: string
+  clientAddress: string
+  clientCidade: string
+  responsavelNome: string
+  responsavelCpf: string
+  responsavelCargo: string
+  orgao: string
+  numeroEdital: string
+  cidadeEmissao: string
+}): string {
+  const cabecalho = `DECLARANTE: ${opts.clientName}, pessoa jurídica inscrita no CNPJ nº ${opts.clientCnpj || '[CNPJ não informado]'}, com sede em ${opts.clientAddress || '[endereço não informado]'}${opts.clientCidade ? `, ${opts.clientCidade}` : ''}, neste ato representada por ${opts.responsavelNome || '[representante não informado]'}${opts.responsavelCpf ? `, portador(a) do CPF nº ${opts.responsavelCpf}` : ''}${opts.responsavelCargo ? `, na qualidade de ${opts.responsavelCargo}` : ''}.`
+
+  const referenciaEdital = opts.numeroEdital
+    ? `referente ao Edital nº ${opts.numeroEdital}${opts.orgao ? `, do órgão ${opts.orgao}` : ''}`
+    : opts.orgao ? `referente ao processo licitatório do órgão ${opts.orgao}` : 'referente ao processo licitatório em questão'
+
+  const rodape = `${opts.cidadeEmissao || '[cidade]'}, ${new Date().toLocaleDateString('pt-BR')}.\n\n\n_______________________________________\n${opts.responsavelNome || '[representante legal]'}\n${opts.responsavelCargo || 'Representante Legal'}`
+
+  if (tipo === 'fato_impeditivo') {
+    return `DECLARAÇÃO DE INEXISTÊNCIA DE FATO IMPEDITIVO DA HABILITAÇÃO\n\n${cabecalho}\n\nDECLARA, sob as penas da lei, para fins de participação em processo licitatório ${referenciaEdital}, que não existe fato impeditivo à sua habilitação, encontrando-se regular perante os órgãos públicos federais, estaduais e municipais, e que se compromete a informar a ocorrência de fato superveniente impeditivo da habilitação, na forma da legislação vigente.\n\n${rodape}`
+  }
+  if (tipo === 'menor_aprendiz') {
+    return `DECLARAÇÃO DE CUMPRIMENTO DO DISPOSTO NO ART. 7º, INCISO XXXIII, DA CONSTITUIÇÃO FEDERAL\n\n${cabecalho}\n\nDECLARA, para fins de participação em processo licitatório ${referenciaEdital}, em atendimento ao disposto no inciso XXXIII do art. 7º da Constituição Federal, que não emprega menor de 18 (dezoito) anos em trabalho noturno, perigoso ou insalubre, e não emprega menor de 16 (dezesseis) anos, salvo na condição de aprendiz, a partir de 14 (quatorze) anos.\n\n${rodape}`
+  }
+  return `DECLARAÇÃO DE ELABORAÇÃO INDEPENDENTE DE PROPOSTA\n\n${cabecalho}\n\nDECLARA, para fins de participação em processo licitatório ${referenciaEdital}, que a proposta apresentada foi elaborada de maneira independente, e que o conteúdo da proposta não foi, no todo ou em parte, direta ou indiretamente, informado, discutido ou recebido de qualquer outro participante potencial ou de fato do processo licitatório, por qualquer meio ou por qualquer pessoa.\n\n${rodape}`
+}
+
+// Gera as declarações padrão de habilitação (Documentos Finais) já
+// preenchidas com dados do cliente/licitação — mesmo padrão de "gerar texto
+// + Copiar/Imprimir" já usado em ContratosPage.tsx, sem persistir nada
+// (regenera na hora, sempre com o dado mais atual do cadastro).
+function DeclaracoesPadrao({ bidding, client }: { bidding: Bidding; client: Client | undefined }) {
+  const [tipo, setTipo] = useState<DeclaracaoTipo>('fato_impeditivo')
+
+  const texto = useMemo(() => {
+    if (!client) return ''
+    return buildDeclaracaoTexto(tipo, {
+      clientName: client.name,
+      clientCnpj: client.cnpj ?? '',
+      clientAddress: client.address ?? '',
+      clientCidade: client.cidade ?? '',
+      responsavelNome: client.responsavelNome ?? '',
+      responsavelCpf: client.responsavelCpf ?? '',
+      responsavelCargo: client.responsavelCargo ?? '',
+      orgao: bidding.orgao,
+      numeroEdital: bidding.numeroEdital ?? '',
+      cidadeEmissao: client.cidade ?? '',
+    })
+  }, [tipo, client, bidding])
+
+  if (!client) {
+    return <p className="text-[12px] text-base-500 italic py-2">Vincule um cliente a esta licitação pra gerar as declarações padrão.</p>
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+        <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Declarações Padrão</p>
+        <div className="flex items-center gap-2">
+          <button onClick={() => navigator.clipboard.writeText(texto)} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-850 border border-base-700 rounded-lg px-3 py-1.5 transition">
+            <Copy className="w-3.5 h-3.5" /> Copiar Texto
+          </button>
+          <button onClick={() => window.print()} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-950 bg-accent-500 hover:bg-accent-400 rounded-lg px-3 py-1.5 transition">
+            <Printer className="w-3.5 h-3.5" /> Imprimir / PDF
+          </button>
+        </div>
+      </div>
+      <div className="flex gap-1.5 mb-3 flex-wrap">
+        {DECLARACOES.map((d) => (
+          <button
+            key={d.key}
+            type="button"
+            onClick={() => setTipo(d.key)}
+            className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition ${tipo === d.key ? 'bg-accent-500 text-base-950' : 'bg-base-850 text-base-400 border border-base-700'}`}
+          >
+            {d.label}
+          </button>
+        ))}
+      </div>
+      <div className="print-only border border-base-800 bg-white text-slate-900 rounded-lg p-6 max-h-[420px] overflow-y-auto">
+        <pre className="whitespace-pre-wrap font-serif text-[13px] leading-relaxed">{texto}</pre>
+      </div>
+    </div>
+  )
+}
+
+// Linha do tempo de tudo que já aconteceu com esta licitação — os eventos
+// já eram gravados em audit_logs (logEvent, useAuditLog.ts) desde sempre,
+// só não existia nenhuma tela que os mostrasse. Filtra por entity_type/
+// entity_id (ver migração 021) — logs antigos, gravados antes dessa coluna
+// existir, não aparecem aqui (não têm como saber a qual licitação
+// pertencem), mas continuam na visão geral de auditoria.
+function AbaHistorico({ bidding }: { bidding: Bidding }) {
+  const { logs, isLoading } = useAuditLogPorEntidade('bidding', bidding.id)
+
+  if (isLoading) return <SkeletonList itens={4} />
+
+  if (logs.length === 0) {
+    return (
+      <p className="text-[13px] text-base-500 italic py-4">
+        Nenhum evento registrado pra esta licitação ainda (ou ela foi criada antes deste histórico existir).
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-[11px] text-base-500">Linha do tempo de alterações registradas nesta licitação, mais recente primeiro.</p>
+      <div className="flex flex-col">
+        {logs.map((log, idx) => (
+          <div key={log.id} className="relative pl-6 pb-4">
+            {idx < logs.length - 1 && <span className="absolute left-[7px] top-3 bottom-0 w-px bg-base-800" />}
+            <span className="absolute left-0 top-1.5 w-3.5 h-3.5 rounded-full bg-accent-500/20 border-2 border-accent-400" />
+            <div className="bg-base-850/60 border border-base-800 rounded-lg px-3 py-2.5">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-[12px] font-semibold text-base-200">{log.action}</p>
+                <p className="text-[10px] text-base-500 font-mono whitespace-nowrap">
+                  {new Date(log.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                </p>
+              </div>
+              {log.details && <p className="text-[11px] text-base-400 mt-0.5">{log.details}</p>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // Tela enxuta pensada pra ficar aberta numa aba do navegador durante o
 // pregão — os itens em fonte grande pra consulta rápida no meio da
 // disputa, mais uma calculadora de apoio: informa o último lance de cada
@@ -1061,6 +1208,7 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
   const { items: itensAtuais } = useBiddingItems(bidding.id)
   const { showToast } = useToast()
   const [confirmandoPreenchimento, setConfirmandoPreenchimento] = useState(false)
+  const { perguntar, isPending: perguntando } = usePerguntaEdital(bidding.id)
 
   const status = analysis?.status
   const processando = (status === 'processando' && !travado) || analisar.isPending
@@ -1152,6 +1300,8 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
               {analise.checklistDocumentacao!.length} documento(s) sugerido(s) pela análise pra habilitação — adicione na aba Checklist &amp; Habilitação.
             </p>
           )}
+
+          <PerguntaEditalPanel perguntar={perguntar} isPending={perguntando} />
         </div>
       )}
 
@@ -2149,10 +2299,14 @@ export default function LicitacaoPage() {
                 plataforma do órgão continua manual — cada portal de compras é diferente.
               </span>
             </div>
+
+            <DeclaracoesPadrao bidding={bidding} client={clienteDaLicitacao} />
           </>
         )}
 
         {aba === 'sessao' && <AbaSessaoAoVivo bidding={bidding} />}
+
+        {aba === 'historico' && <AbaHistorico bidding={bidding} />}
       </div>
 
       <PdfViewerModal

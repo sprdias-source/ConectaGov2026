@@ -111,6 +111,8 @@ export type Database = {
           action: string
           created_at: string
           details: string | null
+          entity_id: string | null
+          entity_type: string | null
           id: string
           user_id: string
         }
@@ -118,6 +120,8 @@ export type Database = {
           action: string
           created_at?: string
           details?: string | null
+          entity_id?: string | null
+          entity_type?: string | null
           id?: string
           user_id: string
         }
@@ -125,6 +129,8 @@ export type Database = {
           action?: string
           created_at?: string
           details?: string | null
+          entity_id?: string | null
+          entity_type?: string | null
           id?: string
           user_id?: string
         }

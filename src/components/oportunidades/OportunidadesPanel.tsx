@@ -10,6 +10,8 @@ import ErrorAlert from '../ui/ErrorAlert'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import PdfViewerModal from '../ui/PdfViewerModal'
 import { AnaliseEditalResumo } from '../shared/AnaliseEditalResumo'
+import { PerguntaEditalPanel } from '../shared/PerguntaEditalPanel'
+import { usePerguntaOportunidade } from '../../hooks/usePerguntaEdital'
 import { AnaliseJuridicaTabs } from '../shared/AnaliseJuridicaTabs'
 import { useOpportunities, calcOpportunityStatus, diasParaSessao } from '../../hooks/useOpportunities'
 import { useOpportunityAnalysis } from '../../hooks/useOpportunityAnalysis'
@@ -68,6 +70,7 @@ function OportunidadeDetalhe({
   const { clients } = useClients()
   const { files, uploadFile, deleteFile } = useAttachedFiles('oportunidade', opportunity.id)
   const { analysis, analisar, travado, limparAnalise, alternarItemParticipando, definirTodosParticipando } = useOpportunityAnalysis(opportunity.id)
+  const { perguntar, isPending: perguntando } = usePerguntaOportunidade(opportunity.id)
   const [tipoJuridicoAtivo, setTipoJuridicoAtivo] = useState<TipoAnaliseJuridica>('esclarecimento')
   const { analysis: analiseJuridica, analisar: analisarJuridica, travado: travadoJuridica } = useAnaliseJuridicaOportunidade(opportunity.id, tipoJuridicoAtivo)
   const { limpar: limparAnaliseJuridica } = useLimparAnaliseJuridicaOportunidade(opportunity.id)
@@ -306,12 +309,13 @@ function OportunidadeDetalhe({
       )}
 
       {analise && (
-        <div className="border-t border-base-800/60 pt-3.5">
+        <div className="border-t border-base-800/60 pt-3.5 flex flex-col gap-3.5">
           <AnaliseEditalResumo
             analise={analise}
             onToggleItem={podeEditar ? (idx) => alternarItemParticipando.mutate(idx) : undefined}
             onToggleTodos={podeEditar ? (participando) => definirTodosParticipando.mutate(participando) : undefined}
           />
+          <PerguntaEditalPanel perguntar={perguntar} isPending={perguntando} />
         </div>
       )}
 
