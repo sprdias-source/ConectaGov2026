@@ -8,6 +8,13 @@ import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
 import { useFinancialAccounts } from '../hooks/useFinancialAccounts'
 import { useAccountBalances, formatBRL } from '../hooks/useAccountBalances'
+import type { BiddingEtapa } from '../types/domain'
+
+// Mesma sequência de etapas usada em LicitacaoPage.tsx/KanbanLicitacoesPage.tsx/
+// BiddingFormModal.tsx — duplicada aqui de propósito (mesmo padrão dos outros
+// três lugares) só pra saber se uma licitação "Em Andamento" já passou do
+// estágio de Proposta Enviada, sem precisar importar entre páginas.
+const ETAPAS_ORDEM: BiddingEtapa[] = ['Análise de Edital', 'Montagem de Documentação', 'Proposta Enviada', 'Disputa de Lances', 'Fase Recursal', 'Adjudicada e Homologada']
 
 export default function ContabilidadePage() {
   const { transactions } = useTransactions()
@@ -170,14 +177,25 @@ export default function ContabilidadePage() {
 
   // Funil de licitações
   const editaisMonitorados = biddings.length
-  const propostasEnviadas = biddings.filter((b) => b.status !== 'Em Andamento' || true).length
+  // "Proposta enviada" = já passou (ou está) da etapa Proposta Enviada em
+  // diante, ou já foi disputada até o fim (Ganhou/Perdeu implica que a
+  // proposta foi enviada e avaliada). Cancelada/Desistiu não conta — nesses
+  // casos a licitação saiu do funil sem necessariamente ter enviado nada.
+  const propostasEnviadas = biddings.filter((b) => {
+    if (b.status === 'Ganhou' || b.status === 'Perdeu') return true
+    if (b.status !== 'Em Andamento') return false
+    const indice = b.etapa ? ETAPAS_ORDEM.indexOf(b.etapa) : -1
+    return indice >= ETAPAS_ORDEM.indexOf('Proposta Enviada')
+  }).length
   const disputasVencidas = biddings.filter((b) => b.status === 'Ganhou').length
   const finalizadas = biddings.filter((b) => b.status === 'Ganhou' || b.status === 'Perdeu').length
   const taxaVitoria = finalizadas > 0 ? Math.round((disputasVencidas / finalizadas) * 100) : 0
 
-  // Ticket médio
+  // Ticket médio — valor efetivamente ganho (Valor Ganho de Fato), não o
+  // valor total estimado do edital; senão o "ticket médio" superestima a
+  // receita em potencial usada logo abaixo pra projetar comissão.
   const ticketMedio = disputasVencidas > 0
-    ? biddings.filter((b) => b.status === 'Ganhou').reduce((s, b) => s + b.valorLicitado, 0) / disputasVencidas
+    ? biddings.filter((b) => b.status === 'Ganhou').reduce((s, b) => s + (b.valorOfertadoReal ?? b.valorLicitado), 0) / disputasVencidas
     : 0
   const receitaMediaExito = ticketMedio * 0.025
 
@@ -352,10 +370,11 @@ export default function ContabilidadePage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 px-6 mt-4">
         <Card className="p-5">
-          <div className="flex items-center gap-2 mb-4">
+          <div className="flex items-center gap-2 mb-1">
             <TrendingUp className="w-4 h-4 text-accent-400" />
             <h3 className="text-sm font-bold text-base-100">Matriz de Conversão Licitatória</h3>
           </div>
+          <p className="text-[11px] text-base-500 mb-3">Conversão por estágio do funil de vendas — diferente do "Funil de Licitações" do Dashboard, que mostra só a composição final (quantas fecharam vs. quantas ainda estão em disputa).</p>
           <div className="flex flex-col gap-3">
             <FunnelStep label="1. Editais Monitorados" value={editaisMonitorados} percent={100} color="bg-accent-500" />
             <FunnelStep label="2. Propostas Enviadas" value={propostasEnviadas} percent={editaisMonitorados > 0 ? Math.round((propostasEnviadas / editaisMonitorados) * 100) : 0} color="bg-warning-500" />
@@ -374,7 +393,7 @@ export default function ContabilidadePage() {
             <p className="text-xl font-extrabold text-base-100">{disputasVencidas} Processos</p>
           </div>
           <div className="flex justify-between text-[12px] py-1.5 border-t border-base-800">
-            <span className="text-base-400">Preço do Ticket Médio Licitado</span>
+            <span className="text-base-400">Ticket Médio Ganho de Fato</span>
             <span className="font-mono font-bold text-base-200">{formatBRL(ticketMedio)}</span>
           </div>
           <div className="flex justify-between text-[12px] py-1.5">
