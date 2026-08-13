@@ -36,7 +36,7 @@ import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import BiddingItemsEditor from '../components/cadastros/BiddingItemsEditor'
 import { stringifyCsvPortal, textoParaBlobLatin1, formatarNumeroPtBR, HEADER_PORTAL_COMPRAS } from '../lib/csvPortalCompras'
 import { parseFlexibleNumber } from '../lib/numberParsing'
-import { mapearCamposDaAnalise, mapearItensDaAnalise, somarValorLicitado } from '../lib/analiseEdital'
+import { mapearCamposDaAnalise, mapearItensDaAnalise, somarValorLicitado, mensagemAmigavelErroAnalise } from '../lib/analiseEdital'
 import { useToast } from '../hooks/useToast'
 import { CERT_CONFIG } from '../types/domain'
 import type { AnaliseEdital, Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingStatus } from '../types/domain'
@@ -175,6 +175,7 @@ function useBiddingItemsDaLicitacao(biddingId?: string) {
         const original = atuaisPorId.get(novo.id)
         if (!original) continue
         const mudou = novo.numeroItem !== original.numeroItem
+          || (novo.lote ?? null) !== (original.lote ?? null)
           || novo.descricao !== original.descricao
           || (novo.unidade ?? null) !== (original.unidade ?? null)
           || novo.quantidade !== original.quantidade
@@ -186,6 +187,7 @@ function useBiddingItemsDaLicitacao(biddingId?: string) {
         if (!mudou) continue
         const { error } = await supabase.from('bidding_items').update({
           numero_item: novo.numeroItem ?? '',
+          lote: novo.lote ?? null,
           descricao: novo.descricao ?? '',
           unidade: novo.unidade ?? null,
           quantidade: novo.quantidade ?? 0,
@@ -1083,23 +1085,35 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
         {!temEdital && (
           <span className="text-[11px] text-base-500 italic">Envie o edital acima antes de analisar.</span>
         )}
+        {processando && (
+          <span className="text-[11px] text-base-500 italic">Pode levar até 2 minutos em editais grandes ou escaneados.</span>
+        )}
       </div>
 
-      {(status === 'erro' || analisar.isError || travado) && (
-        <div className="bg-negative-500/10 border border-negative-500/25 rounded-lg p-3 flex items-start gap-2">
-          <AlertCircle className="w-3.5 h-3.5 text-negative-400 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-[12px] text-negative-300">
-              {travado
-                ? 'A análise demorou demais e parece ter travado (provavelmente o edital é grande/escaneado demais pra function atual processar a tempo). Tente novamente.'
-                : analysis?.erroMensagem || (analisar.error instanceof Error ? analisar.error.message : null) || 'Não foi possível analisar o edital.'}
-            </p>
-            <button onClick={() => analisar.mutate()} className="flex items-center gap-1.5 text-[11px] text-accent-300 hover:text-accent-200 transition mt-1.5">
-              <RefreshCw className="w-3 h-3" /> Tentar novamente
-            </button>
+      {(status === 'erro' || analisar.isError || travado) && (() => {
+        const erroTecnico = analysis?.erroMensagem || (analisar.error instanceof Error ? analisar.error.message : null)
+        return (
+          <div className="bg-negative-500/10 border border-negative-500/25 rounded-lg p-3 flex items-start gap-2">
+            <AlertCircle className="w-3.5 h-3.5 text-negative-400 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-[12px] text-negative-300">
+                {travado
+                  ? 'A análise demorou demais e parece ter travado (provavelmente o edital é grande/escaneado demais pra function atual processar a tempo). Tente novamente.'
+                  : mensagemAmigavelErroAnalise(erroTecnico)}
+              </p>
+              {!travado && erroTecnico && (
+                <details className="mt-1">
+                  <summary className="text-[10px] text-base-500 cursor-pointer hover:text-base-400">Detalhe técnico</summary>
+                  <p className="text-[10px] text-base-500 font-mono mt-1 break-all">{erroTecnico}</p>
+                </details>
+              )}
+              <button onClick={() => analisar.mutate()} className="flex items-center gap-1.5 text-[11px] text-accent-300 hover:text-accent-200 transition mt-1.5">
+                <RefreshCw className="w-3 h-3" /> Tentar novamente
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {!status && temEdital && (
         <div className="bg-accent-500/10 border border-accent-500/25 rounded-lg p-3 text-[12px] text-accent-300 flex items-start gap-2">

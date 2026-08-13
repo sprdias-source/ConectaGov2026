@@ -2,8 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { fromBiddingChecklistItemRow, toBiddingChecklistItemInsert } from '../lib/mappers'
 import { useAuth } from './useAuth'
-import { calcDocStatus } from './useClientDocuments'
-import type { AtestadoTecnico, AttachedFile, BiddingChecklistItem, ClientDocument, DocumentTipo } from '../types/domain'
+import { calcDocStatus, useAllClientDocuments } from './useClientDocuments'
+import type { AtestadoTecnico, AttachedFile, Bidding, BiddingChecklistItem, ClientDocument, DocumentTipo } from '../types/domain'
 
 const QUERY_KEY = ['bidding_checklist_items']
 
@@ -295,6 +295,28 @@ export function useAllBiddingChecklistItems() {
     items: query.data ?? [],
     isLoading: query.isLoading,
   }
+}
+
+// Calcula a habilitação de VÁRIAS licitações de uma vez (duas consultas no
+// total, sem depender de quantas licitações existem) — pra usar em telas
+// com muitos cards/linhas ao mesmo tempo (Kanban, lista de Cadastros), onde
+// cada <SeloHabilitacao bidding={b} /> antes disparava sua própria consulta
+// de checklist + certidões por licitação (uma consulta a mais pra cada
+// card/linha na tela, toda vez que o quadro carrega). Ver
+// components/ui/SeloHabilitacao.tsx (SeloHabilitacaoBadge consome o mapa
+// devolvido aqui em vez de buscar sozinho).
+export function useHabilitacaoPorLicitacao(biddings: Bidding[]) {
+  const { items: todosItens, isLoading: carregandoItens } = useAllBiddingChecklistItems()
+  const { documents: todosDocs, isLoading: carregandoDocs } = useAllClientDocuments()
+
+  const habilitacaoPorId = new Map<string, HabilitacaoResumo>()
+  for (const b of biddings) {
+    const itensDaBidding = todosItens.filter((i) => i.biddingId === b.id)
+    const docsDoCliente = todosDocs.filter((d) => d.clientId === b.clientId)
+    habilitacaoPorId.set(b.id, calcularHabilitacao(itensDaBidding, docsDoCliente))
+  }
+
+  return { habilitacaoPorId, isLoading: carregandoItens || carregandoDocs }
 }
 
 export interface PendenciaChecklist extends BiddingChecklistItem {

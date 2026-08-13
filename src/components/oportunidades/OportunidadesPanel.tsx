@@ -20,7 +20,7 @@ import { useClients } from '../../hooks/useClients'
 import { useAttachedFiles } from '../../hooks/useAttachedFiles'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import { mensagemDeErro } from '../../lib/errors'
-import { mapearItensDaAnalise } from '../../lib/analiseEdital'
+import { mapearItensDaAnalise, mensagemAmigavelErroAnalise } from '../../lib/analiseEdital'
 import type { AnaliseEdital, Opportunity, OpportunityStatus } from '../../types/domain'
 
 function StatusPill({ status, opportunity }: { status: OpportunityStatus; opportunity: Opportunity }) {
@@ -284,6 +284,7 @@ function OportunidadeDetalhe({
             <span className="text-[12px] text-base-300">
               {analiseProcessando ? 'Analisando com IA...' : analise ? 'Análise disponível' : 'Ainda não analisado'}
             </span>
+            {analiseProcessando && <span className="text-[11px] text-base-500 italic">pode levar até 2 minutos em editais grandes/escaneados</span>}
           </div>
           <Button variant="secondary" onClick={() => analisar.mutate()} disabled={analiseProcessando || analisar.isPending}>
             {analiseProcessando || analisar.isPending ? 'Analisando...' : analise ? 'Analisar novamente' : 'Analisar com IA'}
@@ -292,7 +293,17 @@ function OportunidadeDetalhe({
       )}
 
       {travado && <p className="text-[11px] text-negative-400">A análise travou (demorou demais). Tenta "Analisar novamente".</p>}
-      {analysis?.status === 'erro' && <p className="text-[11px] text-negative-400">Falha na análise: {analysis.erroMensagem}</p>}
+      {analysis?.status === 'erro' && (
+        <div className="text-[11px] text-negative-400">
+          <p>{mensagemAmigavelErroAnalise(analysis.erroMensagem)}</p>
+          {analysis.erroMensagem && (
+            <details className="mt-1">
+              <summary className="text-[10px] text-base-500 cursor-pointer hover:text-base-400">Detalhe técnico</summary>
+              <p className="text-[10px] text-base-500 font-mono mt-1 break-all">{analysis.erroMensagem}</p>
+            </details>
+          )}
+        </div>
+      )}
 
       {analise && (
         <div className="border-t border-base-800/60 pt-3.5">
