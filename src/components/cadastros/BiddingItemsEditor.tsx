@@ -34,7 +34,17 @@ export default function BiddingItemsEditor({
 
   useEffect(() => {
     if (items === ultimoEmitido.current) return
-    setDrafts(items.map((i) => ({ ...i, _key: newKey() })))
+    // Reaproveita a _key de itens já salvos (casando por id) em vez de gerar
+    // uma nova pra cada linha sempre que a prop muda — sem isso, toda vez
+    // que o autosave (aba Cadastrar Proposta, useBiddingItemsDaLicitacao)
+    // termina e invalida a query, a lista inteira remontava com keys novas
+    // e quem estivesse digitando num campo naquele instante perdia o foco
+    // no meio da frase. Itens sem id (recém-adicionados, ainda não salvos)
+    // sempre ganham uma key nova mesmo — não têm com o que casar.
+    setDrafts((atual) => {
+      const keyPorId = new Map(atual.filter((d) => d.id).map((d) => [d.id as string, d._key]))
+      return items.map((i) => ({ ...i, _key: (i.id && keyPorId.get(i.id)) || newKey() }))
+    })
   }, [items])
 
   const emitChange = (next: ItemDraft[]) => {

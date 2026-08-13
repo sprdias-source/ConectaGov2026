@@ -88,3 +88,30 @@ export function mapearCamposDaAnalise(analise: AnaliseEdital): Partial<Bidding> 
   if (analise.valorTotalEstimado != null) campos.valorLicitado = analise.valorTotalEstimado
   return campos
 }
+
+// Traduz a mensagem de erro crua que a function de análise grava em
+// bidding_analysis/opportunity_analysis (normalmente o corpo bruto da
+// resposta de erro do Gemini, ex: um JSON com "RESOURCE_EXHAUSTED" ou
+// "UNAVAILABLE") pra algo que faz sentido mostrar na tela — inclusive numa
+// reunião com o cliente, onde um JSON técnico cru passaria a impressão
+// errada. O texto original nunca é descartado: quem chama isso continua
+// livre pra mostrá-lo à parte, num detalhe técnico colapsável.
+export function mensagemAmigavelErroAnalise(erroBruto?: string | null): string {
+  const texto = erroBruto ?? ''
+  if (/PerDay|RESOURCE_EXHAUSTED/i.test(texto)) {
+    return 'A cota diária gratuita de análises por IA foi atingida. Ela é renovada automaticamente a cada 24h — tente novamente mais tarde, ou fale com o suporte para aumentar o limite.'
+  }
+  if (/"code":\s*429|rate.?limit/i.test(texto)) {
+    return 'Muitas análises em sequência num curto intervalo. Aguarde alguns instantes e tente novamente.'
+  }
+  if (/"code":\s*503|UNAVAILABLE|overloaded|sobrecarreg/i.test(texto)) {
+    return 'O serviço de IA está temporariamente sobrecarregado. Tente novamente em alguns instantes.'
+  }
+  if (/upload|Storage|baixar|tamanho/i.test(texto)) {
+    return 'Não foi possível ler o arquivo do edital enviado. Verifique se o PDF não está corrompido e tente enviar novamente.'
+  }
+  if (!texto) {
+    return 'Não foi possível concluir a análise deste edital. Tente novamente — se o problema persistir, o suporte pode ajudar.'
+  }
+  return 'Não foi possível concluir a análise deste edital. Tente novamente — se persistir, o arquivo pode estar corrompido, escaneado sem texto legível, ou grande demais.'
+}

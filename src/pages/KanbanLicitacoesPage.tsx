@@ -6,7 +6,7 @@ import {
 } from '@dnd-kit/core'
 import { LayoutGrid, ChevronLeft, ChevronRight, ClipboardList, Pencil, GripVertical, Ban } from 'lucide-react'
 import { PageHeader } from '../components/ui/Primitives'
-import SeloHabilitacao from '../components/ui/SeloHabilitacao'
+import { SeloHabilitacaoBadge } from '../components/ui/SeloHabilitacao'
 import BiddingFormModal from '../components/cadastros/BiddingFormModal'
 import Modal from '../components/ui/Modal'
 import { Field, Select, Input, Button } from '../components/ui/FormControls'
@@ -17,6 +17,7 @@ import { useToast } from '../hooks/useToast'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useEmpenhos } from '../hooks/useEmpenhos'
 import { useBiddingIdsComDocumentosFinais } from '../hooks/useAttachedFiles'
+import { useHabilitacaoPorLicitacao, type StatusHabilitacao } from '../hooks/useBiddingChecklist'
 import type { Bidding, BiddingEtapa, BiddingItem, BiddingStatus } from '../types/domain'
 
 // Encerrar direto do Kanban, sem abrir o cadastro completo — pro caso comum
@@ -93,7 +94,7 @@ type Visualizacao = 'quadro' | 'lista'
 // componente pai a cada render, o dnd-kit perderia a referência do nó
 // arrastável e o drag ficaria instável.
 function CardLicitacao({
-  b, clienteNome, podeEditar, podeRetroceder, podeAvancar, desabilitado,
+  b, clienteNome, podeEditar, podeRetroceder, podeAvancar, desabilitado, statusHabilitacao,
   onMoverAnterior, onMoverProxima, onEditar, onEncerrar,
 }: {
   b: Bidding
@@ -102,6 +103,7 @@ function CardLicitacao({
   podeRetroceder: boolean
   podeAvancar: boolean
   desabilitado: boolean
+  statusHabilitacao: StatusHabilitacao
   onMoverAnterior: () => void
   onMoverProxima: () => void
   onEditar: () => void
@@ -130,7 +132,7 @@ function CardLicitacao({
       )}
       <p className="text-[12px] font-semibold text-base-100 line-clamp-2 pr-4">{b.objeto}</p>
       <p className="text-[11px] text-base-500 truncate">{clienteNome} — {b.orgao}</p>
-      <SeloHabilitacao bidding={b} />
+      <SeloHabilitacaoBadge status={statusHabilitacao} />
       <div className="flex items-center justify-between mt-1">
         <span className="text-[11px] font-mono font-semibold text-accent-300">{formatBRL(b.valorLicitado)}</span>
         <span className="text-[10px] text-base-500">{new Date(b.dataAbertura + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
@@ -227,6 +229,7 @@ export default function KanbanLicitacoesPage() {
   const { biddings, updateEtapa, updateBidding } = useBiddings()
   const { clients } = useClients()
   const { empenhos } = useEmpenhos()
+  const { habilitacaoPorId } = useHabilitacaoPorLicitacao(biddings)
   const { biddingIdsComPropostaReadequada, biddingIdsComContrato } = useBiddingIdsComDocumentosFinais()
   const { nivel: nivelLicitacoes } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivelLicitacoes === 'edicao'
@@ -341,6 +344,7 @@ export default function KanbanLicitacoesPage() {
         podeRetroceder={indiceAtual > 0}
         podeAvancar={indiceAtual === -1 ? true : indiceAtual < ETAPAS.length - 1}
         desabilitado={updateEtapa.isPending}
+        statusHabilitacao={habilitacaoPorId.get(b.id)?.status ?? null}
         onMoverAnterior={() => mover(b, -1)}
         onMoverProxima={() => mover(b, 1)}
         onEditar={() => setEditando(b)}
@@ -452,7 +456,7 @@ export default function KanbanLicitacoesPage() {
                         <td className="px-4 py-3 text-base-300 text-[13px]">{clientName(b.clientId)}</td>
                         <td className="px-4 py-3 text-base-400 text-[12px]">{b.orgao}</td>
                         <td className="px-4 py-3 font-mono font-semibold text-base-200 text-[13px]">{formatBRL(b.valorLicitado)}</td>
-                        <td className="px-4 py-3"><SeloHabilitacao bidding={b} /></td>
+                        <td className="px-4 py-3"><SeloHabilitacaoBadge status={habilitacaoPorId.get(b.id)?.status ?? null} /></td>
                         <td className="px-4 py-3 text-base-400 text-[12px]">{b.etapa ?? '—'}</td>
                         {podeEditar && (
                           <td className="px-4 py-3 text-right">

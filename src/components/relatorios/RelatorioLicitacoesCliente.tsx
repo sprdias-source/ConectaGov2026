@@ -199,7 +199,7 @@ export default function RelatorioLicitacoesCliente({ clients, biddings }: { clie
                   <tr><td className="py-0.5 pr-2 font-semibold">Em andamento:</td><td>{stats.totalEmAndamento}</td></tr>
                   <tr><td className="py-0.5 pr-2 font-semibold">Cancelada pelo órgão:</td><td>{stats.totalCanceladas}</td></tr>
                   <tr><td className="py-0.5 pr-2 font-semibold">Desistiu (cliente):</td><td>{stats.totalDesistiu}</td></tr>
-                  <tr><td className="py-0.5 pr-2 font-semibold">Valor ganho (por item):</td><td>{formatBRL(stats.valorFechado)}</td></tr>
+                  <tr><td className="py-0.5 pr-2 font-semibold">Valor Ganho de Fato (por item):</td><td>{formatBRL(stats.valorFechado)}</td></tr>
                   <tr><td className="py-0.5 pr-2 font-semibold">Valor deixado de ganhar (oportunidades perdidas):</td><td>{formatBRL(stats.valorPerdido)}</td></tr>
                 </tbody>
               </table>

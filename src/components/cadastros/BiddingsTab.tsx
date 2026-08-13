@@ -9,12 +9,13 @@ import { supabase } from '../../lib/supabase'
 import BiddingFormModal from './BiddingFormModal'
 import DeleteWithPasswordDialog from '../ui/DeleteWithPasswordDialog'
 import ErrorAlert from '../ui/ErrorAlert'
-import SeloHabilitacao from '../ui/SeloHabilitacao'
+import { SeloHabilitacaoBadge } from '../ui/SeloHabilitacao'
 import { usePagination, PaginationControls } from '../../hooks/usePagination'
 import { useBiddings } from '../../hooks/useBiddings'
 import { useClients } from '../../hooks/useClients'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import { useToast } from '../../hooks/useToast'
+import { useHabilitacaoPorLicitacao } from '../../hooks/useBiddingChecklist'
 import type { Bidding, BiddingItem } from '../../types/domain'
 
 function fileParaBase64(file: File): Promise<string> {
@@ -33,6 +34,7 @@ export default function BiddingsTab() {
   const navigate = useNavigate()
   const { biddings, isLoading, addBidding, updateBidding, deleteBidding, toggleBiddingActive, setModeloCustomizado, checkBiddingHasFinancialHistory } = useBiddings()
   const { clients } = useClients()
+  const { habilitacaoPorId } = useHabilitacaoPorLicitacao(biddings)
   const { showToast } = useToast()
   const { nivel: nivelAcesso } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivelAcesso === 'edicao'
@@ -409,7 +411,7 @@ export default function BiddingsTab() {
                         {b.status === 'Em Andamento' && b.etapa && (
                           <p className="text-[10px] text-base-500 mt-1">Etapa: {b.etapa}</p>
                         )}
-                        <SeloHabilitacao bidding={b} className="block mt-1" />
+                        <SeloHabilitacaoBadge status={habilitacaoPorId.get(b.id)?.status ?? null} className="block mt-1" />
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
@@ -471,7 +473,7 @@ export default function BiddingsTab() {
                   {b.status === 'Em Andamento' && b.etapa && (
                     <p className="text-[11px] text-base-500">Etapa: {b.etapa}</p>
                   )}
-                  <SeloHabilitacao bidding={b} />
+                  <SeloHabilitacaoBadge status={habilitacaoPorId.get(b.id)?.status ?? null} />
                 </div>
               ))}
             </div>

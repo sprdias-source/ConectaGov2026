@@ -63,6 +63,62 @@ export function AnaliseEditalResumo({ analise, onToggleItem, onToggleTodos }: {
   const totalItens = analise.itens?.length ?? 0
   const itensSelecionados = analise.itens?.filter((it) => it.participando !== false).length ?? 0
 
+  // Sempre que algum item veio com lote preenchido, agrupa a tabela por
+  // lote (na ordem em que cada lote apareceu) e mostra o subtotal logo
+  // abaixo de cada grupo — é a mesma informação que o profissional precisa
+  // decidir, junto com o cliente, se vale a pena participar daquele lote,
+  // e precisa aparecer já aqui no resumo (não só depois de converter em
+  // licitação e editar os itens).
+  const temLotes = !!analise.itens?.some((it) => it.lote != null && String(it.lote).trim() !== '')
+  const gruposPorLote = temLotes
+    ? (() => {
+        const mapa = new Map<string, { it: NonNullable<AnaliseEdital['itens']>[number]; idx: number }[]>()
+        analise.itens!.forEach((it, idx) => {
+          const chave = it.lote != null && String(it.lote).trim() !== '' ? String(it.lote) : 'Sem lote'
+          if (!mapa.has(chave)) mapa.set(chave, [])
+          mapa.get(chave)!.push({ it, idx })
+        })
+        return Array.from(mapa.entries()).map(([lote, entradas]) => ({
+          lote,
+          entradas,
+          subtotal: entradas.reduce((s, { it }) => (it.participando !== false ? s + (it.quantidade ?? 0) * (it.valorReferencia ?? 0) : s), 0),
+        }))
+      })()
+    : null
+
+  const colunasTabela = (onToggleItem ? 1 : 0) + 1 /* Item */ + (temLotes ? 1 : 0) + 1 /* Descrição */ + 1 /* Qtd. */ + 1 /* Vl. Referência */
+
+  const renderLinhaItem = (it: NonNullable<AnaliseEdital['itens']>[number], idx: number) => {
+    const participando = it.participando !== false
+    return (
+      <tr key={idx} className={`border-t border-base-800/60 ${!participando ? 'opacity-50' : ''}`}>
+        {onToggleItem && (
+          <td className="px-3 py-2">
+            <input
+              type="checkbox"
+              checked={participando}
+              onChange={() => onToggleItem(idx)}
+              className="accent-accent-500 cursor-pointer"
+              title={participando ? 'Vamos participar deste item' : 'Não vamos participar deste item'}
+            />
+          </td>
+        )}
+        <td className="px-3 py-2 text-base-300">{it.numero ?? idx + 1}</td>
+        {temLotes && <td className="px-3 py-2 text-base-400">{it.lote ?? '—'}</td>}
+        <td className={`px-3 py-2 text-base-300 ${!participando ? 'line-through' : ''}`}>{it.descricao}</td>
+        <td className="px-3 py-2 text-right text-base-400">{it.quantidade ?? '—'}{it.unidade ? ` ${it.unidade}` : ''}</td>
+        <td className="px-3 py-2 text-right font-mono text-base-400">{it.valorReferencia != null ? formatBRL(Number(it.valorReferencia)) : '—'}</td>
+      </tr>
+    )
+  }
+
+  const renderSubtotalLote = (lote: string, subtotal: number) => (
+    <tr key={`subtotal-${lote}`} className="bg-accent-500/10 border-t border-accent-400/30">
+      <td colSpan={colunasTabela - 1} className="px-3 py-2 text-right text-[11px] font-bold text-accent-300">Subtotal do Lote {lote}:</td>
+      <td className="px-3 py-2 text-right font-mono font-bold text-accent-300">{formatBRL(subtotal)}</td>
+    </tr>
+  )
+
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -70,6 +126,7 @@ export function AnaliseEditalResumo({ analise, onToggleItem, onToggleTodos }: {
         <CampoResumo label="Nº Edital / Processo" valor={[analise.numeroEdital, analise.numeroProcesso].filter(Boolean).join(' — ')} />
         <CampoResumo label="Objeto" valor={analise.objeto} />
         <CampoResumo label="Modalidade / SRP" valor={[analise.modalidade, analise.srp ? 'SRP' : null].filter(Boolean).join(' — ')} />
+        <CampoResumo label="Valor Total do Edital" valor={analise.valorTotalEstimado != null ? formatBRL(analise.valorTotalEstimado) : undefined} />
         <CampoResumo label="Data / Horário / Portal" valor={[analise.data, analise.horario, analise.portal].filter(Boolean).join(' — ')} />
         <CampoResumo label="Intervalo Mínimo entre Lances" valor={analise.intervaloLances} />
         <CampoResumo label="Validade da Proposta" valor={analise.validadeProposta} />
@@ -98,6 +155,9 @@ export function AnaliseEditalResumo({ analise, onToggleItem, onToggleTodos }: {
               {onToggleItem && (
                 <span className="normal-case font-normal text-base-400"> — {itensSelecionados} de {totalItens} selecionados pra participar</span>
               )}
+              {gruposPorLote && (
+                <span className="normal-case font-normal text-base-500"> · em {gruposPorLote.length} lote(s)</span>
+              )}
             </p>
             {onToggleTodos && (
               <div className="flex items-center gap-2 text-[11px]">
@@ -113,34 +173,19 @@ export function AnaliseEditalResumo({ analise, onToggleItem, onToggleTodos }: {
                 <tr className="text-base-500 border-b border-base-800">
                   {onToggleItem && <th className="text-left font-semibold px-3 py-2 w-8">Part.</th>}
                   <th className="text-left font-semibold px-3 py-2">Item</th>
+                  {temLotes && <th className="text-left font-semibold px-3 py-2">Lote</th>}
                   <th className="text-left font-semibold px-3 py-2">Descrição</th>
                   <th className="text-right font-semibold px-3 py-2">Qtd.</th>
                   <th className="text-right font-semibold px-3 py-2">Vl. Referência</th>
                 </tr>
               </thead>
               <tbody>
-                {analise.itens.map((it, idx) => {
-                  const participando = it.participando !== false
-                  return (
-                    <tr key={idx} className={`border-t border-base-800/60 ${!participando ? 'opacity-50' : ''}`}>
-                      {onToggleItem && (
-                        <td className="px-3 py-2">
-                          <input
-                            type="checkbox"
-                            checked={participando}
-                            onChange={() => onToggleItem(idx)}
-                            className="accent-accent-500 cursor-pointer"
-                            title={participando ? 'Vamos participar deste item' : 'Não vamos participar deste item'}
-                          />
-                        </td>
-                      )}
-                      <td className="px-3 py-2 text-base-300">{it.numero ?? idx + 1}</td>
-                      <td className={`px-3 py-2 text-base-300 ${!participando ? 'line-through' : ''}`}>{it.descricao}</td>
-                      <td className="px-3 py-2 text-right text-base-400">{it.quantidade ?? '—'}{it.unidade ? ` ${it.unidade}` : ''}</td>
-                      <td className="px-3 py-2 text-right font-mono text-base-400">{it.valorReferencia != null ? formatBRL(Number(it.valorReferencia)) : '—'}</td>
-                    </tr>
-                  )
-                })}
+                {gruposPorLote
+                  ? gruposPorLote.flatMap((g) => [
+                      ...g.entradas.map(({ it, idx }) => renderLinhaItem(it, idx)),
+                      renderSubtotalLote(g.lote, g.subtotal),
+                    ])
+                  : analise.itens.map((it, idx) => renderLinhaItem(it, idx))}
               </tbody>
             </table>
           </div>
