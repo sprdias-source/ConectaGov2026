@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { fromBiddingItemRow, toBiddingItemInsert } from '../lib/mappers'
+import { compararNumeroItem } from '../lib/numberParsing'
 import type { BiddingItem } from '../types/domain'
 import { useAuth } from './useAuth'
 
@@ -20,9 +21,11 @@ export function useBiddingItems(biddingId: string | null) {
         .from('bidding_items')
         .select('*')
         .eq('bidding_id', biddingId as string)
-        .order('numero_item', { ascending: true })
       if (error) throw error
-      return data.map(fromBiddingItemRow)
+      // Ordena no cliente com comparador numérico — numero_item é texto
+      // livre ("1", "2", ..., "10"), e um ORDER BY direto no Postgres é
+      // lexicográfico (colocaria "10" antes de "2").
+      return data.map(fromBiddingItemRow).sort((a, b) => compararNumeroItem(a.numeroItem, b.numeroItem))
     },
   })
 
@@ -102,9 +105,8 @@ export function useBiddingItemsPorLicitacoes(biddingIds: string[]) {
         .from('bidding_items')
         .select('*')
         .in('bidding_id', idsOrdenados)
-        .order('numero_item', { ascending: true })
       if (error) throw error
-      return data.map(fromBiddingItemRow)
+      return data.map(fromBiddingItemRow).sort((a, b) => compararNumeroItem(a.numeroItem, b.numeroItem))
     },
   })
 

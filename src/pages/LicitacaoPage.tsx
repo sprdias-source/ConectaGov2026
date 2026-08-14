@@ -40,7 +40,7 @@ import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import BiddingItemsEditor from '../components/cadastros/BiddingItemsEditor'
 import { stringifyCsvPortal, textoParaBlobLatin1, formatarNumeroPtBR, HEADER_PORTAL_COMPRAS } from '../lib/csvPortalCompras'
-import { parseFlexibleNumber } from '../lib/numberParsing'
+import { parseFlexibleNumber, compararNumeroItem } from '../lib/numberParsing'
 import { mapearCamposDaAnalise, mapearItensDaAnalise, somarValorLicitado, mensagemAmigavelErroAnalise } from '../lib/analiseEdital'
 import { useToast } from '../hooks/useToast'
 import { CERT_CONFIG } from '../types/domain'
@@ -88,9 +88,11 @@ function useBiddingItemsDaLicitacao(biddingId?: string) {
     queryKey: ['bidding_items', biddingId],
     enabled: !!user && !!biddingId,
     queryFn: async () => {
-      const { data, error } = await supabase.from('bidding_items').select('*').eq('bidding_id', biddingId!).order('numero_item')
+      const { data, error } = await supabase.from('bidding_items').select('*').eq('bidding_id', biddingId!)
       if (error) throw error
-      return data.map(fromBiddingItemRow)
+      // Ordena no cliente com comparador numérico (ver compararNumeroItem)
+      // — numero_item é texto livre, ORDER BY do Postgres é lexicográfico.
+      return data.map(fromBiddingItemRow).sort((a, b) => compararNumeroItem(a.numeroItem, b.numeroItem))
     },
   })
 
