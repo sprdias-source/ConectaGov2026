@@ -1240,28 +1240,40 @@ function AbaSessaoAoVivo({ bidding }: { bidding: Bidding }) {
 
   const analise = (analysis?.analise ?? null) as AnaliseEdital | null
 
-  // Pega só o primeiro número do texto que a IA extraiu (ex: "1% (um por
-  // cento) do valor do lance anterior" -> 1) pra sugerir um ponto de
-  // partida — nunca assume sozinho, é só uma sugestão editável.
-  const percentualSugeridoIA = useMemo(() => {
+  // O edital define o intervalo mínimo entre lances de dois jeitos
+  // diferentes conforme o caso — percentual ("1% do lance anterior") ou
+  // valor fixo ("R$ 50,00 de diferença") — e o texto que a IA extraiu já
+  // inclui a unidade (ver o prompt de Analisar-edital). Prioriza % quando
+  // os dois aparecem (é o mais comum em pregão eletrônico); nunca assume
+  // sozinho, é só uma sugestão editável.
+  const intervaloSugeridoIA = useMemo(() => {
     const texto = analise?.intervaloLances
     if (!texto) return null
-    const match = texto.match(/(\d+(?:[.,]\d+)?)/)
-    return match ? parseFloat(match[1].replace(',', '.')) : null
+    const pctMatch = texto.match(/(\d+(?:[.,]\d+)?)\s*%/)
+    if (pctMatch) return { modo: 'percentual' as const, valor: parseFloat(pctMatch[1].replace(',', '.')) }
+    const valorMatch = texto.match(/R\$\s*([\d.,]+)/i)
+    if (valorMatch) {
+      const num = parseFlexibleNumber(valorMatch[1])
+      if (num !== null) return { modo: 'valor' as const, valor: num }
+    }
+    return null
   }, [analise])
 
-  const [percentual, setPercentual] = useState('')
+  const [modo, setModo] = useState<'percentual' | 'valor'>('percentual')
+  const [intervalo, setIntervalo] = useState('')
   const [sugestaoAplicadaPara, setSugestaoAplicadaPara] = useState<string | null>(null)
   const [ultimosLances, setUltimosLances] = useState<Record<string, string>>({})
 
-  // Aplica a sugestão da IA assim que ela chegar, só uma vez por licitação
-  // — se o usuário já editou o campo manualmente depois, não sobrescreve.
-  if (percentualSugeridoIA !== null && sugestaoAplicadaPara !== bidding.id) {
-    setPercentual(String(percentualSugeridoIA))
+  // Aplica a sugestão da IA (modo + valor) assim que ela chegar, só uma vez
+  // por licitação — se o usuário já editou o campo manualmente depois, não
+  // sobrescreve.
+  if (intervaloSugeridoIA !== null && sugestaoAplicadaPara !== bidding.id) {
+    setModo(intervaloSugeridoIA.modo)
+    setIntervalo(String(intervaloSugeridoIA.valor))
     setSugestaoAplicadaPara(bidding.id)
   }
 
-  const pct = parseFloat(percentual.replace(',', '.')) || 0
+  const valorIntervalo = parseFlexibleNumber(intervalo) ?? 0
 
   const usarValorNaProposta = (itemId: string, valor: number) => {
     const novosItems = items.map((it) => (it.id === itemId ? { ...it, valorUnitarioOfertado: valor } : it))
@@ -1280,13 +1292,29 @@ function AbaSessaoAoVivo({ bidding }: { bidding: Bidding }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-4 flex flex-wrap items-end gap-3">
-        <div className="w-40">
-          <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Intervalo entre lances (%)</label>
-          <Input placeholder="Ex: 1" value={percentual} onChange={(e) => setPercentual(e.target.value)} />
+        <div>
+          <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Intervalo entre lances</label>
+          <div className="flex gap-1 bg-base-900 border border-base-700 rounded-lg p-1 mb-1.5 w-fit">
+            <button
+              type="button"
+              onClick={() => setModo('percentual')}
+              className={`px-3 py-1 rounded-md text-[11px] font-semibold transition ${modo === 'percentual' ? 'bg-accent-500 text-base-950' : 'text-base-400 hover:text-base-100'}`}
+            >
+              Percentual (%)
+            </button>
+            <button
+              type="button"
+              onClick={() => setModo('valor')}
+              className={`px-3 py-1 rounded-md text-[11px] font-semibold transition ${modo === 'valor' ? 'bg-accent-500 text-base-950' : 'text-base-400 hover:text-base-100'}`}
+            >
+              Valor Fixo (R$)
+            </button>
+          </div>
+          <Input placeholder={modo === 'percentual' ? 'Ex: 1' : 'Ex: 50,00'} value={intervalo} onChange={(e) => setIntervalo(e.target.value)} className="w-40" />
         </div>
         <p className="text-[11px] text-base-500 flex-1 min-w-[220px]">
-          {percentualSugeridoIA !== null
-            ? 'Sugerido pela Análise de Edital — confira contra o edital e ajuste se precisar.'
+          {intervaloSugeridoIA !== null
+            ? `Sugerido pela Análise de Edital (${intervaloSugeridoIA.modo === 'percentual' ? 'percentual' : 'valor fixo'}) — confira contra o edital e ajuste se precisar.`
             : 'A Análise de Edital ainda não identificou esse intervalo — informe manualmente conforme o edital.'}
           {' '}Calculadora de apoio: nada aqui é salvo, exceto se você usar o botão "Usar na Proposta Readequada" em algum item.
         </p>
@@ -1295,8 +1323,10 @@ function AbaSessaoAoVivo({ bidding }: { bidding: Bidding }) {
       <div className="flex flex-col gap-2">
         {items.map((i) => {
           const ultimoLanceTexto = ultimosLances[i.id] ?? ''
-          const ultimoLance = parseFloat(ultimoLanceTexto.replace(',', '.')) || 0
-          const proximoLance = ultimoLance > 0 && pct > 0 ? ultimoLance * (1 - pct / 100) : null
+          const ultimoLance = parseFlexibleNumber(ultimoLanceTexto) ?? 0
+          const proximoLance = ultimoLance > 0 && valorIntervalo > 0
+            ? (modo === 'percentual' ? ultimoLance * (1 - valorIntervalo / 100) : Math.max(0, ultimoLance - valorIntervalo))
+            : null
           return (
             <div key={i.id} className="bg-base-850/60 border border-base-800 rounded-xl px-5 py-4 flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-4 min-w-[200px] flex-1">
