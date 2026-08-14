@@ -26,3 +26,12 @@ export function parseFlexibleNumber(val: unknown): number | null {
   const parsed = parseFloat(str)
   return Number.isFinite(parsed) ? parsed : null
 }
+
+// "Ordenação natural" pro campo Nº do item (numero_item é texto livre —
+// "1", "2", ..., "10", às vezes "1A", "10-B" etc). Sem isso, um ORDER BY
+// direto no Postgres (lexicográfico) ou um .sort() padrão do JS colocam
+// "10" antes de "2" — é exatamente esse bug que faz a lista de itens
+// aparecer fora de ordem depois do item 9.
+export function compararNumeroItem(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+}

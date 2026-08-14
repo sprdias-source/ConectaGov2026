@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Plus, Trash2, Upload, FileSpreadsheet } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { Input } from '../ui/FormControls'
-import { parseFlexibleNumber } from '../../lib/numberParsing'
+import { parseFlexibleNumber, compararNumeroItem } from '../../lib/numberParsing'
 import { useToast } from '../../hooks/useToast'
 import type { BiddingItem } from '../../types/domain'
 import { formatBRL } from '../../hooks/useAccountBalances'
@@ -129,6 +129,11 @@ export default function BiddingItemsEditor({
         }
 
         if (imported.length > 0) {
+          // A planilha às vezes já vem com a coluna Item fora de ordem
+          // (exportações de portal costumam vir ordenadas como texto: "1",
+          // "10", "11" antes de "2") — reordena numericamente na importação
+          // em vez de manter a ordem (quebrada) das linhas do arquivo.
+          imported.sort((a, b) => compararNumeroItem(a.numeroItem ?? '', b.numeroItem ?? ''))
           emitChange([...drafts, ...imported])
           showToast(`${imported.length} item(ns) importado(s) da planilha.`)
         }
