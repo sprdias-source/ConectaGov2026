@@ -86,33 +86,34 @@ export default function RelatorioLicitacoesCliente({ clients, biddings }: { clie
   }, [doCliente, itensPorBidding])
 
   const stats = useMemo(() => {
-    const participou = doCliente.filter((b) => b.status !== 'Cancelada' && b.status !== 'Desistiu')
     const ganhou = doCliente.filter((b) => b.status === 'Ganhou')
     const perdeu = doCliente.filter((b) => b.status === 'Perdeu')
     const emAndamento = doCliente.filter((b) => b.status === 'Em Andamento')
-    const canceladas = doCliente.filter((b) => b.status === 'Cancelada')
-    // Separado de "Cancelada" (o órgão que cancelou o edital) — aqui é o
-    // cliente que desistiu depois de já estar no funil, informação que o
-    // relatório precisa mostrar à parte.
-    const desistiu = doCliente.filter((b) => b.status === 'Desistiu')
-    // Valor fechado agora vem do que foi ganho ITEM A ITEM, não da
-    // licitação inteira — um cliente que ganhou 1 de 4 itens não pode
-    // aparecer como se tivesse fechado o edital todo.
-    const valorFechado = ganhou.reduce((s, b) => s + (resumos.get(b.id)?.valorGanho ?? valorRelevante(b)), 0)
+    // Valor Total do Edital soma TODAS as licitações participadas, sem
+    // exceção de status — é o panorama geral do cliente. Dali em diante,
+    // Participado / Ganho de Fato / Diferença passam a olhar só as
+    // licitações Ganhas: os mesmos 3 campos do formulário de Nova
+    // Licitação (Valor Total do Edital, Valor que Vamos Participar, Valor
+    // Ganho de Fato), só que somados entre as licitações vencidas.
+    const valorTotalEdital = doCliente.reduce((s, b) => s + b.valorLicitado, 0)
+    const valorParticipadoGanhas = ganhou.reduce((s, b) => s + (b.valorParticipacao ?? 0), 0)
+    const valorGanhoDeFato = ganhou.reduce((s, b) => s + (b.valorOfertadoReal ?? 0), 0)
     // "Quanto deixou de ganhar" = soma do valor das oportunidades perdidas.
     const valorPerdido = perdeu.reduce((s, b) => s + valorRelevante(b), 0)
+    const valorEmAndamento = emAndamento.reduce((s, b) => s + b.valorLicitado, 0)
     return {
-      totalEnviadas: doCliente.length,
-      totalParticipou: participou.length,
+      totalTodas: doCliente.length,
+      valorTotalEdital,
       totalGanhou: ganhou.length,
+      valorParticipadoGanhas,
+      valorGanhoDeFato,
+      diferencaGanhas: valorParticipadoGanhas - valorGanhoDeFato,
       totalPerdeu: perdeu.length,
-      totalEmAndamento: emAndamento.length,
-      totalCanceladas: canceladas.length,
-      totalDesistiu: desistiu.length,
-      valorFechado,
       valorPerdido,
+      totalEmAndamento: emAndamento.length,
+      valorEmAndamento,
     }
-  }, [doCliente, resumos])
+  }, [doCliente])
 
   return (
     <div className="flex flex-col gap-4">
@@ -160,16 +161,36 @@ export default function RelatorioLicitacoesCliente({ clients, biddings }: { clie
             </button>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 screen-only">
-            <CardEstatistica label="Oportunidades Enviadas" valor={stats.totalEnviadas} />
-            <CardEstatistica label="Participou" valor={stats.totalParticipou} />
-            <CardEstatistica label="Ganhou" valor={stats.totalGanhou} cor="text-positive-400" />
-            <CardEstatistica label="Perdeu" valor={stats.totalPerdeu} cor="text-negative-400" />
-            <CardEstatistica label="Em Andamento" valor={stats.totalEmAndamento} cor="text-accent-400" />
-            <CardEstatistica label="Cancelada (órgão)" valor={stats.totalCanceladas} />
-            <CardEstatistica label="Desistiu (cliente)" valor={stats.totalDesistiu} />
-            <CardEstatistica label="Valor Ganho (por item)" valor={formatBRL(stats.valorFechado)} cor="text-positive-400" mono />
-            <CardEstatistica label="Deixou de Ganhar (Perdidas)" valor={formatBRL(stats.valorPerdido)} cor="text-negative-400" mono />
+          <div className="flex flex-col gap-4 screen-only">
+            <div>
+              <p className="text-[10.5px] font-bold uppercase tracking-wider text-base-500 mb-2 flex items-baseline gap-1.5 flex-wrap">
+                Panorama Geral
+                <span className="font-normal normal-case text-base-600">— soma todas as {stats.totalTodas} licitações, qualquer que seja o status</span>
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <CardCategoria label="Valor Total do Edital" contagem={stats.totalTodas} valor={formatBRL(stats.valorTotalEdital)} cor="text-accent-400" />
+              </div>
+            </div>
+
+            <div>
+              <p className="text-[10.5px] font-bold uppercase tracking-wider text-base-500 mb-2 flex items-baseline gap-1.5 flex-wrap">
+                Dentro do que Ganhamos
+                <span className="font-normal normal-case text-base-600">— só as {stats.totalGanhou} licitações com status Ganhou</span>
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <CardEstatistica label="Valor Participado" valor={formatBRL(stats.valorParticipadoGanhas)} cor="text-positive-400" mono />
+                <CardEstatistica label="Valor Ganho de Fato" valor={formatBRL(stats.valorGanhoDeFato)} cor="text-positive-400" mono />
+                <CardEstatistica label="Diferença" valor={formatBRL(stats.diferencaGanhas)} cor="text-accent-400" mono />
+              </div>
+            </div>
+
+            <div>
+              <p className="text-[10.5px] font-bold uppercase tracking-wider text-base-500 mb-2">Perdidas e Em Andamento</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <CardCategoria label="Licitações Perdidas" contagem={stats.totalPerdeu} valor={formatBRL(stats.valorPerdido)} cor="text-negative-400" />
+                <CardCategoria label="Em Andamento" contagem={stats.totalEmAndamento} valor={formatBRL(stats.valorEmAndamento)} cor="text-accent-400" />
+              </div>
+            </div>
           </div>
 
           <OportunidadesResumoCliente clientId={clientId} />
@@ -192,15 +213,13 @@ export default function RelatorioLicitacoesCliente({ clients, biddings }: { clie
 
               <table className="w-full text-[12px] mb-4">
                 <tbody>
-                  <tr><td className="py-0.5 pr-2 font-semibold">Oportunidades enviadas:</td><td>{stats.totalEnviadas}</td></tr>
-                  <tr><td className="py-0.5 pr-2 font-semibold">Participou:</td><td>{stats.totalParticipou}</td></tr>
-                  <tr><td className="py-0.5 pr-2 font-semibold">Ganhou:</td><td>{stats.totalGanhou}</td></tr>
-                  <tr><td className="py-0.5 pr-2 font-semibold">Perdeu:</td><td>{stats.totalPerdeu}</td></tr>
-                  <tr><td className="py-0.5 pr-2 font-semibold">Em andamento:</td><td>{stats.totalEmAndamento}</td></tr>
-                  <tr><td className="py-0.5 pr-2 font-semibold">Cancelada pelo órgão:</td><td>{stats.totalCanceladas}</td></tr>
-                  <tr><td className="py-0.5 pr-2 font-semibold">Desistiu (cliente):</td><td>{stats.totalDesistiu}</td></tr>
-                  <tr><td className="py-0.5 pr-2 font-semibold">Valor Ganho de Fato (por item):</td><td>{formatBRL(stats.valorFechado)}</td></tr>
-                  <tr><td className="py-0.5 pr-2 font-semibold">Valor deixado de ganhar (oportunidades perdidas):</td><td>{formatBRL(stats.valorPerdido)}</td></tr>
+                  <tr><td className="py-0.5 pr-2 font-semibold">Valor Total do Edital ({stats.totalTodas} licitações):</td><td>{formatBRL(stats.valorTotalEdital)}</td></tr>
+                  <tr><td className="py-0.5 pr-2 font-semibold">Licitações Ganhas:</td><td>{stats.totalGanhou}</td></tr>
+                  <tr><td className="py-0.5 pr-2 font-semibold">Valor Participado (nas Ganhas):</td><td>{formatBRL(stats.valorParticipadoGanhas)}</td></tr>
+                  <tr><td className="py-0.5 pr-2 font-semibold">Valor Ganho de Fato (nas Ganhas):</td><td>{formatBRL(stats.valorGanhoDeFato)}</td></tr>
+                  <tr><td className="py-0.5 pr-2 font-semibold">Diferença (Participado − Ganho de Fato):</td><td>{formatBRL(stats.diferencaGanhas)}</td></tr>
+                  <tr><td className="py-0.5 pr-2 font-semibold">Licitações Perdidas:</td><td>{stats.totalPerdeu} · {formatBRL(stats.valorPerdido)}</td></tr>
+                  <tr><td className="py-0.5 pr-2 font-semibold">Em Andamento:</td><td>{stats.totalEmAndamento} · {formatBRL(stats.valorEmAndamento)}</td></tr>
                 </tbody>
               </table>
 
@@ -442,6 +461,22 @@ function CardEstatistica({ label, valor, cor = 'text-base-100', mono = false }: 
     <Card className="p-3">
       <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">{label}</p>
       <p className={`text-lg font-extrabold ${mono ? 'font-mono' : ''} ${cor}`}>{valor}</p>
+    </Card>
+  )
+}
+
+// Card combinado contagem + valor (ex.: "3 · R$ 991.171,14") — usado nas
+// categorias de status (Valor Total do Edital, Licitações Perdidas, Em
+// Andamento), pra não espalhar contagem e valor em dois cards separados.
+function CardCategoria({ label, contagem, valor, cor = 'text-base-100' }: { label: string; contagem: number; valor: string; cor?: string }) {
+  return (
+    <Card className="p-3">
+      <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">{label}</p>
+      <p className="flex items-baseline gap-1.5">
+        <span className={`text-lg font-extrabold ${cor}`}>{contagem}</span>
+        <span className="text-base-500 text-sm">·</span>
+        <span className={`text-[13px] font-mono font-bold ${cor}`}>{valor}</span>
+      </p>
     </Card>
   )
 }
