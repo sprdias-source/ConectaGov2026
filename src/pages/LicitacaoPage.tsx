@@ -4,7 +4,7 @@ import {
   ArrowLeft, FileText, Upload, Plus, Trash2, CheckCircle2, Circle, Download, Eye,
   AlertCircle, Loader2, Sparkles, Award, Check, History, ChevronDown, ChevronUp,
   ClipboardList, Gavel, Wallet, Send, CircleDot, FileSignature, Info, Activity, RefreshCw, Wand2,
-  Paperclip, FolderDown, X, FileSpreadsheet, ScrollText, Copy, Printer,
+  Paperclip, FolderDown, X, FileSpreadsheet, ScrollText, Copy, Printer, Calculator,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
@@ -30,6 +30,8 @@ import { PerguntaEditalPanel } from '../components/shared/PerguntaEditalPanel'
 import { usePerguntaEdital } from '../hooks/usePerguntaEdital'
 import { AnaliseJuridicaTabs } from '../components/shared/AnaliseJuridicaTabs'
 import { useBiddingItems } from '../hooks/useBiddingItems'
+import { usePricingProfiles } from '../hooks/usePricingProfiles'
+import { calcularValorMinimo, somarLinhasPorTipo } from '../lib/precificacao'
 import { useBiddingItemVersions } from '../hooks/useBiddingItemVersions'
 import { useClientDocuments, calcDocStatus } from '../hooks/useClientDocuments'
 import { useAtestados, calcularSimilaridade } from '../hooks/useAtestados'
@@ -67,6 +69,7 @@ const ABAS = [
   { key: 'edital', label: 'Edital & Análise', icon: FileText },
   { key: 'checklist', label: 'Checklist & Habilitação', icon: ClipboardList },
   { key: 'proposta-inicial', label: 'Cadastrar Proposta', icon: FileSpreadsheet },
+  { key: 'precificacao', label: 'Precificação', icon: Calculator },
   { key: 'proposta', label: 'Proposta Readequada', icon: Wallet },
   { key: 'documentos', label: 'Documentos Finais', icon: FileSignature },
   { key: 'sessao', label: 'Sessão Ao Vivo', icon: Activity },
@@ -1038,6 +1041,181 @@ function AbaHistorico({ bidding }: { bidding: Bidding }) {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+type PrecificacaoDraft = { custo: string; margem: string; participa: boolean }
+
+// Aplica um Perfil de Precificação (Cadastros → Precificação) aos itens da
+// licitação — mesma fórmula de markup divisor da Calculadora de Formação de
+// Preço, só que com o perfil salvo em vez de digitado toda vez. O Custo
+// Unitário e a Margem ficam editáveis por item (a Margem começa igual à do
+// perfil, mas pode divergir linha a linha); Impostos/Despesas vêm sempre do
+// perfil selecionado. Nada grava sozinho — só quando clica em "Aplicar aos
+// Itens Marcados" (aplicarPrecificacao faz um UPDATE direto por item, sem
+// mexer em descrição/quantidade/valores licitados/ofertados).
+function AbaPrecificacao({ bidding }: { bidding: Bidding }) {
+  const { items, isLoading, aplicarPrecificacao } = useBiddingItems(bidding.id)
+  const { profiles, isLoading: carregandoPerfis } = usePricingProfiles()
+  const { nivel } = usePermissaoFerramenta('licitacoes')
+  const podeEditar = nivel === 'edicao'
+  const { showToast } = useToast()
+
+  const [perfilId, setPerfilId] = useState('')
+  const perfil = profiles.find((p) => p.id === perfilId) ?? null
+  const impostosPct = perfil ? somarLinhasPorTipo(perfil.linhas, 'imposto') : 0
+  const despesasPct = perfil ? somarLinhasPorTipo(perfil.linhas, 'despesa') : 0
+
+  // Só guarda o que o usuário mexeu (overrides) — o valor de partida de
+  // cada campo vem direto do item (custoUnitario/margemPctAplicada já
+  // salvos, ou a margem do perfil selecionado como sugestão). Evita
+  // sincronizar estado local a partir de props/query num efeito: o rascunho
+  // é sempre "base do item + o que foi editado", calculado no render.
+  const [overrides, setOverrides] = useState<Record<string, Partial<PrecificacaoDraft>>>({})
+
+  const updateDraft = (itemId: string, patch: Partial<PrecificacaoDraft>) => {
+    setOverrides((atual) => ({ ...atual, [itemId]: { ...atual[itemId], ...patch } }))
+  }
+
+  const linhas = items.map((item) => {
+    const base: PrecificacaoDraft = {
+      custo: item.custoUnitario != null ? String(item.custoUnitario) : '',
+      margem: item.margemPctAplicada != null ? String(item.margemPctAplicada) : (perfil ? String(perfil.margemPct) : ''),
+      participa: item.participaPrecificacao,
+    }
+    const draft: PrecificacaoDraft = { ...base, ...overrides[item.id] }
+    const custo = parseFloat(draft.custo) || 0
+    const margem = parseFloat(draft.margem) || 0
+    const valorMinimo = draft.participa && perfil ? calcularValorMinimo(custo, impostosPct, despesasPct, margem) : null
+    const vsLicitado = valorMinimo !== null && item.valorUnitarioLicitado > 0
+      ? ((valorMinimo - item.valorUnitarioLicitado) / item.valorUnitarioLicitado) * 100
+      : null
+    return { item, draft, valorMinimo, vsLicitado }
+  })
+  const totalParticipando = linhas.filter((l) => l.draft.participa).length
+
+  const handleAplicar = () => {
+    if (!perfil) { showToast('Selecione um perfil de precificação primeiro.', 'error'); return }
+    const payload = linhas.map(({ item, draft, valorMinimo }) => ({
+      id: item.id,
+      custoUnitario: draft.custo.trim() ? parseFloat(draft.custo) : null,
+      valorMinimoCalculado: valorMinimo,
+      participaPrecificacao: draft.participa,
+      pricingProfileId: perfil.id,
+      impostosPctAplicado: impostosPct,
+      despesasPctAplicado: despesasPct,
+      margemPctAplicada: draft.margem.trim() ? parseFloat(draft.margem) : null,
+    }))
+    aplicarPrecificacao.mutate(payload, {
+      onSuccess: () => showToast('Precificação aplicada aos itens marcados.'),
+      onError: (err) => showToast(`Erro ao aplicar a precificação: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+    })
+  }
+
+  if (isLoading || carregandoPerfis) return <SkeletonList itens={4} />
+
+  if (items.length === 0) {
+    return (
+      <p className="text-[13px] text-base-500 italic py-4">
+        Nenhum item cadastrado nesta licitação ainda. Cadastre os itens na aba "Cadastrar Proposta" antes de precificar.
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-[11px] text-base-500">
+        Calcula o Valor Mínimo de cada item a partir do Custo Unitário e de um Perfil de Precificação salvo — mesma fórmula da Calculadora de Formação de Preço, com Impostos e Despesas reutilizáveis em vez de digitados toda vez.
+      </p>
+
+      <div className="flex flex-wrap items-end gap-3 bg-base-850/60 border border-base-800 rounded-lg px-3 py-3">
+        <div className="min-w-[220px]">
+          <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Perfil Aplicado</label>
+          <Select value={perfilId} onChange={(e) => setPerfilId(e.target.value)} disabled={!podeEditar}>
+            <option value="">Selecione um perfil...</option>
+            {profiles.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+          </Select>
+        </div>
+        {perfil && (
+          <span className="text-[11px] font-mono font-bold px-2.5 py-1.5 rounded-full bg-base-800 border border-base-700 text-base-400">
+            {totalParticipando} de {items.length} itens participando · Impostos {impostosPct.toFixed(2)}% · Despesas {despesasPct.toFixed(2)}%
+          </span>
+        )}
+        {profiles.length === 0 && (
+          <p className="text-[11px] text-warning-400">Nenhum perfil cadastrado ainda — crie um em Cadastros → Precificação.</p>
+        )}
+        <div className="flex-1" />
+        {podeEditar && (
+          <Button onClick={handleAplicar} disabled={!perfil || aplicarPrecificacao.isPending}>
+            {aplicarPrecificacao.isPending ? 'Aplicando...' : 'Aplicar aos Itens Marcados'}
+          </Button>
+        )}
+      </div>
+
+      <div className="overflow-x-auto border border-base-700/50 rounded-lg">
+        <table className="w-full text-[12px]">
+          <thead>
+            <tr className="bg-base-850 text-left">
+              <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-20 text-center">Participar</th>
+              <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500">Item</th>
+              <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-16 text-right">Qtd.</th>
+              <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Custo Unit.</th>
+              <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-20 text-right">Impostos</th>
+              <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-20 text-right">Despesas</th>
+              <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Margem</th>
+              <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28 text-right">Valor Mínimo</th>
+              <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28 text-right">Vl. Licitado</th>
+              <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24 text-right">Vs. Licitado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map(({ item, draft, valorMinimo, vsLicitado }) => (
+              <tr key={item.id} className={`border-t border-base-800 ${!draft.participa ? 'opacity-40' : ''}`}>
+                <td className="px-2 py-1.5 text-center">
+                  <input
+                    type="checkbox"
+                    checked={draft.participa}
+                    disabled={!podeEditar}
+                    onChange={(e) => updateDraft(item.id, { participa: e.target.checked })}
+                    className="w-4 h-4 accent-accent-500 cursor-pointer"
+                  />
+                </td>
+                <td className="px-2 py-1.5 text-base-300">{item.descricao}</td>
+                <td className="px-2 py-1.5 text-right font-mono text-base-300">{item.quantidade}</td>
+                <td className="px-2 py-1.5">
+                  <Input
+                    type="number" step="0.01" value={draft.custo} disabled={!podeEditar || !draft.participa}
+                    onChange={(e) => updateDraft(item.id, { custo: e.target.value })}
+                    className="!py-1 !px-2 text-[12px] text-right font-mono" placeholder="0,00"
+                  />
+                </td>
+                <td className="px-2 py-1.5 text-right font-mono text-base-500">{perfil ? `${impostosPct.toFixed(2)}%` : '—'}</td>
+                <td className="px-2 py-1.5 text-right font-mono text-base-500">{perfil ? `${despesasPct.toFixed(2)}%` : '—'}</td>
+                <td className="px-2 py-1.5">
+                  <Input
+                    type="number" step="0.01" value={draft.margem} disabled={!podeEditar || !draft.participa}
+                    onChange={(e) => updateDraft(item.id, { margem: e.target.value })}
+                    className="!py-1 !px-2 text-[12px] text-right font-mono" placeholder="%"
+                  />
+                </td>
+                <td className="px-2 py-1.5 text-right font-mono font-bold text-base-100">{valorMinimo !== null ? formatBRL(valorMinimo) : '—'}</td>
+                <td className="px-2 py-1.5 text-right font-mono text-base-300">{formatBRL(item.valorUnitarioLicitado)}</td>
+                <td className="px-2 py-1.5 text-right">
+                  {vsLicitado !== null ? (
+                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[10.5px] font-bold font-mono ${vsLicitado <= 0 ? 'bg-positive-500/15 text-positive-400' : 'bg-negative-500/15 text-negative-400'}`}>
+                      {vsLicitado >= 0 ? '+' : ''}{vsLicitado.toFixed(2)}%
+                    </span>
+                  ) : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px] text-base-500">
+        Vs. Licitado = (Valor Mínimo − Vl. Licitado) ÷ Vl. Licitado. Negativo (verde) = ainda tem folga pra disputar. Positivo (vermelho) = o mínimo calculado já nasce acima do que o edital estima — alerta pra renegociar o custo, revisar a margem ou não disputar esse item.
+      </p>
     </div>
   )
 }
@@ -2162,6 +2340,8 @@ export default function LicitacaoPage() {
         )}
 
         {aba === 'proposta-inicial' && <AbaCadastrarProposta bidding={bidding} />}
+
+        {aba === 'precificacao' && <AbaPrecificacao bidding={bidding} />}
 
         {aba === 'proposta' && <AbaProposta bidding={bidding} />}
 

@@ -8,6 +8,7 @@ import type {
   Client, ClientPrefeitura, Bidding, BiddingItem, FinancialAccount, Empenho, Transaction,
   Employee, Contract, Receipt, AttachedFile, AuditLog, Category, PaymentMethod, ClientDocument, BiddingChecklistItem, AtestadoTecnico, ModeloDocumento, ContractMarco, PersonalEvent,
   Platform, ClientPlatform, Opportunity, LicitaiEdital, LicitaiEditalStatus, LicitaiBusca, LicitaiBuscaFiltros,
+  PricingProfile, PricingProfileLine,
 } from '../types/domain'
 import { todayLocalISO } from './dateUtils'
 
@@ -176,6 +177,13 @@ export const fromBiddingItemRow = (r: Row<'bidding_items'>): BiddingItem => ({
   valorUnitarioLicitado: Number(r.valor_unitario_licitado),
   valorUnitarioOfertado: r.valor_unitario_ofertado !== null ? Number(r.valor_unitario_ofertado) : null,
   ganhou: r.ganhou,
+  custoUnitario: r.custo_unitario !== null ? Number(r.custo_unitario) : null,
+  valorMinimoCalculado: r.valor_minimo_calculado !== null ? Number(r.valor_minimo_calculado) : null,
+  participaPrecificacao: r.participa_precificacao,
+  pricingProfileId: r.pricing_profile_id,
+  impostosPctAplicado: r.impostos_pct_aplicado !== null ? Number(r.impostos_pct_aplicado) : null,
+  despesasPctAplicado: r.despesas_pct_aplicado !== null ? Number(r.despesas_pct_aplicado) : null,
+  margemPctAplicada: r.margem_pct_aplicada !== null ? Number(r.margem_pct_aplicada) : null,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 })
@@ -193,6 +201,13 @@ export const toBiddingItemInsert = (i: Partial<BiddingItem>, userId: string): Da
   valor_unitario_licitado: i.valorUnitarioLicitado ?? 0,
   valor_unitario_ofertado: i.valorUnitarioOfertado ?? null,
   ganhou: i.ganhou ?? false,
+  custo_unitario: i.custoUnitario ?? null,
+  valor_minimo_calculado: i.valorMinimoCalculado ?? null,
+  participa_precificacao: i.participaPrecificacao ?? true,
+  pricing_profile_id: i.pricingProfileId ?? null,
+  impostos_pct_aplicado: i.impostosPctAplicado ?? null,
+  despesas_pct_aplicado: i.despesasPctAplicado ?? null,
+  margem_pct_aplicada: i.margemPctAplicada ?? null,
 })
 
 export const fromAccountRow = (r: Row<'financial_accounts'>): FinancialAccount => ({
@@ -690,6 +705,49 @@ export const toLicitaiBuscaInsert = (
   ativo: b.ativo ?? true,
   filtros: (b.filtros ?? {}) as Json,
   ultima_execucao_em: b.ultimaExecucaoEm ?? null,
+})
+
+export const fromPricingProfileLineRow = (r: Row<'pricing_profile_lines'>): PricingProfileLine => ({
+  id: r.id,
+  profileId: r.profile_id,
+  tipo: r.tipo as PricingProfileLine['tipo'],
+  nome: r.nome,
+  percentual: Number(r.percentual),
+  ordem: r.ordem,
+})
+
+export const toPricingProfileLineInsert = (
+  l: Partial<PricingProfileLine>, profileId: string
+): Database['public']['Tables']['pricing_profile_lines']['Insert'] => ({
+  profile_id: profileId,
+  tipo: l.tipo ?? 'imposto',
+  nome: l.nome ?? '',
+  percentual: l.percentual ?? 0,
+  ordem: l.ordem ?? 0,
+})
+
+// O perfil vem do banco em duas tabelas (pricing_profiles + suas linhas em
+// pricing_profile_lines) — este mapper já recebe as linhas prontas (a query
+// busca as duas juntas com um join, ver usePricingProfiles.ts) pra devolver
+// um único PricingProfile com a lista embutida.
+export const fromPricingProfileRow = (r: Row<'pricing_profiles'>, linhas: PricingProfileLine[]): PricingProfile => ({
+  id: r.id,
+  userId: r.user_id,
+  nome: r.nome,
+  descricao: r.descricao,
+  margemPct: Number(r.margem_pct),
+  linhas,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+})
+
+export const toPricingProfileInsert = (
+  p: Partial<PricingProfile>, userId: string
+): Database['public']['Tables']['pricing_profiles']['Insert'] => ({
+  user_id: userId,
+  nome: p.nome ?? '',
+  descricao: p.descricao ?? null,
+  margem_pct: p.margemPct ?? 0,
 })
 
 export const fromModeloDocumentoRow = (r: Row<'modelos_documentos'>): ModeloDocumento => ({
