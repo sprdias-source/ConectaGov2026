@@ -367,51 +367,72 @@ export type Database = {
         Row: {
           bidding_id: string
           created_at: string
+          custo_unitario: number | null
           descricao: string
+          despesas_pct_aplicado: number | null
           ganhou: boolean
           id: string
+          impostos_pct_aplicado: number | null
           lote: string | null
           marca: string | null
+          margem_pct_aplicada: number | null
           numero_item: string
+          participa_precificacao: boolean
+          pricing_profile_id: string | null
           quantidade: number
           referencia: string | null
           unidade: string | null
           updated_at: string
           user_id: string
+          valor_minimo_calculado: number | null
           valor_unitario_licitado: number
           valor_unitario_ofertado: number | null
         }
         Insert: {
           bidding_id: string
           created_at?: string
+          custo_unitario?: number | null
           descricao: string
+          despesas_pct_aplicado?: number | null
           ganhou?: boolean
           id?: string
+          impostos_pct_aplicado?: number | null
           lote?: string | null
           marca?: string | null
+          margem_pct_aplicada?: number | null
           numero_item: string
+          participa_precificacao?: boolean
+          pricing_profile_id?: string | null
           quantidade?: number
           referencia?: string | null
           unidade?: string | null
           updated_at?: string
           user_id: string
+          valor_minimo_calculado?: number | null
           valor_unitario_licitado?: number
           valor_unitario_ofertado?: number | null
         }
         Update: {
           bidding_id?: string
           created_at?: string
+          custo_unitario?: number | null
           descricao?: string
+          despesas_pct_aplicado?: number | null
           ganhou?: boolean
           id?: string
+          impostos_pct_aplicado?: number | null
           lote?: string | null
           marca?: string | null
+          margem_pct_aplicada?: number | null
           numero_item?: string
+          participa_precificacao?: boolean
+          pricing_profile_id?: string | null
           quantidade?: number
           referencia?: string | null
           unidade?: string | null
           updated_at?: string
           user_id?: string
+          valor_minimo_calculado?: number | null
           valor_unitario_licitado?: number
           valor_unitario_ofertado?: number | null
         }
@@ -421,6 +442,13 @@ export type Database = {
             columns: ["bidding_id"]
             isOneToOne: false
             referencedRelation: "biddings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bidding_items_pricing_profile_id_fkey"
+            columns: ["pricing_profile_id"]
+            isOneToOne: false
+            referencedRelation: "pricing_profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1789,6 +1817,74 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      pricing_profiles: {
+        Row: {
+          created_at: string
+          descricao: string | null
+          id: string
+          margem_pct: number
+          nome: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          margem_pct?: number
+          nome: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          margem_pct?: number
+          nome?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      pricing_profile_lines: {
+        Row: {
+          created_at: string
+          id: string
+          nome: string
+          ordem: number
+          percentual: number
+          profile_id: string
+          tipo: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          nome: string
+          ordem?: number
+          percentual?: number
+          profile_id: string
+          tipo: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          nome?: string
+          ordem?: number
+          percentual?: number
+          profile_id?: string
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pricing_profile_lines_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "pricing_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       receipts: {
         Row: {

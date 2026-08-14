@@ -129,6 +129,42 @@ export interface BiddingItem {
   valorUnitarioLicitado: number
   valorUnitarioOfertado: number | null
   ganhou: boolean
+  // Campos da Precificação Avançada (ver PricingProfile) — custoUnitario é o
+  // que se paga ao fornecedor, distinto de valorUnitarioLicitado (o que se
+  // cobra do órgão). Os demais são "fotografados" na última aplicação de um
+  // perfil, pra sobreviver a edições/exclusões do perfil depois.
+  custoUnitario: number | null
+  valorMinimoCalculado: number | null
+  participaPrecificacao: boolean
+  pricingProfileId: string | null
+  impostosPctAplicado: number | null
+  despesasPctAplicado: number | null
+  margemPctAplicada: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+// Uma linha de imposto ou despesa dentro de um Perfil de Precificação.
+export interface PricingProfileLine {
+  id: string
+  profileId: string
+  tipo: 'imposto' | 'despesa'
+  nome: string
+  percentual: number
+  ordem: number
+}
+
+// Perfil de precificação reutilizável (inspirado na "Precificação Avançada"
+// da Licitei): Margem + uma lista de linhas de Impostos/Despesas, aplicável
+// em lote aos itens de qualquer licitação. Valor Mínimo de cada item =
+// custoUnitario ÷ ((100 − Σimpostos − Σdespesas − margemPct) ÷ 100).
+export interface PricingProfile {
+  id: string
+  userId: string
+  nome: string
+  descricao: string | null
+  margemPct: number
+  linhas: PricingProfileLine[]
   createdAt: string
   updatedAt: string
 }

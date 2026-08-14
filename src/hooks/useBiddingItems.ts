@@ -28,6 +28,29 @@ export function useBiddingItems(biddingId: string | null) {
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey })
 
+  // Aplica um Perfil de Precificação (ver usePricingProfiles.ts) aos itens
+  // marcados como "participa" na aba Precificação — UPDATE direto por id,
+  // com lista explícita de colunas (não é um replace completo como
+  // setItems): não toca em descrição/quantidade/valores licitados/ofertados
+  // de cada item, só nos campos da precificação.
+  const aplicarPrecificacao = useMutation({
+    mutationFn: async (itens: Pick<BiddingItem, 'id' | 'custoUnitario' | 'valorMinimoCalculado' | 'participaPrecificacao' | 'pricingProfileId' | 'impostosPctAplicado' | 'despesasPctAplicado' | 'margemPctAplicada'>[]) => {
+      for (const item of itens) {
+        const { error } = await supabase.from('bidding_items').update({
+          custo_unitario: item.custoUnitario,
+          valor_minimo_calculado: item.valorMinimoCalculado,
+          participa_precificacao: item.participaPrecificacao,
+          pricing_profile_id: item.pricingProfileId,
+          impostos_pct_aplicado: item.impostosPctAplicado,
+          despesas_pct_aplicado: item.despesasPctAplicado,
+          margem_pct_aplicada: item.margemPctAplicada,
+        }).eq('id', item.id)
+        if (error) throw error
+      }
+    },
+    onSuccess: invalidate,
+  })
+
   const setItems = useMutation({
     mutationFn: async (items: Partial<BiddingItem>[]) => {
       if (!user || !biddingId) throw new Error('Licitação não definida')
@@ -60,6 +83,7 @@ export function useBiddingItems(biddingId: string | null) {
     items,
     isLoading: query.isLoading,
     setItems,
+    aplicarPrecificacao,
   }
 }
 
