@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { todayLocalISO } from '../../lib/dateUtils'
 import { Search, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 import Modal from '../ui/Modal'
-import { Field, Input, Button } from '../ui/FormControls'
+import { Field, Input, Select, Textarea, Button } from '../ui/FormControls'
 import CurrencyInput from '../ui/CurrencyInput'
 import ErrorAlert from '../ui/ErrorAlert'
 import { fetchCnpjData, fetchCepData, formatCnpjMask, formatCepMask } from '../../lib/publicData'
@@ -12,7 +12,8 @@ const emptyForm: Partial<Client> = {
   name: '', cnpj: '', address: '', cep: '', bairro: '', cidade: '', inscricaoEstadual: '',
   phone: '', whatsapp: '', email: '', website: '',
   bancoNome: '', bancoAgencia: '', bancoConta: '',
-  responsavelNome: '', responsavelCpf: '', responsavelCargo: '',
+  responsavelNome: '', responsavelCpf: '', responsavelCargo: '', responsavelRg: '',
+  porteEmpresa: '', cabecalhoDeclaracao: '',
   isMensalista: false, valorMensalidade: undefined, periodoMeses: 12, diaVencimento: 10,
   dataCadastro: todayLocalISO(),
 }
@@ -193,17 +194,45 @@ export default function ClientFormModal({
               <Input value={form.bancoConta ?? ''} onChange={(e) => setForm({ ...form, bancoConta: e.target.value })} placeholder="00000-0" />
             </Field>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <Field label="Responsável Legal">
               <Input value={form.responsavelNome ?? ''} onChange={(e) => setForm({ ...form, responsavelNome: e.target.value })} placeholder="Nome completo" />
-            </Field>
-            <Field label="CPF do Responsável">
-              <Input value={form.responsavelCpf ?? ''} onChange={(e) => setForm({ ...form, responsavelCpf: e.target.value })} placeholder="000.000.000-00" />
             </Field>
             <Field label="Cargo do Responsável">
               <Input value={form.responsavelCargo ?? ''} onChange={(e) => setForm({ ...form, responsavelCargo: e.target.value })} placeholder="Ex: Sócio Administrador" />
             </Field>
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Field label="CPF do Responsável">
+              <Input value={form.responsavelCpf ?? ''} onChange={(e) => setForm({ ...form, responsavelCpf: e.target.value })} placeholder="000.000.000-00" />
+            </Field>
+            <Field label="RG do Responsável">
+              <Input value={form.responsavelRg ?? ''} onChange={(e) => setForm({ ...form, responsavelRg: e.target.value })} placeholder="Carteira de Identidade" />
+            </Field>
+          </div>
+        </div>
+
+        <div className="border-t border-base-800 pt-4">
+          <p className="text-[12px] font-bold text-base-300 mb-1">Dados para Declarações</p>
+          <p className="text-[11px] text-base-500 mb-3">Usados pela IA ao preencher os anexos de declaração do próprio edital (Anexo II, III...), na aba Checklist de cada licitação.</p>
+          <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4 mb-4">
+            <Field label="Porte da Empresa">
+              <Select value={form.porteEmpresa ?? ''} onChange={(e) => setForm({ ...form, porteEmpresa: e.target.value })}>
+                <option value="">Não informado</option>
+                <option value="Microempresa (ME)">Microempresa (ME)</option>
+                <option value="Empresa de Pequeno Porte (EPP)">Empresa de Pequeno Porte (EPP)</option>
+                <option value="Demais (Médio/Grande Porte)">Demais (Médio/Grande Porte)</option>
+              </Select>
+            </Field>
+          </div>
+          <Field label="Cabeçalho das Declarações">
+            <Textarea
+              value={form.cabecalhoDeclaracao ?? ''}
+              onChange={(e) => setForm({ ...form, cabecalhoDeclaracao: e.target.value })}
+              rows={4}
+              placeholder={'Cole aqui o cabeçalho fixo que aparece no topo das declarações assinadas deste cliente, ex:\nFHG MADEIRAS TRATADAS LTDA\nCNPJ: 37.171.712/0001-83 | EPP\nRua Exemplo, 123 - Bairro, Vacaria - RS\n(54) 0000-0000 | contato@empresa.com.br'}
+            />
+          </Field>
         </div>
 
         <Field label="Data de Cadastro">

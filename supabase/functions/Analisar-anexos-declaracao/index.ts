@@ -73,6 +73,8 @@ function montarPrompt(opts: {
   responsavelNome: string
   responsavelCpf: string
   responsavelCargo: string
+  responsavelRg: string
+  porteEmpresa: string
   orgao: string
   numeroEdital: string
   municipio: string
@@ -87,16 +89,18 @@ function montarPrompt(opts: {
 Para CADA anexo-modelo de declaração encontrado, devolva:
 - "fonte": de onde veio, no formato "Anexo <número/letra> do edital" (ex: "Anexo II do edital"). Se o edital não numerar o anexo, descreva a seção onde está.
 - "titulo": o título da declaração tal como está no edital (ex: "Declaração de Atendimento aos Requisitos de Habilitação").
-- "texto": o texto COMPLETO do modelo, preenchido com os dados abaixo no lugar dos campos em branco/colchetes/lacunas do modelo original — preserve a redação jurídica do edital EXATAMENTE como está, mudando só os dados de identificação (nome da empresa, CNPJ, endereço, representante legal) e a referência ao edital/órgão. Nunca invente ou altere o conteúdo da declaração em si. Inclua local e data de emissão no rodapé (use a cidade da empresa e a data de hoje) e um campo de assinatura com o nome do representante legal.
+- "texto": o texto COMPLETO do modelo, preenchido com os dados abaixo no lugar dos campos em branco/colchetes/lacunas do modelo original — preserve a redação jurídica do edital EXATAMENTE como está, mudando só os dados de identificação (nome da empresa, CNPJ, endereço, representante legal, RG/CPF, porte) e a referência ao edital/órgão. Nunca invente ou altere o conteúdo da declaração em si. NÃO inclua cabeçalho/letterhead da empresa no início do texto (isso é adicionado à parte). No rodapé, inclua o local e a data de emissão usando SEMPRE a cidade da EMPRESA/CLIENTE listada abaixo — NUNCA a cidade do órgão licitante, mesmo que o modelo do edital venha pré-preenchido com a cidade do órgão — e a data de hoje, seguido de um campo de assinatura com o nome do representante legal.
 - "itensNumeroEdital": uma lista com os valores EXATOS de "numeroEdital" (copiados tal como aparecem na lista abaixo, sem alterar) dos itens do checklist que ESSA declaração específica resolve. Um mesmo anexo pode resolver vários itens de uma vez. Se não conseguir identificar com segurança, devolva uma lista vazia — nunca invente um numeroEdital que não esteja na lista.
 
 DADOS PRA PREENCHER:
 - Empresa: ${opts.clientName}
 - CNPJ: ${opts.clientCnpj || '[CNPJ não informado]'}
 - Endereço: ${opts.clientAddress || '[endereço não informado]'}
-- Cidade da empresa: ${opts.clientCidade || '[cidade não informada]'}
+- Cidade da empresa (usar SEMPRE esta cidade no local/data de emissão, nunca a do órgão): ${opts.clientCidade || '[cidade não informada]'}
+- Porte da empresa: ${opts.porteEmpresa || '[porte não informado]'}
 - Representante legal: ${opts.responsavelNome || '[representante não informado]'}
 - CPF do representante: ${opts.responsavelCpf || '[CPF não informado]'}
+- RG do representante: ${opts.responsavelRg || '[RG não informado]'}
 - Cargo do representante: ${opts.responsavelCargo || '[cargo não informado]'}
 - Órgão licitante: ${opts.orgao || '[órgão não informado]'}
 - Número do edital: ${opts.numeroEdital || '[número não informado]'}
@@ -227,7 +231,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: client } = await supabase
       .from('clients')
-      .select('name, cnpj, address, bairro, cidade, responsavel_nome, responsavel_cpf, responsavel_cargo')
+      .select('name, cnpj, address, bairro, cidade, responsavel_nome, responsavel_cpf, responsavel_cargo, responsavel_rg, porte_empresa, cabecalho_declaracao')
       .eq('id', bidding.client_id)
       .maybeSingle()
 
@@ -260,6 +264,8 @@ Deno.serve(async (req: Request) => {
       responsavelNome: client?.responsavel_nome ?? '',
       responsavelCpf: client?.responsavel_cpf ?? '',
       responsavelCargo: client?.responsavel_cargo ?? '',
+      responsavelRg: client?.responsavel_rg ?? '',
+      porteEmpresa: client?.porte_empresa ?? '',
       orgao: bidding.orgao ?? '',
       numeroEdital: bidding.numero_edital ?? '',
       municipio: bidding.municipio ?? '',
@@ -314,12 +320,20 @@ Deno.serve(async (req: Request) => {
         .map((i: ChecklistItemRef) => [i.numero_edital, i.id])
     )
 
+    // O cabeçalho/letterhead do cliente (nome em destaque, CNPJ, porte,
+    // endereço, contato) é fixo por cliente e não muda de uma declaração
+    // pra outra — em vez de pedir pra IA reproduzir a formatação toda vez
+    // (arriscando variar), colamos o texto salvo no cadastro do cliente na
+    // frente de cada anexo gerado, de forma determinística.
+    const cabecalho = client?.cabecalho_declaracao?.trim()
+
     let criados = 0
     for (const a of anexosEncontrados) {
       if (!a.titulo || !a.texto) continue
+      const texto = cabecalho ? `${cabecalho}\n\n${a.texto}` : a.texto
       const { data: novoAnexo, error: insertError } = await supabase
         .from('bidding_declaracao_anexos')
-        .insert({ user_id: user.id, bidding_id: biddingId, fonte: a.fonte || 'Anexo do edital', titulo: a.titulo, texto: a.texto, status: 'rascunho' })
+        .insert({ user_id: user.id, bidding_id: biddingId, fonte: a.fonte || 'Anexo do edital', titulo: a.titulo, texto, status: 'rascunho' })
         .select('id')
         .single()
       if (insertError || !novoAnexo) continue

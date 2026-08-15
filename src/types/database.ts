@@ -897,6 +897,9 @@ export type Database = {
           responsavel_cargo: string | null
           responsavel_cpf: string | null
           responsavel_nome: string | null
+          responsavel_rg: string | null
+          porte_empresa: string | null
+          cabecalho_declaracao: string | null
           updated_at: string
           user_id: string
           valor_mensalidade: number | null
@@ -928,6 +931,9 @@ export type Database = {
           responsavel_cargo?: string | null
           responsavel_cpf?: string | null
           responsavel_nome?: string | null
+          responsavel_rg?: string | null
+          porte_empresa?: string | null
+          cabecalho_declaracao?: string | null
           updated_at?: string
           user_id: string
           valor_mensalidade?: number | null
@@ -959,6 +965,9 @@ export type Database = {
           responsavel_cargo?: string | null
           responsavel_cpf?: string | null
           responsavel_nome?: string | null
+          responsavel_rg?: string | null
+          porte_empresa?: string | null
+          cabecalho_declaracao?: string | null
           updated_at?: string
           user_id?: string
           valor_mensalidade?: number | null
