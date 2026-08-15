@@ -21,6 +21,7 @@ import { useBiddingChecklist, calcularHabilitacao, statusItemChecklist, arquivoR
 import { useBuscaCertidaoAutomatica } from '../hooks/useBuscaCertidaoAutomatica'
 import AcoesDocumentoManual from '../components/documentos/AcoesDocumentoManual'
 import DownloadDocumentosModal from '../components/licitacao/DownloadDocumentosModal'
+import DeclaracaoAnexosPanel from '../components/licitacao/DeclaracaoAnexosPanel'
 import { useBiddingAnalysis } from '../hooks/useBiddingAnalysis'
 import { useAuditLogPorEntidade } from '../hooks/useAuditLog'
 import { useAnaliseJuridicaEdital, useLimparAnaliseJuridica } from '../hooks/useAnaliseJuridicaEdital'
@@ -2062,6 +2063,7 @@ export default function LicitacaoPage() {
         {aba === 'checklist' && (
           <>
             {painelStatus}
+            <DeclaracaoAnexosPanel bidding={bidding} checklistItems={items} />
             <div>
               <div className="flex items-center justify-between mb-2">
                 <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">

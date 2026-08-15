@@ -363,6 +363,99 @@ export type Database = {
           },
         ]
       }
+      bidding_declaracao_anexos: {
+        Row: {
+          attached_file_id: string | null
+          bidding_id: string
+          created_at: string
+          enviado_em: string | null
+          fonte: string
+          id: string
+          status: string
+          texto: string
+          titulo: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attached_file_id?: string | null
+          bidding_id: string
+          created_at?: string
+          enviado_em?: string | null
+          fonte: string
+          id?: string
+          status?: string
+          texto: string
+          titulo: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attached_file_id?: string | null
+          bidding_id?: string
+          created_at?: string
+          enviado_em?: string | null
+          fonte?: string
+          id?: string
+          status?: string
+          texto?: string
+          titulo?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bidding_declaracao_anexos_bidding_id_fkey"
+            columns: ["bidding_id"]
+            isOneToOne: false
+            referencedRelation: "biddings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bidding_declaracao_anexos_attached_file_id_fkey"
+            columns: ["attached_file_id"]
+            isOneToOne: false
+            referencedRelation: "attached_files"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bidding_declaracao_anexo_itens: {
+        Row: {
+          anexo_id: string
+          checklist_item_id: string
+          created_at: string
+          id: string
+        }
+        Insert: {
+          anexo_id: string
+          checklist_item_id: string
+          created_at?: string
+          id?: string
+        }
+        Update: {
+          anexo_id?: string
+          checklist_item_id?: string
+          created_at?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bidding_declaracao_anexo_itens_anexo_id_fkey"
+            columns: ["anexo_id"]
+            isOneToOne: false
+            referencedRelation: "bidding_declaracao_anexos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bidding_declaracao_anexo_itens_checklist_item_id_fkey"
+            columns: ["checklist_item_id"]
+            isOneToOne: false
+            referencedRelation: "bidding_checklist_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bidding_items: {
         Row: {
           bidding_id: string
