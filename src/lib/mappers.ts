@@ -8,7 +8,7 @@ import type {
   Client, ClientPrefeitura, Bidding, BiddingItem, FinancialAccount, Empenho, Transaction,
   Employee, Contract, Receipt, AttachedFile, AuditLog, Category, PaymentMethod, ClientDocument, BiddingChecklistItem, AtestadoTecnico, ModeloDocumento, ContractMarco, PersonalEvent,
   Platform, ClientPlatform, Opportunity, LicitaiEdital, LicitaiEditalStatus, LicitaiBusca, LicitaiBuscaFiltros,
-  PricingProfile, PricingProfileLine,
+  PricingProfile, PricingProfileLine, DeclaracaoAnexo,
 } from '../types/domain'
 import { todayLocalISO } from './dateUtils'
 
@@ -464,6 +464,37 @@ export const toBiddingChecklistItemInsert = (
   observacoes: i.observacoes ?? null,
   prazo: i.prazo ?? null,
   responsavel_nome: i.responsavelNome ?? null,
+})
+
+// itensChecklistIds vem de bidding_declaracao_anexo_itens (join à parte) —
+// este mapper já recebe a lista pronta, mesma ideia do fromPricingProfileRow
+// com as linhas do perfil.
+export const fromDeclaracaoAnexoRow = (r: Row<'bidding_declaracao_anexos'>, itensChecklistIds: string[]): DeclaracaoAnexo => ({
+  id: r.id,
+  userId: r.user_id,
+  biddingId: r.bidding_id,
+  fonte: r.fonte,
+  titulo: r.titulo,
+  texto: r.texto,
+  status: r.status as DeclaracaoAnexo['status'],
+  enviadoEm: r.enviado_em,
+  attachedFileId: r.attached_file_id,
+  itensChecklistIds,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+})
+
+export const toDeclaracaoAnexoInsert = (
+  a: Partial<DeclaracaoAnexo>, userId: string
+): Database['public']['Tables']['bidding_declaracao_anexos']['Insert'] => ({
+  user_id: userId,
+  bidding_id: a.biddingId ?? '',
+  fonte: a.fonte ?? '',
+  titulo: a.titulo ?? '',
+  texto: a.texto ?? '',
+  status: a.status ?? 'rascunho',
+  enviado_em: a.enviadoEm ?? null,
+  attached_file_id: a.attachedFileId ?? null,
 })
 
 export const fromPersonalEventRow = (r: Row<'personal_events'>): PersonalEvent => ({

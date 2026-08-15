@@ -284,7 +284,7 @@ export interface Receipt {
   createdAt: string
 }
 
-export type FileCategory = 'Edital' | 'Termo de Referência' | 'Contrato' | 'Recibo' | 'Certidão' | 'Outro' | 'Checklist' | 'Proposta' | 'Proposta Readequada'
+export type FileCategory = 'Edital' | 'Termo de Referência' | 'Contrato' | 'Recibo' | 'Certidão' | 'Outro' | 'Checklist' | 'Proposta' | 'Proposta Readequada' | 'Declaração'
 export type FileEntityType = 'licitacao' | 'contrato' | 'recibo' | 'cliente' | 'funcionario' | 'empenho' | 'oportunidade'
 
 export interface AttachedFile {
@@ -330,6 +330,33 @@ export interface BiddingChecklistItem {
   observacoes: string | null
   prazo: string | null
   responsavelNome: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type DeclaracaoAnexoStatus = 'rascunho' | 'enviado' | 'assinado'
+
+// Anexo-modelo de declaração extraído do próprio edital pela IA (Anexo II,
+// III etc. — "MODELO DE DECLARAÇÃO...") e já preenchido com os dados do
+// cliente. Como a empresa representa outras empresas nas licitações, a
+// declaração precisa da assinatura do responsável legal DO CLIENTE — por
+// isso o fluxo de 3 passos: rascunho (texto ainda editável) -> enviado ao
+// cliente (texto travado, aguardando devolução assinada) -> assinado e
+// anexado (attachedFileId preenchido). Só no passo 3 os itens do checklist
+// em itensChecklistIds marcam como atendidos — um mesmo anexo pode
+// resolver vários itens de uma vez (ex: um único anexo cobrindo as
+// alíneas 10.7.5 a) até e)).
+export interface DeclaracaoAnexo {
+  id: string
+  userId: string
+  biddingId: string
+  fonte: string
+  titulo: string
+  texto: string
+  status: DeclaracaoAnexoStatus
+  enviadoEm: string | null
+  attachedFileId: string | null
+  itensChecklistIds: string[]
   createdAt: string
   updatedAt: string
 }
