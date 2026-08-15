@@ -55,6 +55,9 @@ export interface Client {
   responsavelNome: string | null
   responsavelCpf: string | null
   responsavelCargo: string | null
+  responsavelRg: string | null
+  porteEmpresa: string | null
+  cabecalhoDeclaracao: string | null
   isMensalista: boolean
   valorMensalidade: number | null
   periodoMeses: number | null
