@@ -35,6 +35,15 @@ function formatarData(dataIso: string | null | undefined): string {
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }).toUpperCase()
 }
 
+// bidding.dias_validade_proposta é texto livre — às vezes já vem com a
+// palavra "dias" (ex: "90 (noventa) dias"), às vezes não (ex: "60
+// (sessenta)"). Só acrescenta "dias" quando ainda não tem, pra nunca duplicar
+// ("90 (noventa) dias dias") nem nunca faltar ("60 (sessenta)" sem unidade).
+function formatarValidadeProposta(valor: string | null | undefined): string {
+  const texto = (valor ?? '60 (sessenta)').trim()
+  return /\bdias?\b/i.test(texto) ? texto : `${texto} dias`
+}
+
 // Ordenação natural (mesmo comparador usado no frontend, src/lib/numberParsing.ts)
 // — evita que "10" venha antes de "2" numa ordenação puramente lexicográfica.
 function compararNumeroItem(a: string, b: string): number {
@@ -149,7 +158,7 @@ Deno.serve(async (req) => {
       modalidade: escapeXml(bidding.modalidade),
       numero_edital: escapeXml(bidding.numero_edital ?? ''),
       orgao: escapeXml(bidding.orgao),
-      dias_validade: escapeXml(bidding.dias_validade_proposta ?? '60 (sessenta)'),
+      dias_validade: escapeXml(formatarValidadeProposta(bidding.dias_validade_proposta)),
 
       cliente_nome: escapeXml(client.name),
       cliente_cnpj: escapeXml(client.cnpj ?? ''),
