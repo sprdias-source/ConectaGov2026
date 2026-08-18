@@ -4,17 +4,18 @@ import {
   ArrowLeft, FileText, Upload, Plus, Trash2, CheckCircle2, Circle, Download, Eye,
   AlertCircle, Loader2, Sparkles, Award, Check, History, ChevronDown, ChevronUp,
   ClipboardList, Gavel, Wallet, Send, CircleDot, FileSignature, Info, Activity, RefreshCw, Wand2,
-  Paperclip, FolderDown, X, FileSpreadsheet, ScrollText, Copy, Printer, Calculator,
+  Paperclip, FolderDown, X, FileSpreadsheet, ScrollText, Copy, Printer, Calculator, Ban, RotateCcw,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { fromBiddingItemRow, toBiddingItemInsert } from '../lib/mappers'
 import { useAuth } from '../hooks/useAuth'
-import { Button, Input, Select } from '../components/ui/FormControls'
+import { Button, Input, Select, Textarea } from '../components/ui/FormControls'
 import { PageHeader, Card } from '../components/ui/Primitives'
 import { SkeletonTableRows, SkeletonList } from '../components/ui/Skeleton'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import PdfViewerModal from '../components/ui/PdfViewerModal'
+import Modal from '../components/ui/Modal'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useAttachedFiles } from '../hooks/useAttachedFiles'
 import { useBiddingChecklist, calcularHabilitacao, statusItemChecklist, arquivoResolvidoDoItem, extrairNumeroEdital } from '../hooks/useBiddingChecklist'
@@ -1697,7 +1698,7 @@ export default function LicitacaoPage() {
   const clientName = bidding ? (clients.find((c) => c.id === bidding.clientId)?.name ?? 'Cliente removido') : ''
 
   const { files: anexos, uploadFile: uploadAnexo, uploadProgress, deleteFile: deleteAnexo, getDownloadUrl: getAnexoUrl } = useAttachedFiles('licitacao', bidding?.id)
-  const { items, addItem, updateItem, deleteItem, limparItensIA, addItensEmLote } = useBiddingChecklist(bidding?.id)
+  const { items, addItem, updateItem, deleteItem, limparItensIA, addItensEmLote, marcarNaoAplicavel, reverterNaoAplicavel } = useBiddingChecklist(bidding?.id)
   const { documents: clientDocs, uploadAndSave: uploadClientDoc } = useClientDocuments(bidding?.clientId)
   const { atestados, addAtestado } = useAtestados(bidding?.clientId)
   const clienteDaLicitacao = clients.find((c) => c.id === bidding?.clientId)
@@ -1753,6 +1754,8 @@ export default function LicitacaoPage() {
   const [gerandoReadequada, setGerandoReadequada] = useState(false)
   const [erroReadequada, setErroReadequada] = useState<string | null>(null)
   const [confirmandoExclusaoEdital, setConfirmandoExclusaoEdital] = useState(false)
+  const [itemMarcandoNaoAplicavel, setItemMarcandoNaoAplicavel] = useState<BiddingChecklistItem | null>(null)
+  const [justificativaNaoAplicavel, setJustificativaNaoAplicavel] = useState('')
 
   if (!bidding) {
     return (
@@ -1983,6 +1986,19 @@ export default function LicitacaoPage() {
 
   const statusItem = (item: BiddingChecklistItem) => statusItemChecklist(item, clientDocs)
 
+  const handleAbrirNaoAplicavel = (item: BiddingChecklistItem) => {
+    setJustificativaNaoAplicavel('')
+    setItemMarcandoNaoAplicavel(item)
+  }
+
+  const handleConfirmarNaoAplicavel = () => {
+    if (!itemMarcandoNaoAplicavel || !justificativaNaoAplicavel.trim()) return
+    marcarNaoAplicavel.mutate(
+      { item: itemMarcandoNaoAplicavel, justificativa: justificativaNaoAplicavel.trim() },
+      { onSuccess: () => setItemMarcandoNaoAplicavel(null) }
+    )
+  }
+
   const {
     status: statusGeral,
     total: totalObrigatorios,
@@ -2205,6 +2221,11 @@ export default function LicitacaoPage() {
                       {atendidosObrigatorios}/{totalObrigatorios} obrigatórios atendidos
                     </span>
                   )}
+                  {items.some((i) => i.naoAplicavel) && (
+                    <span className="ml-2 inline-flex items-center gap-1 text-[10.5px] font-semibold normal-case text-base-500 bg-base-800 border border-base-700 rounded-full px-2 py-0.5">
+                      <Ban className="w-2.5 h-2.5" /> {items.filter((i) => i.naoAplicavel).length} não aplicável
+                    </span>
+                  )}
                 </p>
                 {podeEditar && (
                   <button onClick={() => setShowNovoItem((v) => !v)} className="flex items-center gap-1 text-[11px] text-accent-300 hover:text-accent-200 transition">
@@ -2274,27 +2295,33 @@ export default function LicitacaoPage() {
                     const aberto = itemAbertoId === item.id
                     const enviandoEste = enviandoItemId === item.id
                     return (
-                      <div key={item.id} className="bg-base-850/60 border border-base-800 rounded-lg px-3 py-2.5">
+                      <div key={item.id} className={`bg-base-850/60 border border-base-800 rounded-lg px-3 py-2.5 ${item.naoAplicavel ? 'opacity-60' : ''}`}>
                         <div className="flex items-start gap-3">
                           <div className="pt-0.5 shrink-0 flex">
-                            {status === 'atendido' && (
-                              podeEditar && somenteManual ? (
-                                <button onClick={() => updateItem.mutate({ ...item, atendido: false })} title="Marcar como pendente">
-                                  <CheckCircle2 className="w-4 h-4 text-positive-400 hover:text-positive-300 transition" />
-                                </button>
-                              ) : (
-                                <CheckCircle2 className="w-4 h-4 text-positive-400" />
-                              )
-                            )}
-                            {status === 'vencendo' && <AlertCircle className="w-4 h-4 text-warning-400" />}
-                            {status === 'faltando' && (
-                              podeEditar && somenteManual ? (
-                                <button onClick={() => updateItem.mutate({ ...item, atendido: true })} title="Marcar como atendido">
-                                  <Circle className="w-4 h-4 text-base-600 hover:text-base-400 transition" />
-                                </button>
-                              ) : (
-                                <Circle className="w-4 h-4 text-base-700" />
-                              )
+                            {item.naoAplicavel ? (
+                              <Ban className="w-4 h-4 text-base-500" />
+                            ) : (
+                              <>
+                                {status === 'atendido' && (
+                                  podeEditar && somenteManual ? (
+                                    <button onClick={() => updateItem.mutate({ ...item, atendido: false })} title="Marcar como pendente">
+                                      <CheckCircle2 className="w-4 h-4 text-positive-400 hover:text-positive-300 transition" />
+                                    </button>
+                                  ) : (
+                                    <CheckCircle2 className="w-4 h-4 text-positive-400" />
+                                  )
+                                )}
+                                {status === 'vencendo' && <AlertCircle className="w-4 h-4 text-warning-400" />}
+                                {status === 'faltando' && (
+                                  podeEditar && somenteManual ? (
+                                    <button onClick={() => updateItem.mutate({ ...item, atendido: true })} title="Marcar como atendido">
+                                      <Circle className="w-4 h-4 text-base-600 hover:text-base-400 transition" />
+                                    </button>
+                                  ) : (
+                                    <Circle className="w-4 h-4 text-base-700" />
+                                  )
+                                )}
+                              </>
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
@@ -2308,7 +2335,11 @@ export default function LicitacaoPage() {
                             </p>
                             <p className="text-[10px] text-base-500">
                               {item.categoria}
-                              {item.obrigatorio && <span className="text-warning-400 ml-1.5">· obrigatório</span>}
+                              {item.naoAplicavel ? (
+                                <span className="ml-1.5 font-semibold">· não aplicável</span>
+                              ) : (
+                                item.obrigatorio && <span className="text-warning-400 ml-1.5">· obrigatório</span>
+                              )}
                               {tipoConhecido && (
                                 <span className="ml-1.5 text-accent-400">· certidão {CERT_CONFIG[tipoConhecido]?.label.split(' — ')[0]}</span>
                               )}
@@ -2326,7 +2357,7 @@ export default function LicitacaoPage() {
                                 <Eye className="w-3.5 h-3.5" />
                               </button>
                             )}
-                            {podeEditar && (
+                            {podeEditar && !item.naoAplicavel && (
                               <button
                                 onClick={() => handleAbrirItem(item)}
                                 title={arquivo ? 'Reenviar / substituir documento' : tipoConhecido ? 'Buscar / enviar certidão' : ehAtestado ? 'Salvar atestado' : 'Enviar documento'}
@@ -2341,12 +2372,38 @@ export default function LicitacaoPage() {
                               </button>
                             )}
                             {podeEditar && (
+                              item.naoAplicavel ? (
+                                <button
+                                  onClick={() => reverterNaoAplicavel.mutate(item)}
+                                  title="Reverter — voltar a exigir este item"
+                                  className="p-1.5 text-accent-300 hover:text-accent-200 hover:bg-base-800 rounded transition"
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleAbrirNaoAplicavel(item)}
+                                  title="Marcar como não aplicável"
+                                  className="p-1.5 text-base-500 hover:text-base-300 hover:bg-base-800 rounded transition"
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                </button>
+                              )
+                            )}
+                            {podeEditar && (
                               <button onClick={() => deleteItem.mutate(item)} title="Excluir item" className="p-1.5 text-base-500 hover:text-negative-400 hover:bg-base-800 rounded transition">
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             )}
                           </div>
                         </div>
+
+                        {item.naoAplicavel && item.justificativaNaoAplicavel && (
+                          <p className="text-[10.5px] text-base-500 mt-1.5 pl-7 flex items-start gap-1.5">
+                            <FileText className="w-3 h-3 shrink-0 mt-0.5" />
+                            <span><span className="font-semibold text-base-400">Motivo:</span> {item.justificativaNaoAplicavel}</span>
+                          </p>
+                        )}
 
                         {arquivo && (
                           <p className="text-[10.5px] text-base-500 mt-1.5 pl-7 flex items-center gap-1 truncate">
@@ -2702,6 +2759,46 @@ export default function LicitacaoPage() {
           handleEnviarCertidao(item, file)
         }}
       />
+
+      <Modal
+        open={!!itemMarcandoNaoAplicavel}
+        onClose={() => setItemMarcandoNaoAplicavel(null)}
+        title="Marcar item como não aplicável"
+      >
+        <div className="flex flex-col gap-3">
+          <p className="text-[12px] text-base-400">
+            Use quando o edital lista uma exigência alternativa (ex: por natureza jurídica) que não vale pra esta empresa. O item continua no checklist, mas sai da contagem de obrigatórios — se precisar, dá pra reverter a qualquer momento.
+          </p>
+          {itemMarcandoNaoAplicavel && (
+            <div className="bg-base-850 border border-base-700 rounded-lg px-3 py-2.5 text-[12px] text-base-300">
+              {itemMarcandoNaoAplicavel.numeroEdital && (
+                <span className="font-mono text-[10.5px] font-bold text-accent-300 bg-accent-500/10 rounded px-1.5 py-0.5 mr-1.5">
+                  {itemMarcandoNaoAplicavel.numeroEdital}
+                </span>
+              )}
+              {itemMarcandoNaoAplicavel.descricao}
+            </div>
+          )}
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Motivo (fica registrado no checklist)</label>
+            <Textarea
+              value={justificativaNaoAplicavel}
+              onChange={(e) => setJustificativaNaoAplicavel(e.target.value)}
+              rows={4}
+              placeholder="Ex: Não aplicável — a empresa não se enquadra como empresário individual; é sociedade empresária limitada."
+            />
+            <p className="text-[11px] text-base-500 mt-1">
+              Esse texto substitui o pedido de documento nesse item. Se for pedido em diligência, é isso que explica por que não tem anexo aqui.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="secondary" onClick={() => setItemMarcandoNaoAplicavel(null)}>Cancelar</Button>
+            <Button onClick={handleConfirmarNaoAplicavel} disabled={!justificativaNaoAplicavel.trim() || marcarNaoAplicavel.isPending}>
+              <Ban className="w-3.5 h-3.5" /> {marcarNaoAplicavel.isPending ? 'Salvando...' : 'Confirmar Não Aplicável'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

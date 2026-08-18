@@ -330,6 +330,8 @@ export interface BiddingChecklistItem {
   // pra itens do tipo "atestado" resolvidos direto pelo checklist.
   atestadoId: string | null
   origem: ChecklistItemOrigem
+  naoAplicavel: boolean
+  justificativaNaoAplicavel: string | null
   observacoes: string | null
   prazo: string | null
   responsavelNome: string | null
