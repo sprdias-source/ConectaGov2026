@@ -10,6 +10,11 @@
 // G Modelo | H Marca/Fabricante | I ANVISA | J Descrição detalhada |
 // K Valor unitário | L Valor total
 
+export const COL_PROCESSO = 0
+export const COL_ID = 1
+export const COL_LOTE = 2
+export const COL_ITEM = 3
+export const COL_PRODUTO = 4
 export const COL_QUANTIDADE = 5
 export const COL_MODELO = 6
 export const COL_MARCA = 7
@@ -85,6 +90,13 @@ export function textoParaBlobLatin1(texto: string): Blob {
   const bytes = new Uint8Array(texto.length)
   for (let i = 0; i < texto.length; i++) bytes[i] = texto.charCodeAt(i) & 0xff
   return new Blob([bytes], { type: 'text/csv' })
+}
+
+// Caminho inverso de textoParaBlobLatin1 — usado pra reler um modelo do
+// Portal já salvo no Storage (mesma codificação ISO-8859-1 do arquivo
+// original, então TextDecoder nativo do navegador dá conta sozinho).
+export function bufferParaTextoLatin1(buffer: ArrayBuffer): string {
+  return new TextDecoder('iso-8859-1').decode(buffer)
 }
 
 export function formatarNumeroPtBR(valor: number): string {

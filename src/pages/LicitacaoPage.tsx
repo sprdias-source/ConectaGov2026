@@ -40,7 +40,10 @@ import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import BiddingItemsEditor from '../components/cadastros/BiddingItemsEditor'
-import { stringifyCsvPortal, textoParaBlobLatin1, formatarNumeroPtBR, HEADER_PORTAL_COMPRAS } from '../lib/csvPortalCompras'
+import {
+  parseCsvPortal, stringifyCsvPortal, textoParaBlobLatin1, bufferParaTextoLatin1, formatarNumeroPtBR, HEADER_PORTAL_COMPRAS,
+  COL_PROCESSO, COL_ID, COL_LOTE, COL_ITEM, COL_PRODUTO, COL_QUANTIDADE, COL_MODELO, COL_MARCA, COL_ANVISA, COL_DESCRICAO, COL_VALOR_UNITARIO, COL_VALOR_TOTAL, TOTAL_COLUNAS,
+} from '../lib/csvPortalCompras'
 import { parseFlexibleNumber, compararNumeroItem } from '../lib/numberParsing'
 import { mapearCamposDaAnalise, mapearItensDaAnalise, somarValorLicitado, mensagemAmigavelErroAnalise } from '../lib/analiseEdital'
 import { useToast } from '../hooks/useToast'
@@ -444,105 +447,107 @@ function HistoricoVersoes({ biddingId }: { biddingId: string }) {
 
 // Cadastro da PROPOSTA INICIAL — a que sobe no Portal de Compras Públicas
 // ANTES da sessão de disputa começar, diferente da Proposta Readequada
-// (AbaProposta logo abaixo), que é o valor final depois de ganhar. O
-// cabeçalho exigido pelo Portal (HEADER_PORTAL_COMPRAS) é fixo e já
-// conhecido — não depende de enviar nenhum arquivo-modelo: a tabela é
-// digitada direto aqui, pré-preenchida com o que o sistema já sabe da
-// licitação (Item/Produto/Quantidade/Descrição/Valor de referência), e o
-// que só o Portal sabe (ID, Lote) fica em branco pro usuário digitar.
-type LinhaProposta = {
-  processo: string
-  id: string
-  lote: string
-  item: string
-  produto: string
-  quantidade: string
-  modelo: string
-  marca: string
-  anvisa: string
-  descricao: string
-  valorUnitario: string
-}
+// (AbaProposta logo abaixo), que é o valor final depois de ganhar.
+//
+// O modelo que o Portal gera pra cada processo já vem com as colunas A-F
+// (Processo, ID, Lote, Item, Produto, Quantidade) preenchidas e marcadas
+// "Não edite" — só o Portal sabe esses valores, então a única forma segura
+// de não estragar o arquivo é nunca reconstruir essas colunas: parte da
+// linha ORIGINAL do modelo (as 12 colunas, na ordem exata) e troca só G-L.
+// Como o modelo não muda entre exportações da mesma licitação, ele é
+// salvo uma vez (useAttachedFiles, categoria 'Modelo Portal Compras') e
+// reaproveitado nas exportações seguintes.
+const CATEGORIA_MODELO_PORTAL = 'Modelo Portal Compras' as const
 
-function linhaPropostaDoItem(bidding: Bidding, item: BiddingItem, doPortal?: { id: string; lote: string }): LinhaProposta {
+type EdicaoLinhaPortal = { modelo: string; marca: string; anvisa: string; descricao: string; valorUnitario: string }
+
+function edicaoLinhaPadrao(linhaModelo: string[], itemPorNumero: Map<string, BiddingItem>): EdicaoLinhaPortal {
+  const item = itemPorNumero.get(linhaModelo[COL_ITEM])
   return {
-    processo: bidding.processo ?? bidding.numeroEdital ?? '',
-    id: doPortal?.id ?? '',
-    lote: doPortal?.lote ?? '',
-    item: item.numeroItem,
-    produto: item.descricao,
-    quantidade: String(item.quantidade),
     modelo: '',
-    marca: item.marca ?? '',
+    marca: item?.marca ?? '',
     anvisa: '',
-    descricao: `${item.descricao} Conforme edital`,
-    valorUnitario: formatarNumeroPtBR(item.valorUnitarioLicitado),
+    descricao: `${linhaModelo[COL_PRODUTO]} Conforme edital`,
+    valorUnitario: item ? formatarNumeroPtBR(item.valorUnitarioLicitado) : '',
   }
 }
 
 function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
-  const { items, isLoading } = useBiddingItemsDaLicitacao(bidding.id)
-  const { analysis } = useBiddingAnalysis(bidding.id)
+  const { items, isLoading: isLoadingItems } = useBiddingItemsDaLicitacao(bidding.id)
   const { nivel } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivel === 'edicao'
+  const { showToast } = useToast()
+  const { files: anexos, isLoading: isLoadingAnexos, uploadFile, deleteFile } = useAttachedFiles('licitacao', bidding.id)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [enviandoModelo, setEnviandoModelo] = useState(false)
 
-  // ID e Lote geralmente já aparecem na própria tabela de itens do edital
-  // (o Portal costuma gerar o PDF do edital com os mesmos números que
-  // depois aparecem no CSV de proposta) — quando a Análise de Edital por
-  // IA identificou isso, cruza pelo número do item pra pré-preencher em
-  // vez de deixar em branco.
-  const analise = (analysis?.analise ?? null) as AnaliseEdital | null
-  const portalPorNumeroItem = useMemo(() => {
-    const mapa = new Map<string, { id: string; lote: string }>()
-    analise?.itens?.forEach((it) => {
-      const numero = it.numero != null ? String(it.numero) : null
-      if (!numero) return
-      mapa.set(numero, {
-        id: it.idPortal != null ? String(it.idPortal) : '',
-        lote: it.lote != null ? String(it.lote) : '',
-      })
-    })
-    return mapa
-  }, [analise])
+  const modeloArquivo = anexos.find((f) => f.category === CATEGORIA_MODELO_PORTAL) ?? null
 
-  const [linhasProposta, setLinhasProposta] = useState<LinhaProposta[]>([])
-  // Preenche a tabela sozinha com os itens da licitação assim que eles
-  // carregam — só uma vez por licitação, pra não sobrescrever edições já
-  // feitas em toda atualização da tela (ajuste de estado durante o
-  // render, comparando com um marcador, em vez de useEffect).
-  const [carregadaPara, setCarregadaPara] = useState<string | null>(null)
-  if (!isLoading && carregadaPara !== bidding.id) {
-    setLinhasProposta(items.map((item) => linhaPropostaDoItem(bidding, item, portalPorNumeroItem.get(item.numeroItem))))
-    setCarregadaPara(bidding.id)
+  const modeloQuery = useQuery({
+    queryKey: ['modelo-portal-compras-conteudo', modeloArquivo?.id],
+    enabled: !!modeloArquivo,
+    queryFn: async () => {
+      const { data, error } = await supabase.storage.from('client-documents').createSignedUrl(modeloArquivo!.storagePath, 300)
+      if (error || !data) throw new Error('Não foi possível ler o modelo salvo.')
+      const res = await fetch(data.signedUrl)
+      if (!res.ok) throw new Error('Não foi possível baixar o modelo salvo.')
+      const texto = bufferParaTextoLatin1(await res.arrayBuffer())
+      // Descarta linhas que não têm as 12 colunas (ex: quebra de linha
+      // sobrando no fim do arquivo) e o cabeçalho, sobrando só as linhas
+      // de item de verdade.
+      return parseCsvPortal(texto).filter((l) => l.length === TOTAL_COLUNAS).slice(1)
+    },
+  })
+
+  const linhasModelo = useMemo(() => modeloQuery.data ?? [], [modeloQuery.data])
+  const itemPorNumero = useMemo(() => new Map(items.map((i) => [i.numeroItem, i])), [items])
+
+  const [edicoes, setEdicoes] = useState<EdicaoLinhaPortal[]>([])
+  // Preenche os campos editáveis (G-L) sozinho assim que o modelo carrega
+  // — só uma vez por arquivo-modelo, pra não sobrescrever edições já
+  // feitas (ajuste de estado durante o render, comparando com um
+  // marcador, em vez de useEffect — mesmo padrão já usado nesta página).
+  const [carregadoPara, setCarregadoPara] = useState<string | null>(null)
+  if (linhasModelo.length > 0 && carregadoPara !== modeloArquivo?.id) {
+    setEdicoes(linhasModelo.map((linha) => edicaoLinhaPadrao(linha, itemPorNumero)))
+    setCarregadoPara(modeloArquivo?.id ?? null)
   }
 
-  const atualizarLinha = (idx: number, patch: Partial<LinhaProposta>) => {
-    setLinhasProposta((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)))
+  const atualizarEdicao = (idx: number, patch: Partial<EdicaoLinhaPortal>) => {
+    setEdicoes((prev) => prev.map((e, i) => (i === idx ? { ...e, ...patch } : e)))
   }
 
-  const adicionarLinha = () => {
-    setLinhasProposta((prev) => [...prev, {
-      processo: bidding.processo ?? bidding.numeroEdital ?? '',
-      id: '', lote: '', item: '', produto: '', quantidade: '',
-      modelo: '', marca: '', anvisa: '', descricao: '', valorUnitario: '',
-    }])
-  }
-
-  const removerLinha = (idx: number) => {
-    setLinhasProposta((prev) => prev.filter((_, i) => i !== idx))
+  const handleUploadModelo = async (file: File) => {
+    setEnviandoModelo(true)
+    try {
+      const anterior = modeloArquivo
+      await uploadFile.mutateAsync({ file, category: CATEGORIA_MODELO_PORTAL })
+      // "Trocar modelo" substitui o anterior — sem isso, o arquivo velho
+      // ficaria no meio e a busca por categoria passaria a depender da
+      // ordenação (mais recente primeiro) em vez de ter só um candidato.
+      if (anterior) await deleteFile.mutateAsync(anterior)
+    } catch (err) {
+      showToast(`Erro ao salvar o modelo do Portal: ${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setEnviandoModelo(false)
+    }
   }
 
   const handleExportarCsv = () => {
-    const linhas = linhasProposta.map((l) => {
-      const quantidade = parseFlexibleNumber(l.quantidade) ?? 0
-      const valorUnitario = parseFlexibleNumber(l.valorUnitario) ?? 0
-      return [
-        l.processo, l.id, l.lote, l.item, l.produto, l.quantidade,
-        l.modelo, l.marca, l.anvisa, l.descricao,
-        formatarNumeroPtBR(valorUnitario), formatarNumeroPtBR(quantidade * valorUnitario),
-      ]
+    const linhasSaida = linhasModelo.map((linha, idx) => {
+      const edicao = edicoes[idx]
+      const quantidade = parseFlexibleNumber(linha[COL_QUANTIDADE]) ?? 0
+      const valorUnitario = parseFlexibleNumber(edicao?.valorUnitario ?? '') ?? 0
+      const saida = [...linha]
+      saida[COL_MODELO] = edicao?.modelo ?? ''
+      saida[COL_MARCA] = edicao?.marca ?? ''
+      saida[COL_ANVISA] = edicao?.anvisa ?? ''
+      saida[COL_DESCRICAO] = edicao?.descricao ?? ''
+      saida[COL_VALOR_UNITARIO] = formatarNumeroPtBR(valorUnitario)
+      saida[COL_VALOR_TOTAL] = formatarNumeroPtBR(quantidade * valorUnitario)
+      return saida
     })
-    const texto = stringifyCsvPortal([HEADER_PORTAL_COMPRAS, ...linhas])
+    const texto = stringifyCsvPortal([HEADER_PORTAL_COMPRAS, ...linhasSaida])
     const blob = textoParaBlobLatin1(texto)
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -553,32 +558,84 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
     URL.revokeObjectURL(url)
   }
 
-  if (isLoading) return <SkeletonTableRows linhas={4} colunas={5} />
+  const botaoTrocarModelo = podeEditar && (
+    <>
+      <input
+        ref={fileInputRef} type="file" accept=".csv" className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadModelo(f); e.target.value = '' }}
+      />
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={enviandoModelo}
+        className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-accent-300 bg-base-850 border border-base-700 rounded-lg px-3 py-1.5 transition disabled:opacity-50"
+      >
+        {enviandoModelo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+        {enviandoModelo ? 'Enviando...' : 'Trocar Modelo do Portal'}
+      </button>
+    </>
+  )
+
+  if (isLoadingItems || isLoadingAnexos) return <SkeletonTableRows linhas={4} colunas={5} />
+
+  if (!modeloArquivo) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-4 flex flex-col gap-3">
+          <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Proposta Inicial — Modelo do Portal de Compras Públicas</p>
+          <p className="text-[12px] text-base-400">
+            Suba o CSV-modelo que o Portal gera pra esta licitação — as colunas Processo, ID, Lote, Item, Produto e Quantidade já vêm preenchidas por ele e nunca são alteradas aqui. Salvamos esse modelo uma vez pra você não precisar subir de novo nas próximas exportações.
+          </p>
+        </div>
+        {podeEditar && (
+          <div>
+            <input
+              ref={fileInputRef} type="file" accept=".csv" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadModelo(f); e.target.value = '' }}
+            />
+            <Button onClick={() => fileInputRef.current?.click()} disabled={enviandoModelo}>
+              {enviandoModelo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+              {enviandoModelo ? 'Enviando...' : 'Subir Modelo do Portal (CSV)'}
+            </Button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  if (modeloQuery.isLoading) return <SkeletonTableRows linhas={4} colunas={5} />
+
+  if (modeloQuery.isError || linhasModelo.length === 0) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="bg-negative-500/10 border border-negative-500/25 rounded-xl p-4 flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 text-negative-400 shrink-0 mt-0.5" />
+          <p className="text-[12px] text-negative-300">
+            {modeloQuery.isError
+              ? (modeloQuery.error instanceof Error ? modeloQuery.error.message : 'Não foi possível ler o modelo salvo.')
+              : 'O modelo salvo não tem nenhuma linha de dados reconhecível — confira se é mesmo o CSV que o Portal gerou pra esta licitação.'}
+          </p>
+        </div>
+        {podeEditar && <div className="flex items-center gap-3">{botaoTrocarModelo}</div>}
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-4">
       <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-4 flex flex-col gap-3">
         <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Proposta Inicial — Modelo do Portal de Compras Públicas</p>
         <p className="text-[12px] text-base-400">
-          A tabela abaixo já vem preenchida com os itens desta licitação — Item, Produto, Quantidade, Descrição ("Conforme edital") e Valor Unitário pelo preço de referência do edital. ID e Lote também vêm preenchidos quando a Análise de Edital já os identificou na tabela do edital; confira e complete o que faltar antes de exportar. O cabeçalho e o formato do arquivo já seguem exatamente o que o Portal exige.
+          Processo, ID, Lote, Item, Produto e Quantidade vêm exatamente como no modelo salvo do Portal ("{modeloArquivo.name}") — não são editáveis aqui. Preencha Modelo, Marca/Fabricante, ANVISA, Descrição e Valor Unitário e exporte; se ajustar o rateio depois, é só exportar de novo que já sai atualizado.
         </p>
-        {items.length === 0 && (
-          <p className="text-[11px] text-warning-400">Nenhum item cadastrado ainda na aba Proposta Readequada — a tabela começou vazia, use "Adicionar Linha" pra montar manualmente ou cadastre os itens lá primeiro.</p>
-        )}
       </div>
 
       {podeEditar && (
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={adicionarLinha}
-            className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-accent-300 bg-base-850 border border-base-700 rounded-lg px-3 py-1.5 transition"
-          >
-            <Plus className="w-3.5 h-3.5" /> Adicionar Linha
-          </button>
-          <Button onClick={handleExportarCsv} disabled={linhasProposta.length === 0}>
+          <Button onClick={handleExportarCsv} disabled={edicoes.length === 0}>
             <Download className="w-3.5 h-3.5" /> Exportar CSV pro Portal
           </Button>
+          {botaoTrocarModelo}
         </div>
       )}
 
@@ -598,47 +655,26 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
               <th className="text-left font-semibold px-2 py-2 min-w-[220px]">Descrição detalhada</th>
               <th className="text-right font-semibold px-2 py-2 w-28">Vl. Unitário</th>
               <th className="text-right font-semibold px-2 py-2 w-28">Vl. Total</th>
-              {podeEditar && <th className="px-2 py-2 w-8" />}
             </tr>
           </thead>
           <tbody>
-            {linhasProposta.map((l, idx) => {
-              const quantidadeNum = parseFlexibleNumber(l.quantidade) ?? 0
-              const valorUnitarioNum = parseFlexibleNumber(l.valorUnitario) ?? 0
+            {linhasModelo.map((linha, idx) => {
+              const edicao = edicoes[idx] ?? { modelo: '', marca: '', anvisa: '', descricao: '', valorUnitario: '' }
+              const quantidadeNum = parseFlexibleNumber(linha[COL_QUANTIDADE]) ?? 0
+              const valorUnitarioNum = parseFlexibleNumber(edicao.valorUnitario) ?? 0
               return (
                 <tr key={idx} className="border-t border-base-800/60">
-                  {(['processo', 'id', 'lote', 'item'] as const).map((campo) => (
-                    <td key={campo} className="px-1.5 py-1.5">
-                      <input
-                        value={l[campo]}
-                        onChange={(e) => atualizarLinha(idx, { [campo]: e.target.value })}
-                        disabled={!podeEditar}
-                        className="w-full bg-base-900 border border-base-700 rounded px-1.5 py-1 text-[12px] text-base-100 focus:border-accent-400 outline-none disabled:opacity-60"
-                      />
-                    </td>
-                  ))}
-                  <td className="px-1.5 py-1.5">
-                    <input
-                      value={l.produto}
-                      onChange={(e) => atualizarLinha(idx, { produto: e.target.value })}
-                      disabled={!podeEditar}
-                      className="w-full bg-base-900 border border-base-700 rounded px-1.5 py-1 text-[12px] text-base-100 focus:border-accent-400 outline-none disabled:opacity-60"
-                    />
-                  </td>
-                  <td className="px-1.5 py-1.5">
-                    <input
-                      value={l.quantidade}
-                      inputMode="decimal"
-                      onChange={(e) => atualizarLinha(idx, { quantidade: e.target.value })}
-                      disabled={!podeEditar}
-                      className="w-full bg-base-900 border border-base-700 rounded px-1.5 py-1 text-right text-[12px] font-mono text-base-100 focus:border-accent-400 outline-none disabled:opacity-60"
-                    />
-                  </td>
+                  <td className="px-2 py-1.5 text-base-400">{linha[COL_PROCESSO]}</td>
+                  <td className="px-2 py-1.5 text-base-400">{linha[COL_ID]}</td>
+                  <td className="px-2 py-1.5 text-base-400">{linha[COL_LOTE]}</td>
+                  <td className="px-2 py-1.5 text-base-400">{linha[COL_ITEM]}</td>
+                  <td className="px-2 py-1.5 text-base-400 max-w-[200px] truncate" title={linha[COL_PRODUTO]}>{linha[COL_PRODUTO]}</td>
+                  <td className="px-2 py-1.5 text-right font-mono text-base-400">{linha[COL_QUANTIDADE]}</td>
                   {(['modelo', 'marca', 'anvisa', 'descricao'] as const).map((campo) => (
                     <td key={campo} className="px-1.5 py-1.5">
                       <input
-                        value={l[campo]}
-                        onChange={(e) => atualizarLinha(idx, { [campo]: e.target.value })}
+                        value={edicao[campo]}
+                        onChange={(e) => atualizarEdicao(idx, { [campo]: e.target.value })}
                         disabled={!podeEditar}
                         className="w-full bg-base-900 border border-base-700 rounded px-1.5 py-1 text-[12px] text-base-100 focus:border-accent-400 outline-none disabled:opacity-60"
                       />
@@ -646,21 +682,14 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
                   ))}
                   <td className="px-1.5 py-1.5">
                     <input
-                      value={l.valorUnitario}
+                      value={edicao.valorUnitario}
                       inputMode="decimal"
-                      onChange={(e) => atualizarLinha(idx, { valorUnitario: e.target.value })}
+                      onChange={(e) => atualizarEdicao(idx, { valorUnitario: e.target.value })}
                       disabled={!podeEditar}
                       className="w-full bg-base-900 border border-base-700 rounded px-1.5 py-1 text-right text-[12px] font-mono text-base-100 focus:border-accent-400 outline-none disabled:opacity-60"
                     />
                   </td>
                   <td className="px-2 py-1.5 text-right font-mono text-base-300">{formatarNumeroPtBR(quantidadeNum * valorUnitarioNum)}</td>
-                  {podeEditar && (
-                    <td className="px-1.5 py-1.5 text-center">
-                      <button type="button" onClick={() => removerLinha(idx)} className="text-base-500 hover:text-negative-400 transition">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  )}
                 </tr>
               )
             })}
