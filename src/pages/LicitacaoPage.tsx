@@ -41,9 +41,9 @@ import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import BiddingItemsEditor from '../components/cadastros/BiddingItemsEditor'
 import {
-  parseCsvPortal, stringifyCsvPortal, textoParaBlobLatin1, bufferParaTextoLatin1, formatarNumeroPtBR, HEADER_PORTAL_COMPRAS,
-  COL_PROCESSO, COL_ID, COL_LOTE, COL_ITEM, COL_PRODUTO, COL_QUANTIDADE, COL_MODELO, COL_MARCA, COL_ANVISA, COL_DESCRICAO, COL_VALOR_UNITARIO, COL_VALOR_TOTAL, TOTAL_COLUNAS,
+  parseCsvPortal, stringifyCsvPortal, textoParaBlobLatin1, bufferParaTextoLatin1, formatarNumeroPtBR, detectarColunasPortal,
 } from '../lib/csvPortalCompras'
+import type { ColunasPortal } from '../lib/csvPortalCompras'
 import { parseFlexibleNumber, compararNumeroItem } from '../lib/numberParsing'
 import { mapearCamposDaAnalise, mapearItensDaAnalise, somarValorLicitado, mensagemAmigavelErroAnalise } from '../lib/analiseEdital'
 import { useToast } from '../hooks/useToast'
@@ -449,25 +449,30 @@ function HistoricoVersoes({ biddingId }: { biddingId: string }) {
 // ANTES da sessão de disputa começar, diferente da Proposta Readequada
 // (AbaProposta logo abaixo), que é o valor final depois de ganhar.
 //
-// O modelo que o Portal gera pra cada processo já vem com as colunas A-F
-// (Processo, ID, Lote, Item, Produto, Quantidade) preenchidas e marcadas
-// "Não edite" — só o Portal sabe esses valores, então a única forma segura
-// de não estragar o arquivo é nunca reconstruir essas colunas: parte da
-// linha ORIGINAL do modelo (as 12 colunas, na ordem exata) e troca só G-L.
-// Como o modelo não muda entre exportações da mesma licitação, ele é
-// salvo uma vez (useAttachedFiles, categoria 'Modelo Portal Compras') e
-// reaproveitado nas exportações seguintes.
+// O modelo que o Portal gera pra cada processo já vem com as colunas
+// "Não edite" (Processo, ID, [Lote,] Item, Produto, Quantidade)
+// preenchidas — só o Portal sabe esses valores, então a única forma
+// segura de não estragar o arquivo é nunca reconstruir essas colunas:
+// parte da linha ORIGINAL do modelo (todas as colunas, na ordem exata) e
+// troca só as editáveis (Modelo/Marca/ANVISA/Descrição/Valor
+// unitário/Valor total). A coluna Lote é opcional — confirmado com um
+// modelo real sem lotes — por isso as colunas são achadas pelo texto do
+// próprio cabeçalho do arquivo (detectarColunasPortal), nunca por
+// posição fixa. Como o modelo não muda entre exportações da mesma
+// licitação, ele é salvo uma vez (useAttachedFiles, categoria 'Modelo
+// Portal Compras') e reaproveitado nas exportações seguintes.
 const CATEGORIA_MODELO_PORTAL = 'Modelo Portal Compras' as const
 
 type EdicaoLinhaPortal = { modelo: string; marca: string; anvisa: string; descricao: string; valorUnitario: string }
+type ModeloPortalLido = { cabecalho: string[]; linhas: string[][]; colunas: ColunasPortal }
 
-function edicaoLinhaPadrao(linhaModelo: string[], itemPorNumero: Map<string, BiddingItem>): EdicaoLinhaPortal {
-  const item = itemPorNumero.get(linhaModelo[COL_ITEM])
+function edicaoLinhaPadrao(linhaModelo: string[], colunas: ColunasPortal, itemPorNumero: Map<string, BiddingItem>): EdicaoLinhaPortal {
+  const item = itemPorNumero.get(linhaModelo[colunas.item])
   return {
     modelo: '',
     marca: item?.marca ?? '',
     anvisa: '',
-    descricao: `${linhaModelo[COL_PRODUTO]} Conforme edital`,
+    descricao: `${linhaModelo[colunas.produto]} Conforme edital`,
     valorUnitario: item ? formatarNumeroPtBR(item.valorUnitarioLicitado) : '',
   }
 }
@@ -486,30 +491,36 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
   const modeloQuery = useQuery({
     queryKey: ['modelo-portal-compras-conteudo', modeloArquivo?.id],
     enabled: !!modeloArquivo,
-    queryFn: async () => {
+    queryFn: async (): Promise<ModeloPortalLido> => {
       const { data, error } = await supabase.storage.from('client-documents').createSignedUrl(modeloArquivo!.storagePath, 300)
       if (error || !data) throw new Error('Não foi possível ler o modelo salvo.')
       const res = await fetch(data.signedUrl)
       if (!res.ok) throw new Error('Não foi possível baixar o modelo salvo.')
       const texto = bufferParaTextoLatin1(await res.arrayBuffer())
-      // Descarta linhas que não têm as 12 colunas (ex: quebra de linha
-      // sobrando no fim do arquivo) e o cabeçalho, sobrando só as linhas
-      // de item de verdade.
-      return parseCsvPortal(texto).filter((l) => l.length === TOTAL_COLUNAS).slice(1)
+      const todasLinhas = parseCsvPortal(texto)
+      const [cabecalho, ...resto] = todasLinhas
+      const colunas = cabecalho ? detectarColunasPortal(cabecalho) : null
+      if (!colunas) throw new Error('Não reconheci as colunas desse arquivo como um modelo do Portal — confira se é mesmo o CSV que o Portal gerou pra esta licitação.')
+      // Descarta linhas que não têm a mesma quantidade de colunas do
+      // cabeçalho (ex: quebra de linha sobrando no fim do arquivo).
+      const linhas = resto.filter((l) => l.length === cabecalho.length)
+      return { cabecalho, linhas, colunas }
     },
   })
 
-  const linhasModelo = useMemo(() => modeloQuery.data ?? [], [modeloQuery.data])
+  const linhasModelo = useMemo(() => modeloQuery.data?.linhas ?? [], [modeloQuery.data])
+  const colunas = modeloQuery.data?.colunas ?? null
+  const temLote = colunas?.lote != null
   const itemPorNumero = useMemo(() => new Map(items.map((i) => [i.numeroItem, i])), [items])
 
   const [edicoes, setEdicoes] = useState<EdicaoLinhaPortal[]>([])
-  // Preenche os campos editáveis (G-L) sozinho assim que o modelo carrega
-  // — só uma vez por arquivo-modelo, pra não sobrescrever edições já
-  // feitas (ajuste de estado durante o render, comparando com um
-  // marcador, em vez de useEffect — mesmo padrão já usado nesta página).
+  // Preenche os campos editáveis sozinho assim que o modelo carrega — só
+  // uma vez por arquivo-modelo, pra não sobrescrever edições já feitas
+  // (ajuste de estado durante o render, comparando com um marcador, em
+  // vez de useEffect — mesmo padrão já usado nesta página).
   const [carregadoPara, setCarregadoPara] = useState<string | null>(null)
-  if (linhasModelo.length > 0 && carregadoPara !== modeloArquivo?.id) {
-    setEdicoes(linhasModelo.map((linha) => edicaoLinhaPadrao(linha, itemPorNumero)))
+  if (linhasModelo.length > 0 && colunas && carregadoPara !== modeloArquivo?.id) {
+    setEdicoes(linhasModelo.map((linha) => edicaoLinhaPadrao(linha, colunas, itemPorNumero)))
     setCarregadoPara(modeloArquivo?.id ?? null)
   }
 
@@ -534,20 +545,22 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
   }
 
   const handleExportarCsv = () => {
-    const linhasSaida = linhasModelo.map((linha, idx) => {
+    if (!modeloQuery.data) return
+    const { cabecalho, linhas, colunas: colunasSaida } = modeloQuery.data
+    const linhasSaida = linhas.map((linha, idx) => {
       const edicao = edicoes[idx]
-      const quantidade = parseFlexibleNumber(linha[COL_QUANTIDADE]) ?? 0
+      const quantidade = parseFlexibleNumber(linha[colunasSaida.quantidade]) ?? 0
       const valorUnitario = parseFlexibleNumber(edicao?.valorUnitario ?? '') ?? 0
       const saida = [...linha]
-      saida[COL_MODELO] = edicao?.modelo ?? ''
-      saida[COL_MARCA] = edicao?.marca ?? ''
-      saida[COL_ANVISA] = edicao?.anvisa ?? ''
-      saida[COL_DESCRICAO] = edicao?.descricao ?? ''
-      saida[COL_VALOR_UNITARIO] = formatarNumeroPtBR(valorUnitario)
-      saida[COL_VALOR_TOTAL] = formatarNumeroPtBR(quantidade * valorUnitario)
+      saida[colunasSaida.modelo] = edicao?.modelo ?? ''
+      saida[colunasSaida.marca] = edicao?.marca ?? ''
+      saida[colunasSaida.anvisa] = edicao?.anvisa ?? ''
+      saida[colunasSaida.descricao] = edicao?.descricao ?? ''
+      saida[colunasSaida.valorUnitario] = formatarNumeroPtBR(valorUnitario)
+      saida[colunasSaida.valorTotal] = formatarNumeroPtBR(quantidade * valorUnitario)
       return saida
     })
-    const texto = stringifyCsvPortal([HEADER_PORTAL_COMPRAS, ...linhasSaida])
+    const texto = stringifyCsvPortal([cabecalho, ...linhasSaida])
     const blob = textoParaBlobLatin1(texto)
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -584,7 +597,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
         <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-4 flex flex-col gap-3">
           <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Proposta Inicial — Modelo do Portal de Compras Públicas</p>
           <p className="text-[12px] text-base-400">
-            Suba o CSV-modelo que o Portal gera pra esta licitação — as colunas Processo, ID, Lote, Item, Produto e Quantidade já vêm preenchidas por ele e nunca são alteradas aqui. Salvamos esse modelo uma vez pra você não precisar subir de novo nas próximas exportações.
+            Suba o CSV-modelo que o Portal gera pra esta licitação — as colunas Processo, ID, Lote (quando houver), Item, Produto e Quantidade já vêm preenchidas por ele e nunca são alteradas aqui. Salvamos esse modelo uma vez pra você não precisar subir de novo nas próximas exportações.
           </p>
         </div>
         {podeEditar && (
@@ -605,7 +618,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
 
   if (modeloQuery.isLoading) return <SkeletonTableRows linhas={4} colunas={5} />
 
-  if (modeloQuery.isError || linhasModelo.length === 0) {
+  if (modeloQuery.isError || !colunas || linhasModelo.length === 0) {
     return (
       <div className="flex flex-col gap-4">
         <div className="bg-negative-500/10 border border-negative-500/25 rounded-xl p-4 flex items-start gap-2">
@@ -626,7 +639,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
       <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-4 flex flex-col gap-3">
         <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Proposta Inicial — Modelo do Portal de Compras Públicas</p>
         <p className="text-[12px] text-base-400">
-          Processo, ID, Lote, Item, Produto e Quantidade vêm exatamente como no modelo salvo do Portal ("{modeloArquivo.name}") — não são editáveis aqui. Preencha Modelo, Marca/Fabricante, ANVISA, Descrição e Valor Unitário e exporte; se ajustar o rateio depois, é só exportar de novo que já sai atualizado.
+          Processo, ID{temLote ? ', Lote' : ''}, Item, Produto e Quantidade vêm exatamente como no modelo salvo do Portal ("{modeloArquivo.name}") — não são editáveis aqui. Preencha Modelo, Marca/Fabricante, ANVISA, Descrição e Valor Unitário e exporte; se ajustar o rateio depois, é só exportar de novo que já sai atualizado.
         </p>
       </div>
 
@@ -645,7 +658,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
             <tr className="text-base-500 border-b border-base-800">
               <th className="text-left font-semibold px-2 py-2 w-24">Processo</th>
               <th className="text-left font-semibold px-2 py-2 w-24">ID (Portal)</th>
-              <th className="text-left font-semibold px-2 py-2 w-20">Lote</th>
+              {temLote && <th className="text-left font-semibold px-2 py-2 w-20">Lote</th>}
               <th className="text-left font-semibold px-2 py-2 w-16">Item</th>
               <th className="text-left font-semibold px-2 py-2 min-w-[160px]">Produto</th>
               <th className="text-right font-semibold px-2 py-2 w-20">Qtd.</th>
@@ -660,16 +673,16 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
           <tbody>
             {linhasModelo.map((linha, idx) => {
               const edicao = edicoes[idx] ?? { modelo: '', marca: '', anvisa: '', descricao: '', valorUnitario: '' }
-              const quantidadeNum = parseFlexibleNumber(linha[COL_QUANTIDADE]) ?? 0
+              const quantidadeNum = parseFlexibleNumber(linha[colunas.quantidade]) ?? 0
               const valorUnitarioNum = parseFlexibleNumber(edicao.valorUnitario) ?? 0
               return (
                 <tr key={idx} className="border-t border-base-800/60">
-                  <td className="px-2 py-1.5 text-base-400">{linha[COL_PROCESSO]}</td>
-                  <td className="px-2 py-1.5 text-base-400">{linha[COL_ID]}</td>
-                  <td className="px-2 py-1.5 text-base-400">{linha[COL_LOTE]}</td>
-                  <td className="px-2 py-1.5 text-base-400">{linha[COL_ITEM]}</td>
-                  <td className="px-2 py-1.5 text-base-400 max-w-[200px] truncate" title={linha[COL_PRODUTO]}>{linha[COL_PRODUTO]}</td>
-                  <td className="px-2 py-1.5 text-right font-mono text-base-400">{linha[COL_QUANTIDADE]}</td>
+                  <td className="px-2 py-1.5 text-base-400">{linha[colunas.processo]}</td>
+                  <td className="px-2 py-1.5 text-base-400">{linha[colunas.id]}</td>
+                  {temLote && <td className="px-2 py-1.5 text-base-400">{linha[colunas.lote as number]}</td>}
+                  <td className="px-2 py-1.5 text-base-400">{linha[colunas.item]}</td>
+                  <td className="px-2 py-1.5 text-base-400 max-w-[200px] truncate" title={linha[colunas.produto]}>{linha[colunas.produto]}</td>
+                  <td className="px-2 py-1.5 text-right font-mono text-base-400">{linha[colunas.quantidade]}</td>
                   {(['modelo', 'marca', 'anvisa', 'descricao'] as const).map((campo) => (
                     <td key={campo} className="px-1.5 py-1.5">
                       <input

@@ -1,47 +1,64 @@
 // Leitura/escrita do CSV de importação de propostas do Portal de Compras
-// Públicas — dialeto específico confirmado num arquivo de exemplo real do
+// Públicas — dialeto específico confirmado em arquivos de exemplo reais do
 // portal (não é RFC 4180 genérico): separador ";", texto entre aspas
 // duplas (aspas literal escapada como ""), fim de linha CRLF, e
 // codificação ISO-8859-1 (Latin-1) — não UTF-8, senão acento vira lixo.
 //
-// Colunas do arquivo (A-F vêm preenchidas pelo portal, nunca mexer nelas;
-// G-L vêm em branco pra o fornecedor preencher):
-// A Processo | B ID | C Lote | D Item | E Produto | F Quantidade |
-// G Modelo | H Marca/Fabricante | I ANVISA | J Descrição detalhada |
-// K Valor unitário | L Valor total
+// Colunas do arquivo (as "Não edite" vêm preenchidas pelo portal e nunca
+// são mexidas; as demais vêm em branco pra o fornecedor preencher):
+// Processo | ID | [Lote] | Item | Produto | Quantidade | Modelo |
+// Marca/Fabricante | ANVISA | Descrição detalhada | Valor unitário |
+// Valor total
+//
+// A coluna Lote é OPCIONAL — confirmado comparando modelos reais de
+// licitações diferentes: quando o processo não tem lotes (só itens
+// avulsos), o Portal nem gera essa coluna, e o arquivo sai com 11 colunas
+// em vez de 12. Por isso a leitura nunca assume uma quantidade fixa de
+// colunas nem uma posição fixa pra cada uma — acha cada coluna pelo texto
+// do próprio cabeçalho do arquivo (ver detectarColunasPortal).
 
-export const COL_PROCESSO = 0
-export const COL_ID = 1
-export const COL_LOTE = 2
-export const COL_ITEM = 3
-export const COL_PRODUTO = 4
-export const COL_QUANTIDADE = 5
-export const COL_MODELO = 6
-export const COL_MARCA = 7
-export const COL_ANVISA = 8
-export const COL_DESCRICAO = 9
-export const COL_VALOR_UNITARIO = 10
-export const COL_VALOR_TOTAL = 11
-export const TOTAL_COLUNAS = 12
+export type ColunasPortal = {
+  processo: number
+  id: number
+  lote: number | null
+  item: number
+  produto: number
+  quantidade: number
+  modelo: number
+  marca: number
+  anvisa: number
+  descricao: number
+  valorUnitario: number
+  valorTotal: number
+}
 
-// Cabeçalho fixo exigido pelo Portal — confirmado num arquivo de exemplo
-// real, caractere por caractere. O próprio Portal instrui "não modifique
-// os títulos da linha 1", então é seguro deixar fixo aqui em vez de
-// depender de sempre ter um arquivo-modelo pra copiar dele.
-export const HEADER_PORTAL_COMPRAS = [
-  'Número do Processo (Não edite)',
-  'ID (Não edite)',
-  'Lote (Não edite)',
-  'Item (Não edite)',
-  'Produto (Não edite)',
-  'Quantidade (Não edite)',
-  'Modelo (Insira as informações quando aplicável)',
-  'Marca/Fabricante (Insira as informações quando aplicável)',
-  'Código de Registro na ANVISA (Insira as informações quando aplicável)',
-  'Descrição detalhada do Item (Insira as informações)',
-  'Valor unitário (Insira as informações)',
-  'Valor total (Insira as informações)',
-]
+function chavePortal(celula: string): string {
+  return celula.split('(')[0].trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
+// Localiza cada coluna pelo texto do cabeçalho (a parte antes do
+// parêntese explicativo, ex: "ID (Não edite)" -> "id"), em vez de supor
+// uma posição fixa — só assim dá pra aceitar tanto o modelo com Lote
+// quanto o modelo sem Lote. Devolve null se faltar alguma coluna
+// obrigatória, sinal de que o arquivo enviado não é um modelo do Portal.
+export function detectarColunasPortal(cabecalho: string[]): ColunasPortal | null {
+  const chaves = cabecalho.map(chavePortal)
+  const processo = chaves.indexOf('numero do processo')
+  const id = chaves.indexOf('id')
+  const lote = chaves.indexOf('lote')
+  const item = chaves.indexOf('item')
+  const produto = chaves.indexOf('produto')
+  const quantidade = chaves.indexOf('quantidade')
+  const modelo = chaves.indexOf('modelo')
+  const marca = chaves.findIndex((c) => c.startsWith('marca'))
+  const anvisa = chaves.findIndex((c) => c.includes('anvisa'))
+  const descricao = chaves.findIndex((c) => c.startsWith('descricao'))
+  const valorUnitario = chaves.indexOf('valor unitario')
+  const valorTotal = chaves.indexOf('valor total')
+  const obrigatorias = [processo, id, item, produto, quantidade, modelo, marca, anvisa, descricao, valorUnitario, valorTotal]
+  if (obrigatorias.some((i) => i < 0)) return null
+  return { processo, id, lote: lote >= 0 ? lote : null, item, produto, quantidade, modelo, marca, anvisa, descricao, valorUnitario, valorTotal }
+}
 
 export function parseCsvPortal(texto: string): string[][] {
   const linhas: string[][] = []
