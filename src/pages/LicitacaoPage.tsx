@@ -528,6 +528,19 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
     setEdicoes((prev) => prev.map((e, i) => (i === idx ? { ...e, ...patch } : e)))
   }
 
+  // O Portal rejeita o arquivo inteiro se qualquer linha tiver Valor
+  // Unitário zerado ou em branco ("O valor unitário deve ser maior do que
+  // zero") — confirmado tentando subir um export de verdade. Detecta isso
+  // ANTES de gerar o arquivo, em vez de deixar o usuário só descobrir
+  // depois de subir no site.
+  const indicesSemValorUnitario = useMemo(
+    () => edicoes.reduce<number[]>((acc, e, idx) => {
+      if ((parseFlexibleNumber(e.valorUnitario) ?? 0) <= 0) acc.push(idx)
+      return acc
+    }, []),
+    [edicoes]
+  )
+
   const handleUploadModelo = async (file: File) => {
     setEnviandoModelo(true)
     try {
@@ -546,6 +559,18 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
 
   const handleExportarCsv = () => {
     if (!modeloQuery.data) return
+    if (indicesSemValorUnitario.length > 0) {
+      const numerosItem = indicesSemValorUnitario
+        .map((idx) => modeloQuery.data!.linhas[idx]?.[modeloQuery.data!.colunas.item])
+        .filter(Boolean)
+        .slice(0, 6)
+        .join(', ')
+      showToast(
+        `O Portal rejeita o arquivo se algum item ficar com Valor Unitário zerado. Preencha o item ${numerosItem}${indicesSemValorUnitario.length > 6 ? ' e outros' : ''} antes de exportar.`,
+        'error'
+      )
+      return
+    }
     const { cabecalho, linhas, colunas: colunasSaida } = modeloQuery.data
     const linhasSaida = linhas.map((linha, idx) => {
       const edicao = edicoes[idx]
@@ -643,6 +668,15 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
         </p>
       </div>
 
+      {indicesSemValorUnitario.length > 0 && (
+        <div className="bg-warning-500/10 border border-warning-500/25 rounded-xl p-3 flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 text-warning-400 shrink-0 mt-0.5" />
+          <p className="text-[12px] text-warning-300">
+            {indicesSemValorUnitario.length} item(ns) sem Valor Unitário preenchido (destacados em vermelho na tabela) — o Portal rejeita o arquivo inteiro se alguma linha ficar com valor zerado.
+          </p>
+        </div>
+      )}
+
       {podeEditar && (
         <div className="flex flex-wrap items-center gap-3">
           <Button onClick={handleExportarCsv} disabled={edicoes.length === 0}>
@@ -699,7 +733,8 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
                       inputMode="decimal"
                       onChange={(e) => atualizarEdicao(idx, { valorUnitario: e.target.value })}
                       disabled={!podeEditar}
-                      className="w-full bg-base-900 border border-base-700 rounded px-1.5 py-1 text-right text-[12px] font-mono text-base-100 focus:border-accent-400 outline-none disabled:opacity-60"
+                      title={valorUnitarioNum <= 0 ? 'O Portal exige um valor unitário maior que zero pra este item.' : undefined}
+                      className={`w-full bg-base-900 border rounded px-1.5 py-1 text-right text-[12px] font-mono text-base-100 focus:border-accent-400 outline-none disabled:opacity-60 ${valorUnitarioNum <= 0 ? 'border-negative-500/60' : 'border-base-700'}`}
                     />
                   </td>
                   <td className="px-2 py-1.5 text-right font-mono text-base-300">{formatarNumeroPtBR(quantidadeNum * valorUnitarioNum)}</td>
