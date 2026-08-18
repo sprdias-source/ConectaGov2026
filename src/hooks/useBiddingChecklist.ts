@@ -82,7 +82,10 @@ export function arquivoResolvidoDoItem(
 // (components/ui/SeloHabilitacao.tsx) e no alerta do Dashboard, sem
 // duplicar a lógica em cada lugar.
 export function calcularHabilitacao(items: BiddingChecklistItem[], clientDocs: ClientDocument[]): HabilitacaoResumo {
-  const obrigatorios = items.filter((i) => i.obrigatorio)
+  // Item marcado "não aplicável" (ex: exigência alternativa do edital que
+  // não vale pra natureza jurídica desta empresa) sai da contagem — não é
+  // pendência de verdade, então não pode contar contra a habilitação.
+  const obrigatorios = items.filter((i) => i.obrigatorio && !i.naoAplicavel)
   const total = obrigatorios.length
   const atendidos = obrigatorios.filter((i) => statusItemChecklist(i, clientDocs) === 'atendido').length
   const vencendo = obrigatorios.filter((i) => statusItemChecklist(i, clientDocs) === 'vencendo').length
@@ -245,6 +248,31 @@ export function useBiddingChecklist(biddingId?: string) {
     onSuccess: invalidate,
   })
 
+  // Marca/desmarca um item como "não aplicável" (ver migração 025) — a
+  // justificativa é obrigatória pra marcar (fica registrada pra explicar
+  // numa eventual diligência) e é limpa ao reverter.
+  const marcarNaoAplicavel = useMutation({
+    mutationFn: async ({ item, justificativa }: { item: BiddingChecklistItem; justificativa: string }) => {
+      const { error } = await supabase
+        .from('bidding_checklist_items')
+        .update({ nao_aplicavel: true, justificativa_nao_aplicavel: justificativa })
+        .eq('id', item.id)
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+  })
+
+  const reverterNaoAplicavel = useMutation({
+    mutationFn: async (item: BiddingChecklistItem) => {
+      const { error } = await supabase
+        .from('bidding_checklist_items')
+        .update({ nao_aplicavel: false, justificativa_nao_aplicavel: null })
+        .eq('id', item.id)
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+  })
+
   // Usado quando o edital que gerou esses itens é removido (ex: PDF errado
   // foi enviado) — apaga só os itens sugeridos pela IA (origem='ia'), sem
   // mexer nos que o usuário adicionou manualmente, que não têm relação com
@@ -270,6 +298,8 @@ export function useBiddingChecklist(biddingId?: string) {
     updateItem,
     deleteItem,
     limparItensIA,
+    marcarNaoAplicavel,
+    reverterNaoAplicavel,
   }
 }
 
@@ -342,6 +372,7 @@ export function usePendenciasChecklist() {
         .from('bidding_checklist_items')
         .select('*, biddings(objeto, orgao, client_id, clients(name))')
         .eq('atendido', false)
+        .eq('nao_aplicavel', false)
         .is('attached_file_id', null)
         .is('client_document_id', null)
         .is('atestado_id', null)

@@ -287,6 +287,8 @@ export type Database = {
           observacoes: string | null
           obrigatorio: boolean
           origem: string
+          nao_aplicavel: boolean
+          justificativa_nao_aplicavel: string | null
           prazo: string | null
           responsavel_nome: string | null
           updated_at: string
@@ -307,6 +309,8 @@ export type Database = {
           observacoes?: string | null
           obrigatorio?: boolean
           origem?: string
+          nao_aplicavel?: boolean
+          justificativa_nao_aplicavel?: string | null
           prazo?: string | null
           responsavel_nome?: string | null
           updated_at?: string
@@ -327,6 +331,8 @@ export type Database = {
           observacoes?: string | null
           obrigatorio?: boolean
           origem?: string
+          nao_aplicavel?: boolean
+          justificativa_nao_aplicavel?: string | null
           prazo?: string | null
           responsavel_nome?: string | null
           updated_at?: string
