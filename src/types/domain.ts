@@ -110,6 +110,8 @@ export interface Bidding {
   representante: string | null
   observacaoEtapa: string | null
   diasValidadeProposta: string | null
+  propostaReadequadaEnviadaEm: string | null
+  propostaReadequadaAssinadaEm: string | null
   modeloCustomizadoPath: string | null
   motivoPerda: string | null
   motivoDesistencia: string | null
