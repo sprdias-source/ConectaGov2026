@@ -583,20 +583,33 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
       )
       return
     }
+    if (!linhasParticipando.some(Boolean)) {
+      showToast('Nenhum item desta licitação está participando (cadastrado como item da proposta) — não há o que exportar.', 'error')
+      return
+    }
     const { cabecalho, linhas, colunas: colunasSaida } = modeloQuery.data
-    const linhasSaida = linhas.map((linha, idx) => {
-      const edicao = edicoes[idx]
-      const quantidade = parseFlexibleNumber(linha[colunasSaida.quantidade]) ?? 0
-      const valorUnitario = parseFlexibleNumber(edicao?.valorUnitario ?? '') ?? 0
-      const saida = [...linha]
-      saida[colunasSaida.modelo] = edicao?.modelo ?? ''
-      saida[colunasSaida.marca] = edicao?.marca ?? ''
-      saida[colunasSaida.anvisa] = edicao?.anvisa ?? ''
-      saida[colunasSaida.descricao] = edicao?.descricao ?? ''
-      saida[colunasSaida.valorUnitario] = formatarNumeroPtBR(valorUnitario)
-      saida[colunasSaida.valorTotal] = formatarNumeroPtBR(quantidade * valorUnitario)
-      return saida
-    })
+    // O Portal exige Valor Unitário > 0 em TODA linha presente no
+    // arquivo, sem exceção pra item zerado (confirmado tentando subir um
+    // export com uma linha zerada — rejeitado mesmo com o item marcado
+    // como não participante). A única forma de deixar um item de fora da
+    // proposta é a linha dele nem aparecer no arquivo, então itens que o
+    // usuário não participa são omitidos do export, não zerados.
+    const linhasSaida = linhas
+      .map((linha, idx) => ({ linha, idx }))
+      .filter(({ idx }) => linhasParticipando[idx])
+      .map(({ linha, idx }) => {
+        const edicao = edicoes[idx]
+        const quantidade = parseFlexibleNumber(linha[colunasSaida.quantidade]) ?? 0
+        const valorUnitario = parseFlexibleNumber(edicao?.valorUnitario ?? '') ?? 0
+        const saida = [...linha]
+        saida[colunasSaida.modelo] = edicao?.modelo ?? ''
+        saida[colunasSaida.marca] = edicao?.marca ?? ''
+        saida[colunasSaida.anvisa] = edicao?.anvisa ?? ''
+        saida[colunasSaida.descricao] = edicao?.descricao ?? ''
+        saida[colunasSaida.valorUnitario] = formatarNumeroPtBR(valorUnitario)
+        saida[colunasSaida.valorTotal] = formatarNumeroPtBR(quantidade * valorUnitario)
+        return saida
+      })
     const texto = stringifyCsvPortal([cabecalho, ...linhasSaida])
     const blob = textoParaBlobLatin1(texto)
     const url = URL.createObjectURL(blob)
@@ -676,7 +689,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
       <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-4 flex flex-col gap-3">
         <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Proposta Inicial — Modelo do Portal de Compras Públicas</p>
         <p className="text-[12px] text-base-400">
-          Processo, ID{temLote ? ', Lote' : ''}, Item, Produto e Quantidade vêm exatamente como no modelo salvo do Portal ("{modeloArquivo.name}") — não são editáveis aqui. Nos itens que você está participando (linhas cadastradas na licitação), Marca e Valor Unitário já vêm preenchidos com o valor de referência da análise do edital — confira e ajuste se precisar. Itens que você não está participando ficam em branco e saem zerados no CSV, como o próprio modelo do Portal instrui.
+          Processo, ID{temLote ? ', Lote' : ''}, Item, Produto e Quantidade vêm exatamente como no modelo salvo do Portal ("{modeloArquivo.name}") — não são editáveis aqui. Nos itens que você está participando (linhas cadastradas na licitação), Marca e Valor Unitário já vêm preenchidos com o valor de referência da análise do edital — confira e ajuste se precisar. O Portal exige valor maior que zero em toda linha do arquivo, sem exceção — por isso os itens que você não participa (marcados "não participa" abaixo) são omitidos do CSV exportado, não zerados.
         </p>
       </div>
 
@@ -695,6 +708,9 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
             <Download className="w-3.5 h-3.5" /> Exportar CSV pro Portal
           </Button>
           {botaoTrocarModelo}
+          <span className="text-[11px] text-base-500">
+            {linhasParticipando.filter(Boolean).length} de {linhasModelo.length} itens serão exportados (os demais não participam)
+          </span>
         </div>
       )}
 
@@ -728,7 +744,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
                   <td className="px-2 py-1.5 text-base-400">{linha[colunas.id]}</td>
                   {temLote && <td className="px-2 py-1.5 text-base-400">{linha[colunas.lote as number]}</td>}
                   <td className="px-2 py-1.5 text-base-400">{linha[colunas.item]}</td>
-                  <td className="px-2 py-1.5 text-base-400 max-w-[200px] truncate" title={participa ? linha[colunas.produto] : `${linha[colunas.produto]} — você não está participando deste item`}>
+                  <td className="px-2 py-1.5 text-base-400 max-w-[200px] truncate" title={participa ? linha[colunas.produto] : `${linha[colunas.produto]} — você não participa deste item; a linha não entra no CSV exportado`}>
                     {linha[colunas.produto]}
                     {!participa && <span className="ml-1.5 text-[10px] font-semibold text-base-500 whitespace-nowrap">(não participa)</span>}
                   </td>
