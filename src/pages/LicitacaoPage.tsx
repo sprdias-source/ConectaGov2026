@@ -528,17 +528,29 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
     setEdicoes((prev) => prev.map((e, i) => (i === idx ? { ...e, ...patch } : e)))
   }
 
-  // O Portal rejeita o arquivo inteiro se qualquer linha tiver Valor
-  // Unitário zerado ou em branco ("O valor unitário deve ser maior do que
-  // zero") — confirmado tentando subir um export de verdade. Detecta isso
-  // ANTES de gerar o arquivo, em vez de deixar o usuário só descobrir
-  // depois de subir no site.
+  // O item do modelo do Portal só corresponde a um item de VERDADE desta
+  // proposta se ele existir em bidding_items — e só chega lá quem foi
+  // marcado como "participando" na Análise de Edital (mapearItensDaAnalise
+  // já filtra os desmarcados antes de sincronizar os itens). Ou seja: um
+  // item do modelo sem correspondência aqui é um item que a empresa optou
+  // por não disputar — o próprio modelo do Portal instrui deixar esses
+  // zerados, então eles não entram na validação de valor obrigatório.
+  const linhasParticipando = useMemo(
+    () => linhasModelo.map((linha) => !!colunas && itemPorNumero.has(linha[colunas.item])),
+    [linhasModelo, colunas, itemPorNumero]
+  )
+
+  // O Portal rejeita o arquivo inteiro se uma linha de item PARTICIPANTE
+  // tiver Valor Unitário zerado ou em branco ("O valor unitário deve ser
+  // maior do que zero") — confirmado tentando subir um export de verdade.
+  // Detecta isso ANTES de gerar o arquivo, em vez de deixar o usuário só
+  // descobrir depois de subir no site.
   const indicesSemValorUnitario = useMemo(
     () => edicoes.reduce<number[]>((acc, e, idx) => {
-      if ((parseFlexibleNumber(e.valorUnitario) ?? 0) <= 0) acc.push(idx)
+      if (linhasParticipando[idx] && (parseFlexibleNumber(e.valorUnitario) ?? 0) <= 0) acc.push(idx)
       return acc
     }, []),
-    [edicoes]
+    [edicoes, linhasParticipando]
   )
 
   const handleUploadModelo = async (file: File) => {
@@ -566,7 +578,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
         .slice(0, 6)
         .join(', ')
       showToast(
-        `O Portal rejeita o arquivo se algum item ficar com Valor Unitário zerado. Preencha o item ${numerosItem}${indicesSemValorUnitario.length > 6 ? ' e outros' : ''} antes de exportar.`,
+        `O Portal rejeita o arquivo se algum item que você participa ficar com Valor Unitário zerado. Preencha o item ${numerosItem}${indicesSemValorUnitario.length > 6 ? ' e outros' : ''} antes de exportar.`,
         'error'
       )
       return
@@ -664,7 +676,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
       <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-4 flex flex-col gap-3">
         <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Proposta Inicial — Modelo do Portal de Compras Públicas</p>
         <p className="text-[12px] text-base-400">
-          Processo, ID{temLote ? ', Lote' : ''}, Item, Produto e Quantidade vêm exatamente como no modelo salvo do Portal ("{modeloArquivo.name}") — não são editáveis aqui. Preencha Modelo, Marca/Fabricante, ANVISA, Descrição e Valor Unitário e exporte; se ajustar o rateio depois, é só exportar de novo que já sai atualizado.
+          Processo, ID{temLote ? ', Lote' : ''}, Item, Produto e Quantidade vêm exatamente como no modelo salvo do Portal ("{modeloArquivo.name}") — não são editáveis aqui. Nos itens que você está participando (linhas cadastradas na licitação), Marca e Valor Unitário já vêm preenchidos com o valor de referência da análise do edital — confira e ajuste se precisar. Itens que você não está participando ficam em branco e saem zerados no CSV, como o próprio modelo do Portal instrui.
         </p>
       </div>
 
@@ -672,7 +684,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
         <div className="bg-warning-500/10 border border-warning-500/25 rounded-xl p-3 flex items-start gap-2">
           <AlertCircle className="w-4 h-4 text-warning-400 shrink-0 mt-0.5" />
           <p className="text-[12px] text-warning-300">
-            {indicesSemValorUnitario.length} item(ns) sem Valor Unitário preenchido (destacados em vermelho na tabela) — o Portal rejeita o arquivo inteiro se alguma linha ficar com valor zerado.
+            {indicesSemValorUnitario.length} item(ns) que você está participando sem Valor Unitário preenchido (destacados em vermelho na tabela) — o Portal rejeita o arquivo inteiro se alguma linha participante ficar com valor zerado.
           </p>
         </div>
       )}
@@ -709,13 +721,17 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
               const edicao = edicoes[idx] ?? { modelo: '', marca: '', anvisa: '', descricao: '', valorUnitario: '' }
               const quantidadeNum = parseFlexibleNumber(linha[colunas.quantidade]) ?? 0
               const valorUnitarioNum = parseFlexibleNumber(edicao.valorUnitario) ?? 0
+              const participa = linhasParticipando[idx]
               return (
-                <tr key={idx} className="border-t border-base-800/60">
+                <tr key={idx} className={`border-t border-base-800/60 ${participa ? '' : 'opacity-50'}`}>
                   <td className="px-2 py-1.5 text-base-400">{linha[colunas.processo]}</td>
                   <td className="px-2 py-1.5 text-base-400">{linha[colunas.id]}</td>
                   {temLote && <td className="px-2 py-1.5 text-base-400">{linha[colunas.lote as number]}</td>}
                   <td className="px-2 py-1.5 text-base-400">{linha[colunas.item]}</td>
-                  <td className="px-2 py-1.5 text-base-400 max-w-[200px] truncate" title={linha[colunas.produto]}>{linha[colunas.produto]}</td>
+                  <td className="px-2 py-1.5 text-base-400 max-w-[200px] truncate" title={participa ? linha[colunas.produto] : `${linha[colunas.produto]} — você não está participando deste item`}>
+                    {linha[colunas.produto]}
+                    {!participa && <span className="ml-1.5 text-[10px] font-semibold text-base-500 whitespace-nowrap">(não participa)</span>}
+                  </td>
                   <td className="px-2 py-1.5 text-right font-mono text-base-400">{linha[colunas.quantidade]}</td>
                   {(['modelo', 'marca', 'anvisa', 'descricao'] as const).map((campo) => (
                     <td key={campo} className="px-1.5 py-1.5">
@@ -733,8 +749,8 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
                       inputMode="decimal"
                       onChange={(e) => atualizarEdicao(idx, { valorUnitario: e.target.value })}
                       disabled={!podeEditar}
-                      title={valorUnitarioNum <= 0 ? 'O Portal exige um valor unitário maior que zero pra este item.' : undefined}
-                      className={`w-full bg-base-900 border rounded px-1.5 py-1 text-right text-[12px] font-mono text-base-100 focus:border-accent-400 outline-none disabled:opacity-60 ${valorUnitarioNum <= 0 ? 'border-negative-500/60' : 'border-base-700'}`}
+                      title={participa && valorUnitarioNum <= 0 ? 'O Portal exige um valor unitário maior que zero pra este item.' : undefined}
+                      className={`w-full bg-base-900 border rounded px-1.5 py-1 text-right text-[12px] font-mono text-base-100 focus:border-accent-400 outline-none disabled:opacity-60 ${participa && valorUnitarioNum <= 0 ? 'border-negative-500/60' : 'border-base-700'}`}
                     />
                   </td>
                   <td className="px-2 py-1.5 text-right font-mono text-base-300">{formatarNumeroPtBR(quantidadeNum * valorUnitarioNum)}</td>
