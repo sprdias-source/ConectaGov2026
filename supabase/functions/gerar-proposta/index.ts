@@ -171,21 +171,22 @@ Deno.serve(async (req) => {
       data_emissao: escapeXml(formatarData(hoje.toISOString().split('T')[0])),
     }
 
-    // --- Processa document.xml (cabeçalho + texto fixo + tabela de itens) ---
-    const documentFile = zip.file('word/document.xml')
-    if (!documentFile) throw new Error('Modelo inválido: word/document.xml não encontrado no .docx')
-    let documentXml = await documentFile.async('string')
+    // --- Processa word/header1.xml (cabeçalho de página do cliente) ---
+    // O cabeçalho é um cabeçalho de página de verdade do Word (repete em
+    // todas as páginas), não texto solto no corpo do documento. O
+    // parágrafo {{cabecalho_cliente}} é substituído por um parágrafo pra
+    // cada linha do texto salvo em clients.cabecalho_declaracao (Cadastros
+    // → Cliente → Cabeçalho das Declarações), sempre centralizado — mesmos
+    // parâmetros das declarações. Sem cabeçalho salvo, cai num mínimo (nome
+    // + CNPJ) pra nunca gerar o documento sem identificação nenhuma no topo.
+    const headerFile = zip.file('word/header1.xml')
+    if (!headerFile) throw new Error('Modelo inválido: word/header1.xml não encontrado no .docx')
+    let headerXml = await headerFile.async('string')
 
-    // --- Cabeçalho do cliente: substitui o parágrafo {{cabecalho_cliente}}
-    // inteiro por um parágrafo pra cada linha do texto salvo em
-    // clients.cabecalho_declaracao (Cadastros → Cliente → Cabeçalho das
-    // Declarações), sempre centralizado — mesmos parâmetros das
-    // declarações. Sem cabeçalho salvo, cai num mínimo (nome + CNPJ) pra
-    // nunca gerar o documento sem identificação nenhuma no topo.
     const cabecalhoParagrafoRegex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?\{\{cabecalho_cliente\}\}[\s\S]*?<\/w:p>/
-    const cabecalhoParagrafoMatch = documentXml.match(cabecalhoParagrafoRegex)
+    const cabecalhoParagrafoMatch = headerXml.match(cabecalhoParagrafoRegex)
     if (!cabecalhoParagrafoMatch) {
-      throw new Error('Modelo inválido: não encontrei o parágrafo do cabeçalho do cliente (com {{cabecalho_cliente}})')
+      throw new Error('Modelo inválido: não encontrei o parágrafo do cabeçalho do cliente (com {{cabecalho_cliente}}) em header1.xml')
     }
     const linhasCabecalhoCliente = (client.cabecalho_declaracao?.trim() || `${client.name}\nCNPJ: ${client.cnpj ?? ''}`)
       .split('\n').map((linha: string) => linha.trim()).filter(Boolean)
@@ -196,7 +197,13 @@ Deno.serve(async (req) => {
         borda: idx === linhasCabecalhoCliente.length - 1,
       })
     ).join('')
-    documentXml = documentXml.replace(cabecalhoParagrafoMatch[0], paragrafosCabecalho)
+    headerXml = headerXml.replace(cabecalhoParagrafoMatch[0], paragrafosCabecalho)
+    zip.file('word/header1.xml', headerXml)
+
+    // --- Processa document.xml (texto fixo + tabela de itens) ---
+    const documentFile = zip.file('word/document.xml')
+    if (!documentFile) throw new Error('Modelo inválido: word/document.xml não encontrado no .docx')
+    let documentXml = await documentFile.async('string')
 
     // Localiza a linha-modelo da tabela de itens (a que contém
     // {{item_identificador}}) pra poder repeti-la uma vez por item real, e a
@@ -224,6 +231,7 @@ Deno.serve(async (req) => {
     const linhasGeradas: string[] = []
     let loteAtual: string | null = null
     let totalLoteAtual = 0
+    let totalGeralProposta = 0
     const fecharSubtotalLote = () => {
       if (loteAtual === null) return
       linhasGeradas.push(substituirPlaceholders(linhaSubtotalModelo, {
@@ -243,6 +251,7 @@ Deno.serve(async (req) => {
       const valorUnit = item.valor_unitario_ofertado ?? item.valor_unitario_licitado
       const valorTotal = quantidade * Number(valorUnit)
       totalLoteAtual += valorTotal
+      totalGeralProposta += valorTotal
       linhasGeradas.push(substituirPlaceholders(linhaItemModelo, {
         item_identificador: escapeXml(identificador),
         item_descricao: escapeXml(item.descricao),
@@ -267,7 +276,10 @@ Deno.serve(async (req) => {
 
     documentXml = documentXml.replace(blocoModeloTabela, linhasGeradas.join(''))
 
-    // Substitui o restante dos placeholders fixos (fora da tabela de itens)
+    // Substitui o restante dos placeholders fixos (fora da tabela de itens),
+    // incluindo o valor total geral da proposta (soma de todos os itens,
+    // independente de lote).
+    valoresFixos.valor_total_proposta = escapeXml(formatarMoeda(totalGeralProposta))
     documentXml = substituirPlaceholders(documentXml, valoresFixos)
     zip.file('word/document.xml', documentXml)
 
