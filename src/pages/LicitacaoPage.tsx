@@ -463,18 +463,23 @@ function HistoricoVersoes({ biddingId }: { biddingId: string }) {
 // Portal Compras') e reaproveitado nas exportações seguintes.
 const CATEGORIA_MODELO_PORTAL = 'Modelo Portal Compras' as const
 
-// "Participa" é uma decisão do usuário sobre ESTA proposta específica — não
-// dá pra derivar de bidding_items (o edital pode não ter itens
-// sincronizados ainda nesta fase, antes até de "Preencher Licitação com
-// estes Dados") nem de qualquer outra fonte automática. Por padrão todo
-// item do modelo participa; o usuário desmarca os que não vai disputar.
+// "Participa" começa pré-marcado a partir da mesma seleção já feita na
+// aba Edital & Análise (AnaliseEdital.itens[].participando, os checkboxes
+// "Part." do Resumo Técnico) — casado pelo número do item, não pela
+// existência em bidding_items (que pode nem estar sincronizado ainda
+// nesta fase). Um item do modelo que a IA não identificou na análise
+// fica participando por padrão (mesma semântica opt-out de participando
+// em toda a base). Em qualquer caso, o checkbox aqui é só o ponto de
+// partida — sempre editável, pro usuário ajustar se precisar.
 type EdicaoLinhaPortal = { participa: boolean; modelo: string; marca: string; anvisa: string; descricao: string; valorUnitario: string }
 type ModeloPortalLido = { cabecalho: string[]; linhas: string[][]; colunas: ColunasPortal }
 
-function edicaoLinhaPadrao(linhaModelo: string[], colunas: ColunasPortal, itemPorNumero: Map<string, BiddingItem>): EdicaoLinhaPortal {
+function edicaoLinhaPadrao(
+  linhaModelo: string[], colunas: ColunasPortal, itemPorNumero: Map<string, BiddingItem>, participandoPorNumero: Map<string, boolean>
+): EdicaoLinhaPortal {
   const item = itemPorNumero.get(linhaModelo[colunas.item])
   return {
-    participa: true,
+    participa: participandoPorNumero.get(linhaModelo[colunas.item]) ?? true,
     modelo: '',
     marca: item?.marca ?? '',
     anvisa: '',
@@ -485,12 +490,26 @@ function edicaoLinhaPadrao(linhaModelo: string[], colunas: ColunasPortal, itemPo
 
 function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
   const { items, isLoading: isLoadingItems } = useBiddingItemsDaLicitacao(bidding.id)
+  const { analysis, isLoading: isLoadingAnalysis } = useBiddingAnalysis(bidding.id)
   const { nivel } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivel === 'edicao'
   const { showToast } = useToast()
   const { files: anexos, isLoading: isLoadingAnexos, uploadFile, deleteFile } = useAttachedFiles('licitacao', bidding.id)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [enviandoModelo, setEnviandoModelo] = useState(false)
+
+  // Casa a mesma seleção "participa" já feita na aba Edital & Análise
+  // (checkboxes "Part." do Resumo Técnico) pelo número do item — é o
+  // ponto de partida do checkbox aqui, não a fonte definitiva.
+  const participandoPorNumero = useMemo(() => {
+    const analise = (analysis?.analise ?? null) as AnaliseEdital | null
+    const mapa = new Map<string, boolean>()
+    analise?.itens?.forEach((it) => {
+      const numero = it.numero != null ? String(it.numero) : null
+      if (numero) mapa.set(numero, it.participando !== false)
+    })
+    return mapa
+  }, [analysis])
 
   const modeloArquivo = anexos.find((f) => f.category === CATEGORIA_MODELO_PORTAL) ?? null
 
@@ -525,8 +544,8 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
   // (ajuste de estado durante o render, comparando com um marcador, em
   // vez de useEffect — mesmo padrão já usado nesta página).
   const [carregadoPara, setCarregadoPara] = useState<string | null>(null)
-  if (linhasModelo.length > 0 && colunas && carregadoPara !== modeloArquivo?.id) {
-    setEdicoes(linhasModelo.map((linha) => edicaoLinhaPadrao(linha, colunas, itemPorNumero)))
+  if (linhasModelo.length > 0 && colunas && !isLoadingAnalysis && carregadoPara !== modeloArquivo?.id) {
+    setEdicoes(linhasModelo.map((linha) => edicaoLinhaPadrao(linha, colunas, itemPorNumero, participandoPorNumero)))
     setCarregadoPara(modeloArquivo?.id ?? null)
   }
 
@@ -633,7 +652,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
     </>
   )
 
-  if (isLoadingItems || isLoadingAnexos) return <SkeletonTableRows linhas={4} colunas={5} />
+  if (isLoadingItems || isLoadingAnexos || isLoadingAnalysis) return <SkeletonTableRows linhas={4} colunas={5} />
 
   if (!modeloArquivo) {
     return (
@@ -683,7 +702,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
       <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-4 flex flex-col gap-3">
         <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Proposta Inicial — Modelo do Portal de Compras Públicas</p>
         <p className="text-[12px] text-base-400">
-          Processo, ID{temLote ? ', Lote' : ''}, Item, Produto e Quantidade vêm exatamente como no modelo salvo do Portal ("{modeloArquivo.name}") — não são editáveis aqui. Todo item começa marcado como "Participa"; desmarque os que você não vai disputar — nos que ficam cadastrados na licitação, Marca e Valor Unitário já vêm preenchidos com o valor de referência da análise do edital. O Portal exige valor maior que zero em toda linha do arquivo, sem exceção — por isso os itens desmarcados são omitidos do CSV exportado, não zerados.
+          Processo, ID{temLote ? ', Lote' : ''}, Item, Produto e Quantidade vêm exatamente como no modelo salvo do Portal ("{modeloArquivo.name}") — não são editáveis aqui. "Participa" já vem marcado conforme a seleção feita na aba Edital & Análise, mas continua editável aqui se precisar ajustar. Nos itens participantes, Marca e Valor Unitário já vêm preenchidos com o valor de referência da análise do edital. O Portal exige valor maior que zero em toda linha do arquivo, sem exceção — por isso os itens desmarcados são omitidos do CSV exportado, não zerados.
         </p>
       </div>
 
