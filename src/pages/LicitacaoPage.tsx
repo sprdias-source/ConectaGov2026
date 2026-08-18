@@ -19,6 +19,7 @@ import Modal from '../components/ui/Modal'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useAttachedFiles } from '../hooks/useAttachedFiles'
 import { useBiddingChecklist, calcularHabilitacao, statusItemChecklist, arquivoResolvidoDoItem, extrairNumeroEdital } from '../hooks/useBiddingChecklist'
+import { useDeclaracaoAnexos } from '../hooks/useDeclaracaoAnexos'
 import { useBuscaCertidaoAutomatica } from '../hooks/useBuscaCertidaoAutomatica'
 import AcoesDocumentoManual from '../components/documentos/AcoesDocumentoManual'
 import DownloadDocumentosModal from '../components/licitacao/DownloadDocumentosModal'
@@ -1641,7 +1642,7 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
 
           {(analise.checklistDocumentacao?.length ?? 0) > 0 && (
             <p className="text-[11px] text-base-500 italic">
-              {analise.checklistDocumentacao!.length} documento(s) sugerido(s) pela análise pra habilitação — adicione na aba Checklist &amp; Habilitação.
+              {analise.checklistDocumentacao!.length} documento(s) sugerido(s) pela análise já preenchidos automaticamente na aba Checklist &amp; Habilitação.
             </p>
           )}
 
@@ -1699,6 +1700,7 @@ export default function LicitacaoPage() {
 
   const { files: anexos, uploadFile: uploadAnexo, uploadProgress, deleteFile: deleteAnexo, getDownloadUrl: getAnexoUrl } = useAttachedFiles('licitacao', bidding?.id)
   const { items, addItem, updateItem, deleteItem, limparItensIA, addItensEmLote, marcarNaoAplicavel, reverterNaoAplicavel } = useBiddingChecklist(bidding?.id)
+  const { analisar: analisarAnexosDeclaracao } = useDeclaracaoAnexos(bidding?.id)
   const { documents: clientDocs, uploadAndSave: uploadClientDoc } = useClientDocuments(bidding?.clientId)
   const { atestados, addAtestado } = useAtestados(bidding?.clientId)
   const clienteDaLicitacao = clients.find((c) => c.id === bidding?.clientId)
@@ -1737,6 +1739,32 @@ export default function LicitacaoPage() {
   const checklistSugeridoPendente = checklistDocumentacao.filter(
     (doc) => !descricoesJaNoChecklist.has(extrairNumeroEdital(doc.descricao).descricao)
   )
+
+  // Assim que uma análise de edital termina (a primeira ou uma refeita), o
+  // checklist e os anexos de declaração se preenchem sozinhos — sem os
+  // antigos botões manuais "Adicionar ao Checklist" e "Analisar Anexos do
+  // Edital". A chave inclui analysis.updatedAt (não só bidding.id) pra
+  // rearmar em cada nova análise concluída, sem duplicar o que já rodou
+  // pra essa mesma versão da análise.
+  const chaveAnaliseConcluida = bidding && analysis?.status === 'concluido' ? `${bidding.id}:${analysis.updatedAt}` : null
+
+  const checklistAutoPreenchidoRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!podeEditar || !chaveAnaliseConcluida) return
+    if (checklistAutoPreenchidoRef.current === chaveAnaliseConcluida) return
+    if (checklistSugeridoPendente.length === 0) return
+    checklistAutoPreenchidoRef.current = chaveAnaliseConcluida
+    addItensEmLote.mutate(checklistSugeridoPendente)
+  }, [podeEditar, chaveAnaliseConcluida, checklistSugeridoPendente, addItensEmLote])
+
+  const anexosAutoAnalisadosRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!podeEditar || !chaveAnaliseConcluida) return
+    if (anexosAutoAnalisadosRef.current === chaveAnaliseConcluida) return
+    if (!anexos.some((a) => a.category === 'Edital')) return
+    anexosAutoAnalisadosRef.current = chaveAnaliseConcluida
+    analisarAnexosDeclaracao.mutate()
+  }, [podeEditar, chaveAnaliseConcluida, anexos, analisarAnexosDeclaracao])
 
   const [enviando, setEnviando] = useState<string | null>(null)
   const [showNovoItem, setShowNovoItem] = useState(false)
@@ -2539,21 +2567,12 @@ export default function LicitacaoPage() {
               {checklistDocumentacao.length > 0 && (
                 <div className="mt-3 bg-accent-500/10 border border-accent-500/25 rounded-lg p-3">
                   {checklistSugeridoPendente.length > 0 ? (
-                    <>
-                      <p className="text-[12px] text-accent-300 mb-2">
-                        {checklistSugeridoPendente.length} documento(s) sugerido(s) pela análise pra habilitação
-                        {checklistSugeridoPendente.length < checklistDocumentacao.length
-                          && ` (${checklistDocumentacao.length - checklistSugeridoPendente.length} já adicionado(s))`}.
-                      </p>
-                      {podeEditar && (
-                        <Button variant="secondary" onClick={() => addItensEmLote.mutate(checklistSugeridoPendente)} disabled={addItensEmLote.isPending}>
-                          <Plus className="w-4 h-4" /> {addItensEmLote.isPending ? 'Adicionando...' : 'Adicionar ao Checklist'}
-                        </Button>
-                      )}
-                    </>
+                    <p className="text-[12px] text-accent-300 flex items-center gap-1.5">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Adicionando automaticamente {checklistSugeridoPendente.length} documento(s) sugerido(s) pela análise ao checklist...
+                    </p>
                   ) : (
                     <p className="text-[12px] text-positive-400 flex items-center gap-1.5">
-                      <Check className="w-3.5 h-3.5" /> {checklistDocumentacao.length} documento(s) sugerido(s) pela análise já {checklistDocumentacao.length === 1 ? 'foi adicionado' : 'foram adicionados'} ao checklist.
+                      <Check className="w-3.5 h-3.5" /> {checklistDocumentacao.length} documento(s) sugerido(s) pela análise {checklistDocumentacao.length === 1 ? 'foi adicionado' : 'foram adicionados'} automaticamente ao checklist.
                     </p>
                   )}
                 </div>
