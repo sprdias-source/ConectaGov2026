@@ -35,6 +35,12 @@ function formatarData(dataIso: string | null | undefined): string {
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }).toUpperCase()
 }
 
+// Ordenação natural (mesmo comparador usado no frontend, src/lib/numberParsing.ts)
+// — evita que "10" venha antes de "2" numa ordenação puramente lexicográfica.
+function compararNumeroItem(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+}
+
 // Substitui todos os {{placeholder}} de um texto XML pelos valores do mapa.
 // Só mexe nos que existem no mapa — qualquer placeholder desconhecido fica
 // como está (visível), o que ajuda a notar rapidamente se algo não foi
@@ -43,6 +49,15 @@ function substituirPlaceholders(xml: string, valores: Record<string, string>): s
   return xml.replace(/\{\{(\w+)\}\}/g, (match, chave) => {
     return chave in valores ? valores[chave] : match
   })
+}
+
+// Constrói um parágrafo Word (centralizado) pra uma linha do cabeçalho do
+// cliente — usado pra substituir {{cabecalho_cliente}} por N parágrafos, um
+// por linha do texto salvo em clients.cabecalho_declaracao.
+function construirParagrafoCabecalho(texto: string, opts: { negrito: boolean; tamanho: number; borda: boolean }): string {
+  const pBdr = opts.borda ? '<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="4" w:color="1A1A1A"/></w:pBdr>' : ''
+  const rPrNegrito = opts.negrito ? '<w:b/><w:bCs/>' : ''
+  return `<w:p><w:pPr><w:jc w:val="center"/>${pBdr}</w:pPr><w:r><w:rPr>${rPrNegrito}<w:sz w:val="${opts.tamanho}"/><w:szCs w:val="${opts.tamanho}"/></w:rPr><w:t xml:space="preserve">${escapeXml(texto)}</w:t></w:r></w:p>`
 }
 
 Deno.serve(async (req) => {
@@ -100,6 +115,18 @@ Deno.serve(async (req) => {
       ? (items ?? []).filter((i) => i.ganhou)
       : (items ?? [])
 
+    // Coluna "Lote" (com subtotal por lote) quando a licitação é desse tipo,
+    // ou "Item" (sem subtotal) quando é por item — mesma regra usada nas
+    // outras telas de itens (BiddingItemsEditor, AbaProposta).
+    const porLote = bidding.tipo_disputa === 'Lote'
+
+    // Ordena por lote (quando houver) e depois por número do item, com
+    // ordenação natural — garante que os itens do mesmo lote fiquem juntos
+    // pra poder fechar o subtotal corretamente.
+    const itensOrdenados = [...itensParaProposta].sort((a, b) =>
+      compararNumeroItem(a.lote || a.numero_item, b.lote || b.numero_item) || compararNumeroItem(a.numero_item, b.numero_item)
+    )
+
     // Usa o modelo próprio da licitação (se tiver sido enviado) ou o
     // modelo padrão do sistema.
     const templatePath = bidding.modelo_customizado_path || TEMPLATE_PATH_PADRAO
@@ -118,6 +145,7 @@ Deno.serve(async (req) => {
     const hoje = new Date()
     const valoresFixos: Record<string, string> = {
       titulo_documento: escapeXml(tituloDocumento),
+      coluna_identificador: escapeXml(porLote ? 'Lote' : 'Item'),
       modalidade: escapeXml(bidding.modalidade),
       numero_edital: escapeXml(bidding.numero_edital ?? ''),
       orgao: escapeXml(bidding.orgao),
@@ -143,26 +171,80 @@ Deno.serve(async (req) => {
       data_emissao: escapeXml(formatarData(hoje.toISOString().split('T')[0])),
     }
 
-    // --- Processa document.xml (texto fixo + tabela de itens) ---
+    // --- Processa document.xml (cabeçalho + texto fixo + tabela de itens) ---
     const documentFile = zip.file('word/document.xml')
     if (!documentFile) throw new Error('Modelo inválido: word/document.xml não encontrado no .docx')
     let documentXml = await documentFile.async('string')
 
-    // Localiza a linha-modelo da tabela de itens (a que contém
-    // {{item_numero}}) pra poder repeti-la uma vez por item real.
-    const linhaRegex = /<w:tr\b[^>]*>(?:(?!<\/w:tr>)[\s\S])*?\{\{item_numero\}\}[\s\S]*?<\/w:tr>/
-    const linhaMatch = documentXml.match(linhaRegex)
-    if (!linhaMatch) {
-      throw new Error('Modelo inválido: não encontrei a linha de item (com {{item_numero}}) na tabela')
+    // --- Cabeçalho do cliente: substitui o parágrafo {{cabecalho_cliente}}
+    // inteiro por um parágrafo pra cada linha do texto salvo em
+    // clients.cabecalho_declaracao (Cadastros → Cliente → Cabeçalho das
+    // Declarações), sempre centralizado — mesmos parâmetros das
+    // declarações. Sem cabeçalho salvo, cai num mínimo (nome + CNPJ) pra
+    // nunca gerar o documento sem identificação nenhuma no topo.
+    const cabecalhoParagrafoRegex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?\{\{cabecalho_cliente\}\}[\s\S]*?<\/w:p>/
+    const cabecalhoParagrafoMatch = documentXml.match(cabecalhoParagrafoRegex)
+    if (!cabecalhoParagrafoMatch) {
+      throw new Error('Modelo inválido: não encontrei o parágrafo do cabeçalho do cliente (com {{cabecalho_cliente}})')
     }
-    const linhaModelo = linhaMatch[0]
+    const linhasCabecalhoCliente = (client.cabecalho_declaracao?.trim() || `${client.name}\nCNPJ: ${client.cnpj ?? ''}`)
+      .split('\n').map((linha: string) => linha.trim()).filter(Boolean)
+    const paragrafosCabecalho = linhasCabecalhoCliente.map((linha: string, idx: number) =>
+      construirParagrafoCabecalho(linha, {
+        negrito: idx === 0,
+        tamanho: idx === 0 ? 28 : 20,
+        borda: idx === linhasCabecalhoCliente.length - 1,
+      })
+    ).join('')
+    documentXml = documentXml.replace(cabecalhoParagrafoMatch[0], paragrafosCabecalho)
 
-    const linhasPreenchidas = itensParaProposta.map((item) => {
+    // Localiza a linha-modelo da tabela de itens (a que contém
+    // {{item_identificador}}) pra poder repeti-la uma vez por item real, e a
+    // linha-modelo do subtotal por lote logo em seguida (com
+    // {{lote_subtotal_valor}}) — as duas ficam adjacentes no modelo.
+    const linhaItemRegex = /<w:tr\b[^>]*>(?:(?!<\/w:tr>)[\s\S])*?\{\{item_identificador\}\}[\s\S]*?<\/w:tr>/
+    const linhaItemMatch = documentXml.match(linhaItemRegex)
+    if (!linhaItemMatch) {
+      throw new Error('Modelo inválido: não encontrei a linha de item (com {{item_identificador}}) na tabela')
+    }
+    const linhaItemModelo = linhaItemMatch[0]
+
+    const linhaSubtotalRegex = /<w:tr\b[^>]*>(?:(?!<\/w:tr>)[\s\S])*?\{\{lote_subtotal_valor\}\}[\s\S]*?<\/w:tr>/
+    const linhaSubtotalMatch = documentXml.match(linhaSubtotalRegex)
+    if (!linhaSubtotalMatch) {
+      throw new Error('Modelo inválido: não encontrei a linha de subtotal de lote (com {{lote_subtotal_valor}}) na tabela')
+    }
+    const linhaSubtotalModelo = linhaSubtotalMatch[0]
+
+    const blocoModeloTabela = linhaItemModelo + linhaSubtotalModelo
+    if (!documentXml.includes(blocoModeloTabela)) {
+      throw new Error('Modelo inválido: a linha de item e a linha de subtotal de lote precisam estar uma logo após a outra na tabela')
+    }
+
+    const linhasGeradas: string[] = []
+    let loteAtual: string | null = null
+    let totalLoteAtual = 0
+    const fecharSubtotalLote = () => {
+      if (loteAtual === null) return
+      linhasGeradas.push(substituirPlaceholders(linhaSubtotalModelo, {
+        lote_subtotal_numero: escapeXml(loteAtual),
+        lote_subtotal_valor: escapeXml(formatarMoeda(totalLoteAtual)),
+      }))
+      totalLoteAtual = 0
+    }
+
+    for (const item of itensOrdenados) {
+      const identificador = porLote ? (item.lote || '—') : item.numero_item
+      if (porLote && identificador !== loteAtual) {
+        fecharSubtotalLote()
+        loteAtual = identificador
+      }
       const quantidade = Number(item.quantidade)
       const valorUnit = item.valor_unitario_ofertado ?? item.valor_unitario_licitado
       const valorTotal = quantidade * Number(valorUnit)
-      const valoresItem: Record<string, string> = {
-        item_numero: escapeXml(item.numero_item),
+      totalLoteAtual += valorTotal
+      linhasGeradas.push(substituirPlaceholders(linhaItemModelo, {
+        item_identificador: escapeXml(identificador),
         item_descricao: escapeXml(item.descricao),
         item_marca: escapeXml(item.marca ?? ''),
         item_referencia: escapeXml(item.referencia ?? ''),
@@ -170,20 +252,20 @@ Deno.serve(async (req) => {
         item_unidade: escapeXml(item.unidade ?? ''),
         item_valor_unitario: escapeXml(formatarMoeda(valorUnit)),
         item_valor_total: escapeXml(formatarMoeda(valorTotal)),
-      }
-      return substituirPlaceholders(linhaModelo, valoresItem)
-    })
+      }))
+    }
+    if (porLote) fecharSubtotalLote()
 
-    if (linhasPreenchidas.length === 0) {
+    if (linhasGeradas.length === 0) {
       // Sem itens cadastrados: mantém uma linha vazia em vez de sumir com a
       // tabela inteira, pra não confundir quem abrir o documento.
-      linhasPreenchidas.push(substituirPlaceholders(linhaModelo, {
-        item_numero: '', item_descricao: '(nenhum item cadastrado)', item_marca: '',
-        item_quantidade: '', item_unidade: '', item_valor_unitario: '', item_valor_total: '',
+      linhasGeradas.push(substituirPlaceholders(linhaItemModelo, {
+        item_identificador: '', item_descricao: '(nenhum item cadastrado)', item_marca: '',
+        item_referencia: '', item_quantidade: '', item_unidade: '', item_valor_unitario: '', item_valor_total: '',
       }))
     }
 
-    documentXml = documentXml.replace(linhaModelo, linhasPreenchidas.join(''))
+    documentXml = documentXml.replace(blocoModeloTabela, linhasGeradas.join(''))
 
     // Substitui o restante dos placeholders fixos (fora da tabela de itens)
     documentXml = substituirPlaceholders(documentXml, valoresFixos)
