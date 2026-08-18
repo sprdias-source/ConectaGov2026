@@ -44,7 +44,7 @@ import {
   parseCsvPortal, stringifyCsvPortal, textoParaBlobLatin1, bufferParaTextoLatin1, formatarNumeroPtBR, detectarColunasPortal,
 } from '../lib/csvPortalCompras'
 import type { ColunasPortal } from '../lib/csvPortalCompras'
-import { parseFlexibleNumber, compararNumeroItem } from '../lib/numberParsing'
+import { parseFlexibleNumber, compararNumeroItem, normalizarNumeroItem } from '../lib/numberParsing'
 import { mapearCamposDaAnalise, mapearItensDaAnalise, somarValorLicitado, mensagemAmigavelErroAnalise } from '../lib/analiseEdital'
 import { useToast } from '../hooks/useToast'
 import { CERT_CONFIG } from '../types/domain'
@@ -477,9 +477,10 @@ type ModeloPortalLido = { cabecalho: string[]; linhas: string[][]; colunas: Colu
 function edicaoLinhaPadrao(
   linhaModelo: string[], colunas: ColunasPortal, itemPorNumero: Map<string, BiddingItem>, participandoPorNumero: Map<string, boolean>
 ): EdicaoLinhaPortal {
-  const item = itemPorNumero.get(linhaModelo[colunas.item])
+  const numeroItem = normalizarNumeroItem(linhaModelo[colunas.item])
+  const item = itemPorNumero.get(numeroItem)
   return {
-    participa: participandoPorNumero.get(linhaModelo[colunas.item]) ?? true,
+    participa: participandoPorNumero.get(numeroItem) ?? true,
     modelo: '',
     marca: item?.marca ?? '',
     anvisa: '',
@@ -505,7 +506,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
     const analise = (analysis?.analise ?? null) as AnaliseEdital | null
     const mapa = new Map<string, boolean>()
     analise?.itens?.forEach((it) => {
-      const numero = it.numero != null ? String(it.numero) : null
+      const numero = it.numero != null ? normalizarNumeroItem(String(it.numero)) : null
       if (numero) mapa.set(numero, it.participando !== false)
     })
     return mapa
@@ -536,7 +537,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
   const linhasModelo = useMemo(() => modeloQuery.data?.linhas ?? [], [modeloQuery.data])
   const colunas = modeloQuery.data?.colunas ?? null
   const temLote = colunas?.lote != null
-  const itemPorNumero = useMemo(() => new Map(items.map((i) => [i.numeroItem, i])), [items])
+  const itemPorNumero = useMemo(() => new Map(items.map((i) => [normalizarNumeroItem(i.numeroItem), i])), [items])
 
   const [edicoes, setEdicoes] = useState<EdicaoLinhaPortal[]>([])
   // Preenche os campos editáveis sozinho assim que o modelo carrega — só

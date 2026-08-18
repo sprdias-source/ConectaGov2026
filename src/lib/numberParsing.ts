@@ -35,3 +35,14 @@ export function parseFlexibleNumber(val: unknown): number | null {
 export function compararNumeroItem(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
 }
+
+// Normaliza um número de item pra CASAR entre fontes diferentes que
+// descrevem o mesmo item de formas distintas — ex: a IA extrai "0001" do
+// texto do edital (com zeros à esquerda), mas o CSV-modelo do Portal traz
+// "1" (sem). String puramente numérica vira o número sem zeros à
+// esquerda; qualquer outra coisa (ex: "1A", "Lote 2 - Item 3") só é
+// aparada de espaços, pra manter comparação exata.
+export function normalizarNumeroItem(valor: string): string {
+  const aparado = valor.trim()
+  return /^\d+$/.test(aparado) ? String(Number(aparado)) : aparado
+}
