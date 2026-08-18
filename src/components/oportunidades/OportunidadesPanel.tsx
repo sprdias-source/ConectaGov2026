@@ -57,12 +57,13 @@ const NOVA_PLATAFORMA = '__nova__'
 // (a mesma de sempre — só rodando antes de existir uma licitação de
 // verdade), registro da resposta do cliente e conversão em licitação.
 function OportunidadeDetalhe({
-  opportunity, podeEditar, onVisualizar, onExcluida,
+  opportunity, podeEditar, onVisualizar, onExcluida, onResolvida,
 }: {
   opportunity: Opportunity
   podeEditar: boolean
   onVisualizar: (nome: string, storagePath: string) => void
   onExcluida?: () => void
+  onResolvida?: () => void
 }) {
   const navigate = useNavigate()
   const { marcarResposta, deleteOpportunity, converterEmLicitacao, updateOpportunity } = useOpportunities()
@@ -341,7 +342,7 @@ function OportunidadeDetalhe({
           podeEditar && (
             <div className="flex flex-col gap-2 w-full">
               <div className="flex items-center gap-2">
-                <Button onClick={() => marcarResposta.mutate({ opportunity, resposta: 'aceita' })} disabled={marcarResposta.isPending}>
+                <Button onClick={() => marcarResposta.mutate({ opportunity, resposta: 'aceita' }, { onSuccess: onResolvida })} disabled={marcarResposta.isPending}>
                   <Check className="w-3.5 h-3.5" /> Cliente aceitou participar
                 </Button>
                 <Button variant="secondary" onClick={() => setMostrarRecusa((v) => !v)}>
@@ -351,7 +352,7 @@ function OportunidadeDetalhe({
               {mostrarRecusa && (
                 <div className="flex items-center gap-2">
                   <Input placeholder="Motivo (opcional)" value={motivoRecusa} onChange={(e) => setMotivoRecusa(e.target.value)} />
-                  <Button variant="secondary" onClick={() => marcarResposta.mutate({ opportunity, resposta: 'recusada', motivoRecusa })} disabled={marcarResposta.isPending}>
+                  <Button variant="secondary" onClick={() => marcarResposta.mutate({ opportunity, resposta: 'recusada', motivoRecusa }, { onSuccess: onResolvida })} disabled={marcarResposta.isPending}>
                     Confirmar recusa
                   </Button>
                 </div>
@@ -429,10 +430,19 @@ export default function OportunidadesPanel() {
   const [novaOportunidadeId, setNovaOportunidadeId] = useState<string | null>(null)
   const novaOportunidade = novaOportunidadeId ? opportunities.find((o) => o.id === novaOportunidadeId) ?? null : null
 
+  // Mesma lógica da oportunidade recém-criada, mas pro momento em que o
+  // cliente aceita/recusa: assim que isso acontece, o status vira
+  // "resolvida" e a ordenação por prazo manda a linha lá pro final da
+  // lista — só que o próximo passo (converter em licitação, no caso de
+  // aceite) é bem aqui, então a linha fica presa no lugar até o usuário
+  // fechar de propósito, em vez de "sumir" e obrigar a procurar de novo.
+  const [recemResolvidaId, setRecemResolvidaId] = useState<string | null>(null)
+  const recemResolvida = recemResolvidaId ? opportunities.find((o) => o.id === recemResolvidaId) ?? null : null
+
   const clientName = (id: string | null) => id ? (clients.find((c) => c.id === id)?.name ?? 'Cliente removido') : 'Sem cliente definido'
   const platformInfo = (id: string | null) => id ? platforms.find((p) => p.id === id) : undefined
 
-  const ordenadas = [...opportunities].filter((o) => o.id !== novaOportunidadeId).sort((a, b) => {
+  const ordenadas = [...opportunities].filter((o) => o.id !== novaOportunidadeId && o.id !== recemResolvidaId).sort((a, b) => {
     const statusA = calcOpportunityStatus(a)
     const statusB = calcOpportunityStatus(b)
     const peso = { vencida: 0, urgente: 1, aguardando: 2, resolvida: 3 }
@@ -598,6 +608,25 @@ export default function OportunidadesPanel() {
         </div>
       )}
 
+      {recemResolvida && (
+        <div className="bg-base-850/60 border-2 border-positive-500/40 rounded-lg overflow-hidden">
+          <div className="flex items-center justify-between gap-3 px-3 py-2.5 bg-positive-500/10">
+            <p className="text-[12px] font-semibold text-positive-300">
+              {recemResolvida.resposta === 'aceita' ? 'Resposta registrada — continue a análise ou converta em licitação abaixo' : 'Resposta registrada'}
+            </p>
+            <button onClick={() => setRecemResolvidaId(null)} className="text-base-500 hover:text-base-300 shrink-0" title="Fechar — volta pra lista ordenada abaixo">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <OportunidadeDetalhe
+            opportunity={recemResolvida}
+            podeEditar={podeEditar}
+            onVisualizar={handleVisualizar}
+            onExcluida={() => setRecemResolvidaId(null)}
+          />
+        </div>
+      )}
+
       {isLoading ? (
         <p className="text-[12px] text-base-500 italic py-2">Carregando...</p>
       ) : ordenadas.length === 0 ? (
@@ -635,7 +664,7 @@ export default function OportunidadesPanel() {
                   <StatusPill status={status} opportunity={o} />
                 </button>
                 {aberto && (
-                  <OportunidadeDetalhe opportunity={o} podeEditar={podeEditar} onVisualizar={handleVisualizar} />
+                  <OportunidadeDetalhe opportunity={o} podeEditar={podeEditar} onVisualizar={handleVisualizar} onResolvida={() => setRecemResolvidaId(o.id)} />
                 )}
               </div>
             )
