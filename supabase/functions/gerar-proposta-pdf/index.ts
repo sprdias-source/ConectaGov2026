@@ -66,6 +66,20 @@ function formatarValidadeProposta(valor: string | null | undefined): string {
   return /\bdias?\b/i.test(texto) ? texto : `${texto} dias`
 }
 
+function escapeRegex(texto: string): string {
+  return texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// clients.address já vem completo ("Rua, nº - Bairro, Cidade - UF"), e essa
+// proposta mostra Bairro/Cidade em campos separados também — sem isso o
+// bairro e a cidade aparecem duplicados no bloco de endereço.
+function extrairLogradouro(endereco: string, bairro: string | null | undefined): string {
+  const texto = endereco.trim()
+  if (!bairro?.trim()) return texto
+  const regex = new RegExp(`\\s*-\\s*${escapeRegex(bairro.trim())}\\b.*$`, 'i')
+  return texto.replace(regex, '').trim() || texto
+}
+
 function dataPorExtenso(d: Date): string {
   const meses = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
   return `${d.getDate()} de ${meses[d.getMonth()]} de ${d.getFullYear()}`
@@ -246,7 +260,7 @@ Deno.serve(async (req: Request) => {
     const meioLargura = Math.round(LARGURA_UTIL / 2)
     desenharTabela([meioLargura, LARGURA_UTIL - meioLargura], [
       [{ texto: `Razão Social: ${client.name}`, negrito: true }, { texto: `CNPJ: ${client.cnpj ?? ''}` }],
-      [{ texto: `I.E: ${client.inscricao_estadual ?? '—'}` }, { texto: `Endereço: ${client.address ?? ''}` }],
+      [{ texto: `I.E: ${client.inscricao_estadual ?? '—'}` }, { texto: `Endereço: ${extrairLogradouro(client.address ?? '', client.bairro)}` }],
       [{ texto: `Bairro: ${client.bairro ?? ''}` }, { texto: `Cidade: ${client.cidade ?? ''}` }],
       [{ texto: `Telefone: ${client.phone ?? ''}` }, { texto: `E-mail: ${client.email ?? ''}` }],
       [{ texto: `Conta Bancária: ${client.banco_nome ?? ''}` }, { texto: `Ag: ${client.banco_agencia ?? ''}  Conta Corrente: ${client.banco_conta ?? ''}` }],
