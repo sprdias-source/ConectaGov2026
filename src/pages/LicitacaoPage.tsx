@@ -463,12 +463,18 @@ function HistoricoVersoes({ biddingId }: { biddingId: string }) {
 // Portal Compras') e reaproveitado nas exportações seguintes.
 const CATEGORIA_MODELO_PORTAL = 'Modelo Portal Compras' as const
 
-type EdicaoLinhaPortal = { modelo: string; marca: string; anvisa: string; descricao: string; valorUnitario: string }
+// "Participa" é uma decisão do usuário sobre ESTA proposta específica — não
+// dá pra derivar de bidding_items (o edital pode não ter itens
+// sincronizados ainda nesta fase, antes até de "Preencher Licitação com
+// estes Dados") nem de qualquer outra fonte automática. Por padrão todo
+// item do modelo participa; o usuário desmarca os que não vai disputar.
+type EdicaoLinhaPortal = { participa: boolean; modelo: string; marca: string; anvisa: string; descricao: string; valorUnitario: string }
 type ModeloPortalLido = { cabecalho: string[]; linhas: string[][]; colunas: ColunasPortal }
 
 function edicaoLinhaPadrao(linhaModelo: string[], colunas: ColunasPortal, itemPorNumero: Map<string, BiddingItem>): EdicaoLinhaPortal {
   const item = itemPorNumero.get(linhaModelo[colunas.item])
   return {
+    participa: true,
     modelo: '',
     marca: item?.marca ?? '',
     anvisa: '',
@@ -528,29 +534,17 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
     setEdicoes((prev) => prev.map((e, i) => (i === idx ? { ...e, ...patch } : e)))
   }
 
-  // O item do modelo do Portal só corresponde a um item de VERDADE desta
-  // proposta se ele existir em bidding_items — e só chega lá quem foi
-  // marcado como "participando" na Análise de Edital (mapearItensDaAnalise
-  // já filtra os desmarcados antes de sincronizar os itens). Ou seja: um
-  // item do modelo sem correspondência aqui é um item que a empresa optou
-  // por não disputar — o próprio modelo do Portal instrui deixar esses
-  // zerados, então eles não entram na validação de valor obrigatório.
-  const linhasParticipando = useMemo(
-    () => linhasModelo.map((linha) => !!colunas && itemPorNumero.has(linha[colunas.item])),
-    [linhasModelo, colunas, itemPorNumero]
-  )
-
-  // O Portal rejeita o arquivo inteiro se uma linha de item PARTICIPANTE
-  // tiver Valor Unitário zerado ou em branco ("O valor unitário deve ser
-  // maior do que zero") — confirmado tentando subir um export de verdade.
-  // Detecta isso ANTES de gerar o arquivo, em vez de deixar o usuário só
-  // descobrir depois de subir no site.
+  // O Portal rejeita o arquivo inteiro se uma linha PARTICIPANTE (checkbox
+  // marcado) tiver Valor Unitário zerado ou em branco ("O valor unitário
+  // deve ser maior do que zero") — confirmado tentando subir um export de
+  // verdade. Detecta isso ANTES de gerar o arquivo, em vez de deixar o
+  // usuário só descobrir depois de subir no site.
   const indicesSemValorUnitario = useMemo(
     () => edicoes.reduce<number[]>((acc, e, idx) => {
-      if (linhasParticipando[idx] && (parseFlexibleNumber(e.valorUnitario) ?? 0) <= 0) acc.push(idx)
+      if (e.participa && (parseFlexibleNumber(e.valorUnitario) ?? 0) <= 0) acc.push(idx)
       return acc
     }, []),
-    [edicoes, linhasParticipando]
+    [edicoes]
   )
 
   const handleUploadModelo = async (file: File) => {
@@ -583,8 +577,8 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
       )
       return
     }
-    if (!linhasParticipando.some(Boolean)) {
-      showToast('Nenhum item desta licitação está participando (cadastrado como item da proposta) — não há o que exportar.', 'error')
+    if (!edicoes.some((e) => e.participa)) {
+      showToast('Nenhum item está marcado como "Participa" — não há o que exportar.', 'error')
       return
     }
     const { cabecalho, linhas, colunas: colunasSaida } = modeloQuery.data
@@ -592,11 +586,11 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
     // arquivo, sem exceção pra item zerado (confirmado tentando subir um
     // export com uma linha zerada — rejeitado mesmo com o item marcado
     // como não participante). A única forma de deixar um item de fora da
-    // proposta é a linha dele nem aparecer no arquivo, então itens que o
-    // usuário não participa são omitidos do export, não zerados.
+    // proposta é a linha dele nem aparecer no arquivo, então itens
+    // desmarcados são omitidos do export, não zerados.
     const linhasSaida = linhas
       .map((linha, idx) => ({ linha, idx }))
-      .filter(({ idx }) => linhasParticipando[idx])
+      .filter(({ idx }) => edicoes[idx]?.participa)
       .map(({ linha, idx }) => {
         const edicao = edicoes[idx]
         const quantidade = parseFlexibleNumber(linha[colunasSaida.quantidade]) ?? 0
@@ -689,7 +683,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
       <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-4 flex flex-col gap-3">
         <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Proposta Inicial — Modelo do Portal de Compras Públicas</p>
         <p className="text-[12px] text-base-400">
-          Processo, ID{temLote ? ', Lote' : ''}, Item, Produto e Quantidade vêm exatamente como no modelo salvo do Portal ("{modeloArquivo.name}") — não são editáveis aqui. Nos itens que você está participando (linhas cadastradas na licitação), Marca e Valor Unitário já vêm preenchidos com o valor de referência da análise do edital — confira e ajuste se precisar. O Portal exige valor maior que zero em toda linha do arquivo, sem exceção — por isso os itens que você não participa (marcados "não participa" abaixo) são omitidos do CSV exportado, não zerados.
+          Processo, ID{temLote ? ', Lote' : ''}, Item, Produto e Quantidade vêm exatamente como no modelo salvo do Portal ("{modeloArquivo.name}") — não são editáveis aqui. Todo item começa marcado como "Participa"; desmarque os que você não vai disputar — nos que ficam cadastrados na licitação, Marca e Valor Unitário já vêm preenchidos com o valor de referência da análise do edital. O Portal exige valor maior que zero em toda linha do arquivo, sem exceção — por isso os itens desmarcados são omitidos do CSV exportado, não zerados.
         </p>
       </div>
 
@@ -697,7 +691,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
         <div className="bg-warning-500/10 border border-warning-500/25 rounded-xl p-3 flex items-start gap-2">
           <AlertCircle className="w-4 h-4 text-warning-400 shrink-0 mt-0.5" />
           <p className="text-[12px] text-warning-300">
-            {indicesSemValorUnitario.length} item(ns) que você está participando sem Valor Unitário preenchido (destacados em vermelho na tabela) — o Portal rejeita o arquivo inteiro se alguma linha participante ficar com valor zerado.
+            {indicesSemValorUnitario.length} item(ns) marcado(s) como "Participa" sem Valor Unitário preenchido (destacados em vermelho na tabela) — o Portal rejeita o arquivo inteiro se alguma linha participante ficar com valor zerado.
           </p>
         </div>
       )}
@@ -709,7 +703,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
           </Button>
           {botaoTrocarModelo}
           <span className="text-[11px] text-base-500">
-            {linhasParticipando.filter(Boolean).length} de {linhasModelo.length} itens serão exportados (os demais não participam)
+            {edicoes.filter((e) => e.participa).length} de {linhasModelo.length} itens serão exportados (os desmarcados ficam de fora)
           </span>
         </div>
       )}
@@ -718,6 +712,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
         <table className="w-full min-w-[1200px] text-[12px]">
           <thead>
             <tr className="text-base-500 border-b border-base-800">
+              <th className="text-center font-semibold px-2 py-2 w-20">Participa</th>
               <th className="text-left font-semibold px-2 py-2 w-24">Processo</th>
               <th className="text-left font-semibold px-2 py-2 w-24">ID (Portal)</th>
               {temLote && <th className="text-left font-semibold px-2 py-2 w-20">Lote</th>}
@@ -734,19 +729,27 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
           </thead>
           <tbody>
             {linhasModelo.map((linha, idx) => {
-              const edicao = edicoes[idx] ?? { modelo: '', marca: '', anvisa: '', descricao: '', valorUnitario: '' }
+              const edicao = edicoes[idx] ?? { participa: true, modelo: '', marca: '', anvisa: '', descricao: '', valorUnitario: '' }
               const quantidadeNum = parseFlexibleNumber(linha[colunas.quantidade]) ?? 0
               const valorUnitarioNum = parseFlexibleNumber(edicao.valorUnitario) ?? 0
-              const participa = linhasParticipando[idx]
+              const participa = edicao.participa
               return (
                 <tr key={idx} className={`border-t border-base-800/60 ${participa ? '' : 'opacity-50'}`}>
+                  <td className="px-2 py-1.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={participa}
+                      onChange={(e) => atualizarEdicao(idx, { participa: e.target.checked })}
+                      disabled={!podeEditar}
+                      className="w-4 h-4 rounded accent-accent-500"
+                    />
+                  </td>
                   <td className="px-2 py-1.5 text-base-400">{linha[colunas.processo]}</td>
                   <td className="px-2 py-1.5 text-base-400">{linha[colunas.id]}</td>
                   {temLote && <td className="px-2 py-1.5 text-base-400">{linha[colunas.lote as number]}</td>}
                   <td className="px-2 py-1.5 text-base-400">{linha[colunas.item]}</td>
-                  <td className="px-2 py-1.5 text-base-400 max-w-[200px] truncate" title={participa ? linha[colunas.produto] : `${linha[colunas.produto]} — você não participa deste item; a linha não entra no CSV exportado`}>
+                  <td className="px-2 py-1.5 text-base-400 max-w-[200px] truncate" title={participa ? linha[colunas.produto] : `${linha[colunas.produto]} — não participa; a linha não entra no CSV exportado`}>
                     {linha[colunas.produto]}
-                    {!participa && <span className="ml-1.5 text-[10px] font-semibold text-base-500 whitespace-nowrap">(não participa)</span>}
                   </td>
                   <td className="px-2 py-1.5 text-right font-mono text-base-400">{linha[colunas.quantidade]}</td>
                   {(['modelo', 'marca', 'anvisa', 'descricao'] as const).map((campo) => (
@@ -754,7 +757,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
                       <input
                         value={edicao[campo]}
                         onChange={(e) => atualizarEdicao(idx, { [campo]: e.target.value })}
-                        disabled={!podeEditar}
+                        disabled={!podeEditar || !participa}
                         className="w-full bg-base-900 border border-base-700 rounded px-1.5 py-1 text-[12px] text-base-100 focus:border-accent-400 outline-none disabled:opacity-60"
                       />
                     </td>
@@ -764,7 +767,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
                       value={edicao.valorUnitario}
                       inputMode="decimal"
                       onChange={(e) => atualizarEdicao(idx, { valorUnitario: e.target.value })}
-                      disabled={!podeEditar}
+                      disabled={!podeEditar || !participa}
                       title={participa && valorUnitarioNum <= 0 ? 'O Portal exige um valor unitário maior que zero pra este item.' : undefined}
                       className={`w-full bg-base-900 border rounded px-1.5 py-1 text-right text-[12px] font-mono text-base-100 focus:border-accent-400 outline-none disabled:opacity-60 ${participa && valorUnitarioNum <= 0 ? 'border-negative-500/60' : 'border-base-700'}`}
                     />
