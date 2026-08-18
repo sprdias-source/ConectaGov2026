@@ -69,6 +69,27 @@ function construirParagrafoCabecalho(texto: string, opts: { negrito: boolean; ta
   return `<w:p><w:pPr><w:jc w:val="center"/>${pBdr}</w:pPr><w:r><w:rPr>${rPrNegrito}<w:sz w:val="${opts.tamanho}"/><w:szCs w:val="${opts.tamanho}"/></w:rPr><w:t xml:space="preserve">${escapeXml(texto)}</w:t></w:r></w:p>`
 }
 
+function escapeRegex(texto: string): string {
+  return texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// clients.address é preenchido (pelo autocomplete de CNPJ/CEP em
+// ClientFormModal) já como o endereço COMPLETO — "Rua, nº - Bairro, Cidade -
+// UF" — e é usado assim, sozinho, no resto do sistema (NFS-e, contratos,
+// declarações). Só que a Proposta mostra Bairro e Cidade em campos
+// separados também, então usar o endereço completo aqui duplicaria essa
+// informação ("Endereço: Rua X - Bairro Y, Cidade Z" + "Bairro: Y" +
+// "Cidade: Z"). Tira o "- Bairro, Cidade..." do final quando reconhece o
+// bairro salvo do cliente no texto — sobra só rua e número. Sem bairro
+// cadastrado, ou se o texto não seguir esse padrão (endereço digitado à
+// mão), devolve o endereço como está.
+function extrairLogradouro(endereco: string, bairro: string | null | undefined): string {
+  const texto = endereco.trim()
+  if (!bairro?.trim()) return texto
+  const regex = new RegExp(`\\s*-\\s*${escapeRegex(bairro.trim())}\\b.*$`, 'i')
+  return texto.replace(regex, '').trim() || texto
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
 
@@ -163,7 +184,7 @@ Deno.serve(async (req) => {
       cliente_nome: escapeXml(client.name),
       cliente_cnpj: escapeXml(client.cnpj ?? ''),
       cliente_ie: escapeXml(client.inscricao_estadual ?? ''),
-      cliente_endereco: escapeXml(client.address ?? ''),
+      cliente_endereco: escapeXml(extrairLogradouro(client.address ?? '', client.bairro)),
       cliente_bairro: escapeXml(client.bairro ?? ''),
       cliente_cidade: escapeXml(client.cidade ?? ''),
       cliente_telefone: escapeXml(client.phone ?? ''),
