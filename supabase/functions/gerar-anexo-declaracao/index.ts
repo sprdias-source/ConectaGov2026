@@ -116,6 +116,28 @@ Deno.serve(async (req: Request) => {
       y -= tamanho * 1.4
     }
 
+    // Justificado (padrão ABNT) — pdf-lib não tem alinhamento justificado
+    // pronto, então distribui manualmente o espaço sobrando entre as
+    // palavras da linha até encostar na margem direita. A ÚLTIMA linha de
+    // cada parágrafo nunca é esticada (regra tipográfica padrão — só a
+    // última linha fica "curta" e alinhada à esquerda, como no Word/ABNT).
+    const desenharLinhaJustificada = (texto: string, tamanho: number, fonteUsada: PDFFont, ultimaLinhaDoParagrafo: boolean) => {
+      garantirEspaco(tamanho * 1.4)
+      const palavras = texto.split(/\s+/).filter(Boolean)
+      if (ultimaLinhaDoParagrafo || palavras.length <= 1) {
+        pagina.drawText(texto, { x: MARGEM, y, size: tamanho, font: fonteUsada })
+      } else {
+        const larguraPalavras = palavras.reduce((s, p) => s + fonteUsada.widthOfTextAtSize(p, tamanho), 0)
+        const espacoEntrePalavras = (LARGURA_UTIL - larguraPalavras) / (palavras.length - 1)
+        let x = MARGEM
+        for (const palavra of palavras) {
+          pagina.drawText(palavra, { x, y, size: tamanho, font: fonteUsada })
+          x += fonteUsada.widthOfTextAtSize(palavra, tamanho) + espacoEntrePalavras
+        }
+      }
+      y -= tamanho * 1.4
+    }
+
     // Primeiro bloco (separado por linha em branco) = cabeçalho do
     // cliente, sempre centralizado, primeira linha em destaque — mesma
     // convenção de clients.cabecalho_declaracao. Os blocos seguintes são
@@ -135,9 +157,8 @@ Deno.serve(async (req: Request) => {
         })
         y -= 10
       } else {
-        for (const l of quebrarLinha(paragrafo, fonte, 11)) {
-          desenharLinha(l, 11, fonte, false)
-        }
+        const linhas = quebrarLinha(paragrafo, fonte, 11)
+        linhas.forEach((linha, li) => desenharLinhaJustificada(linha, 11, fonte, li === linhas.length - 1))
         y -= 8
       }
     })

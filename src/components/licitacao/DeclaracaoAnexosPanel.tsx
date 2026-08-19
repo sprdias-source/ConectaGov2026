@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Sparkles, Loader2, FileDown, Send, Paperclip, Trash2, Check } from 'lucide-react'
+import { Sparkles, Loader2, FileDown, FileText, Send, Paperclip, Trash2, Check } from 'lucide-react'
 import { Button } from '../ui/FormControls'
 import { useDeclaracaoAnexos } from '../../hooks/useDeclaracaoAnexos'
 import { useAttachedFiles } from '../../hooks/useAttachedFiles'
@@ -37,7 +37,7 @@ function AnexoCard({ anexo, checklistItems, podeEditar, bidding }: {
   podeEditar: boolean
   bidding: Bidding
 }) {
-  const { atualizarTexto, gerarPdf, marcarEnviado, anexarAssinado, deleteAnexo } = useDeclaracaoAnexos(bidding.id)
+  const { atualizarTexto, gerarPdf, gerarWord, marcarEnviado, anexarAssinado, deleteAnexo } = useDeclaracaoAnexos(bidding.id)
   const { uploadFile } = useAttachedFiles('licitacao', bidding.id)
   const { showToast } = useToast()
   const [texto, setTexto] = useState(anexo.texto)
@@ -57,6 +57,13 @@ function AnexoCard({ anexo, checklistItems, podeEditar, bidding }: {
     if (textoMudou) handleSalvarTexto()
     gerarPdf.mutate(anexo.id, {
       onError: (err) => showToast(`Erro ao gerar o PDF: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+    })
+  }
+
+  const handleGerarWord = () => {
+    if (textoMudou) handleSalvarTexto()
+    gerarWord.mutate(anexo.id, {
+      onError: (err) => showToast(`Erro ao gerar o Word: ${err instanceof Error ? err.message : String(err)}`, 'error'),
     })
   }
 
@@ -117,6 +124,12 @@ function AnexoCard({ anexo, checklistItems, podeEditar, bidding }: {
 
         <div className="flex items-center gap-2 flex-wrap">
           {podeEditar && (
+            <button onClick={handleGerarWord} disabled={gerarWord.isPending} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition disabled:opacity-60">
+              {gerarWord.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+              {gerarWord.isPending ? 'Gerando Word...' : 'Gerar Word'}
+            </button>
+          )}
+          {podeEditar && (
             <button onClick={handleGerarPdf} disabled={gerarPdf.isPending} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition disabled:opacity-60">
               {gerarPdf.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
               {gerarPdf.isPending ? 'Gerando PDF...' : 'Gerar PDF'}
@@ -176,7 +189,7 @@ export default function DeclaracaoAnexosPanel({ bidding, checklistItems }: { bid
       <div className="flex items-center justify-between gap-3 flex-wrap bg-base-850/60 border border-base-800 rounded-xl px-4 py-3">
         <div>
           <p className="text-[12px] font-bold text-base-200 flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5 text-accent-400" /> Anexos de Declaração</p>
-          <p className="text-[11px] text-base-500 mt-0.5">Preenchido automaticamente ao analisar o edital: a IA acha os anexos-modelo de declaração (Anexo II, III...) e já preenche com os dados do cliente — revise, gere o PDF, mande pro cliente assinar e anexe o arquivo assinado de volta.</p>
+          <p className="text-[11px] text-base-500 mt-0.5">Preenchido automaticamente ao analisar o edital: a IA acha os anexos-modelo de declaração (Anexo II, III...) e já preenche com os dados do cliente, copiando fielmente a redação do edital — revise, gere o Word ou o PDF (já formatados: cabeçalho centralizado, corpo justificado), mande pro cliente assinar e anexe o arquivo assinado de volta.</p>
         </div>
         {analisar.isPending && (
           <span className="flex items-center gap-1.5 text-[11px] font-semibold text-accent-300 shrink-0">
