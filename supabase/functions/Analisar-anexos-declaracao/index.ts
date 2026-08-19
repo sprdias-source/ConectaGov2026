@@ -74,6 +74,7 @@ function montarPrompt(opts: {
   responsavelCpf: string
   responsavelCargo: string
   responsavelRg: string
+  estadoCivil: string
   porteEmpresa: string
   orgao: string
   numeroEdital: string
@@ -101,6 +102,7 @@ DADOS PRA PREENCHER:
 - Representante legal: ${opts.responsavelNome || '[representante não informado]'}
 - CPF do representante: ${opts.responsavelCpf || '[CPF não informado]'}
 - RG do representante: ${opts.responsavelRg || '[RG não informado]'}
+- Estado civil do representante: ${opts.estadoCivil || '[estado civil não informado]'}
 - Cargo do representante: ${opts.responsavelCargo || '[cargo não informado]'}
 - Órgão licitante: ${opts.orgao || '[órgão não informado]'}
 - Número do edital: ${opts.numeroEdital || '[número não informado]'}
@@ -231,7 +233,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: client } = await supabase
       .from('clients')
-      .select('name, cnpj, address, bairro, cidade, responsavel_nome, responsavel_cpf, responsavel_cargo, responsavel_rg, porte_empresa, cabecalho_declaracao')
+      .select('name, cnpj, address, bairro, cidade, responsavel_nome, responsavel_cpf, responsavel_cargo, responsavel_rg, estado_civil, porte_empresa, cabecalho_declaracao')
       .eq('id', bidding.client_id)
       .maybeSingle()
 
@@ -265,6 +267,7 @@ Deno.serve(async (req: Request) => {
       responsavelCpf: client?.responsavel_cpf ?? '',
       responsavelCargo: client?.responsavel_cargo ?? '',
       responsavelRg: client?.responsavel_rg ?? '',
+      estadoCivil: client?.estado_civil ?? '',
       porteEmpresa: client?.porte_empresa ?? '',
       orgao: bidding.orgao ?? '',
       numeroEdital: bidding.numero_edital ?? '',
