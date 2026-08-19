@@ -19,6 +19,7 @@ import Modal from '../components/ui/Modal'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useAttachedFiles } from '../hooks/useAttachedFiles'
 import { useBiddingChecklist, calcularHabilitacao, statusItemChecklist, arquivoResolvidoDoItem, extrairNumeroEdital } from '../hooks/useBiddingChecklist'
+import { useDeclaracaoAnexos } from '../hooks/useDeclaracaoAnexos'
 import { useBuscaCertidaoAutomatica } from '../hooks/useBuscaCertidaoAutomatica'
 import AcoesDocumentoManual from '../components/documentos/AcoesDocumentoManual'
 import DownloadDocumentosModal from '../components/licitacao/DownloadDocumentosModal'
@@ -808,6 +809,163 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   const { items, isLoading, salvarRateio, sincronizarItens } = useBiddingItemsDaLicitacao(bidding.id)
   const { nivel } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivel === 'edicao'
+  const { updateBidding } = useBiddings()
+  const { showToast } = useToast()
+
+  // Auto-contido (mesmo padrão de AbaCadastrarProposta): busca os anexos
+  // desta licitação direto, em vez de receber por prop — os cartões de
+  // "Proposta enviada na plataforma" e "Proposta Readequada" vieram de
+  // Documentos Finais pra cá, porque é aqui que faz sentido acessá-los (é
+  // aqui que se mexe nos valores/itens da proposta).
+  const { files: anexosProposta, uploadFile: uploadAnexoProposta, deleteFile: deleteAnexoProposta, getDownloadUrl: getAnexoUrlProposta, uploadProgress: uploadProgressProposta } = useAttachedFiles('licitacao', bidding.id)
+  const propostaEnviada = anexosProposta.find((f) => f.category === 'Proposta')
+  const propostaReadequada = anexosProposta.find((f) => f.category === 'Proposta Readequada')
+
+  const [enviandoProposta, setEnviandoProposta] = useState<'Proposta' | 'Proposta Readequada' | null>(null)
+  const [gerandoReadequada, setGerandoReadequada] = useState(false)
+  const [erroReadequada, setErroReadequada] = useState<string | null>(null)
+  const [gerandoPdfProposta, setGerandoPdfProposta] = useState(false)
+  const [erroPdfProposta, setErroPdfProposta] = useState<string | null>(null)
+  const [pdfPropostaPreview, setPdfPropostaPreview] = useState<{ url: string; nome: string } | null>(null)
+  const [enviandoPropostaAssinada, setEnviandoPropostaAssinada] = useState(false)
+
+  const handleAbrirAnexoProposta = async (anexo: { storagePath: string }) => {
+    try {
+      const url = await getAnexoUrlProposta(anexo.storagePath)
+      window.open(url, '_blank')
+    } catch (err) {
+      showToast(`Erro ao abrir o arquivo: ${err instanceof Error ? err.message : String(err)}`, 'error')
+    }
+  }
+
+  const handleUploadPropostaEnviada = async (file: File) => {
+    setEnviandoProposta('Proposta')
+    try {
+      const antigo = propostaEnviada
+      await uploadAnexoProposta.mutateAsync({ file, category: 'Proposta' })
+      if (antigo) await deleteAnexoProposta.mutateAsync(antigo)
+    } catch (err) {
+      showToast(`Erro ao enviar o arquivo: ${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setEnviandoProposta(null)
+    }
+  }
+
+  // Gera o .docx a partir dos itens/valores atuais da licitação. Reinicia o
+  // ciclo de assinatura (enviada/assinada voltam pra null) — uma proposta
+  // gerada de novo, mesmo em cima de uma anterior já assinada, é uma
+  // versão nova que ainda não foi mandada pra ninguém assinar.
+  const handleGerarPropostaReadequada = async () => {
+    setGerandoReadequada(true)
+    setErroReadequada(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/gerar-proposta`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ clientId: bidding.clientId, biddingId: bidding.id, tipo: 'readequada' }),
+      })
+      const resultado = await res.json()
+      if (!res.ok || resultado.error) throw new Error(resultado.error || 'Erro desconhecido ao gerar a proposta')
+
+      const bytes = Uint8Array.from(atob(resultado.fileBase64), (c) => c.charCodeAt(0))
+      const blob = new Blob([bytes], { type: resultado.mimeType })
+      const arquivoAntigo = propostaReadequada
+      const file = new File([blob], resultado.fileName || 'proposta-readequada.docx', { type: resultado.mimeType })
+      await uploadAnexoProposta.mutateAsync({ file, category: 'Proposta Readequada' })
+      if (arquivoAntigo) await deleteAnexoProposta.mutateAsync(arquivoAntigo)
+      if (pdfPropostaPreview) URL.revokeObjectURL(pdfPropostaPreview.url)
+      setPdfPropostaPreview(null)
+      await updateBidding.mutateAsync({ bidding: { ...bidding, propostaReadequadaEnviadaEm: null, propostaReadequadaAssinadaEm: null }, items: [] })
+    } catch (err) {
+      setErroReadequada(err instanceof Error ? err.message : String(err))
+    } finally {
+      setGerandoReadequada(false)
+    }
+  }
+
+  // Documento editável: baixa o Word gerado, ajusta fora do sistema, e sobe
+  // a versão ajustada aqui — substitui o arquivo, sem mexer no ciclo de
+  // assinatura (a proposta continua no mesmo passo em que estava).
+  const handleUploadWordAjustado = async (file: File) => {
+    setEnviandoProposta('Proposta Readequada')
+    try {
+      const antigo = propostaReadequada
+      await uploadAnexoProposta.mutateAsync({ file, category: 'Proposta Readequada' })
+      if (antigo) await deleteAnexoProposta.mutateAsync(antigo)
+    } catch (err) {
+      showToast(`Erro ao subir a versão ajustada: ${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setEnviandoProposta(null)
+    }
+  }
+
+  // PDF gerado direto dos dados da licitação (não a partir do .docx acima
+  // — ver comentário em supabase/functions/gerar-proposta-pdf/index.ts) —
+  // fica só na memória do navegador pra prévia/download, não é salvo no
+  // Storage até a hora de anexar a versão assinada.
+  const handleGerarPdfProposta = async () => {
+    setGerandoPdfProposta(true)
+    setErroPdfProposta(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/gerar-proposta-pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ clientId: bidding.clientId, biddingId: bidding.id }),
+      })
+      const resultado = await res.json()
+      if (!res.ok || resultado.error) throw new Error(resultado.error || 'Erro desconhecido ao gerar o PDF')
+      const bytes = Uint8Array.from(atob(resultado.fileBase64), (c) => c.charCodeAt(0))
+      const blob = new Blob([bytes], { type: resultado.mimeType })
+      if (pdfPropostaPreview) URL.revokeObjectURL(pdfPropostaPreview.url)
+      setPdfPropostaPreview({ url: URL.createObjectURL(blob), nome: resultado.fileName || 'Proposta_Readequada.pdf' })
+    } catch (err) {
+      setErroPdfProposta(err instanceof Error ? err.message : String(err))
+    } finally {
+      setGerandoPdfProposta(false)
+    }
+  }
+
+  const handleBaixarPdfPropostaGerado = () => {
+    if (!pdfPropostaPreview) return
+    const a = document.createElement('a')
+    a.href = pdfPropostaPreview.url
+    a.download = pdfPropostaPreview.nome
+    a.click()
+  }
+
+  const handleMarcarPropostaEnviada = () => {
+    updateBidding.mutate(
+      { bidding: { ...bidding, propostaReadequadaEnviadaEm: new Date().toISOString() }, items: [] },
+      { onSuccess: () => showToast('Marcado como enviada ao cliente.') }
+    )
+  }
+
+  // Passo final: a versão assinada substitui o arquivo em "Proposta
+  // Readequada" — é esse mesmo arquivo (categoria) que já alimenta o ZIP
+  // de Documentos Finais, então não precisa de mais nada pra aparecer lá.
+  const handleAnexarPropostaAssinada = async (file: File) => {
+    setEnviandoPropostaAssinada(true)
+    try {
+      const antigo = propostaReadequada
+      await uploadAnexoProposta.mutateAsync({ file, category: 'Proposta Readequada' })
+      if (antigo) await deleteAnexoProposta.mutateAsync(antigo)
+      await updateBidding.mutateAsync({ bidding: { ...bidding, propostaReadequadaAssinadaEm: new Date().toISOString() }, items: [] })
+      showToast('Proposta assinada anexada — já disponível no ZIP de Documentos Finais.')
+    } catch (err) {
+      showToast(`Erro ao anexar a proposta assinada: ${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setEnviandoPropostaAssinada(false)
+    }
+  }
+
+  const statusProposta: 'rascunho' | 'enviado' | 'assinado' = bidding.propostaReadequadaAssinadaEm
+    ? 'assinado'
+    : bidding.propostaReadequadaEnviadaEm ? 'enviado' : 'rascunho'
+  const passoProposta = statusProposta === 'assinado' ? 2 : statusProposta === 'enviado' ? 1 : 0
 
   // Autosave debounçado: o editor completo (Nº, Descrição, Ganhou?, Excel,
   // Adicionar Item...) não tem botão de "Salvar" aqui — cada mudança
@@ -896,6 +1054,138 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
 
   return (
     <div className="flex flex-col gap-5">
+      <div className="bg-base-850/60 border border-base-800 rounded-xl p-4 flex flex-col gap-3">
+        <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Proposta</p>
+
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {(['Word gerado', 'Enviada ao cliente', 'Assinada'] as const).map((label, idx) => (
+            <div key={label} className="flex items-center gap-1.5">
+              {idx > 0 && <span className={`w-4 h-px ${idx <= passoProposta ? 'bg-positive-500' : 'bg-base-700'}`} />}
+              <div className="flex items-center gap-1">
+                <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold font-mono shrink-0 ${
+                  idx < passoProposta ? 'bg-positive-500 text-base-950' : idx === passoProposta ? 'bg-accent-500 text-base-950' : 'bg-base-800 border border-base-700 text-base-500'
+                }`}>
+                  {idx < passoProposta ? <Check className="w-2.5 h-2.5" /> : idx + 1}
+                </span>
+                <span className={`text-[10.5px] font-semibold ${idx <= passoProposta ? 'text-base-300' : 'text-base-600'}`}>{label}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-3 bg-base-900/50 border border-base-800 rounded-xl px-4 py-3">
+          <FileText className="w-5 h-5 text-accent-400 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-[13px] text-base-200 truncate">{propostaEnviada ? propostaEnviada.name : 'Proposta enviada na plataforma'}</p>
+            {!propostaEnviada && <p className="text-[10.5px] text-base-500">o que você importou/enviou de volta pro portal</p>}
+          </div>
+          {propostaEnviada ? (
+            <>
+              <button onClick={() => handleAbrirAnexoProposta(propostaEnviada)} title="Visualizar" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                <Eye className="w-3.5 h-3.5" />
+              </button>
+              {podeEditar && (
+                <label title="Trocar" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition cursor-pointer">
+                  {enviandoProposta === 'Proposta' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  <input type="file" accept=".pdf,.doc,.docx" className="hidden" disabled={!!enviandoProposta} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadPropostaEnviada(f); e.target.value = '' }} />
+                </label>
+              )}
+              {podeEditar && (
+                <button onClick={() => deleteAnexoProposta.mutate(propostaEnviada)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </>
+          ) : podeEditar ? (
+            <label className="inline-flex items-center gap-1.5 shrink-0 bg-base-800 hover:bg-base-700 text-base-200 border border-base-700 font-semibold text-sm px-4 py-2 rounded-lg transition cursor-pointer">
+              {enviandoProposta === 'Proposta' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+              {enviandoProposta === 'Proposta' ? `Enviando...${uploadProgressProposta !== null ? ` ${uploadProgressProposta}%` : ''}` : 'Enviar'}
+              <input type="file" accept=".pdf,.doc,.docx" className="hidden" disabled={!!enviandoProposta} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadPropostaEnviada(f); e.target.value = '' }} />
+            </label>
+          ) : null}
+        </div>
+
+        <div className="flex flex-col gap-2 bg-base-900/50 border border-base-800 rounded-xl px-4 py-3">
+          <p className="text-[10px] font-bold text-base-500 uppercase tracking-wider">Word — editável</p>
+          <div className="flex items-center gap-3">
+            <Wand2 className="w-5 h-5 text-accent-400 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] text-base-200 truncate">{propostaReadequada ? propostaReadequada.name : 'Proposta Readequada'}</p>
+              <p className="text-[10.5px] text-base-500">{propostaReadequada ? 'gerada a partir dos itens/valores atuais' : 'gerada a partir dos itens/valores atuais da licitação'}</p>
+            </div>
+            {propostaReadequada && (
+              <button onClick={() => handleAbrirAnexoProposta(propostaReadequada)} title="Baixar" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                <Download className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          {podeEditar && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button variant="secondary" onClick={handleGerarPropostaReadequada} disabled={gerandoReadequada}>
+                {gerandoReadequada ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                {gerandoReadequada ? 'Gerando...' : propostaReadequada ? 'Gerar novamente' : 'Gerar Word'}
+              </Button>
+              {propostaReadequada && (
+                <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition cursor-pointer">
+                  {enviandoProposta === 'Proposta Readequada' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                  {enviandoProposta === 'Proposta Readequada' ? 'Enviando...' : 'Subir versão ajustada'}
+                  <input type="file" accept=".doc,.docx" className="hidden" disabled={!!enviandoProposta} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadWordAjustado(f); e.target.value = '' }} />
+                </label>
+              )}
+            </div>
+          )}
+          {erroReadequada && <p className="text-[11.5px] text-negative-400">{erroReadequada}</p>}
+        </div>
+
+        {propostaReadequada && (
+          <div className="flex flex-col gap-2 bg-base-900/50 border border-base-800 rounded-xl px-4 py-3">
+            <p className="text-[10px] font-bold text-base-500 uppercase tracking-wider">PDF — pronto pra assinatura</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              {podeEditar && statusProposta === 'rascunho' && (
+                <Button variant="secondary" onClick={handleGerarPdfProposta} disabled={gerandoPdfProposta}>
+                  {gerandoPdfProposta ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSignature className="w-3.5 h-3.5" />}
+                  {gerandoPdfProposta ? 'Gerando PDF...' : pdfPropostaPreview ? 'Gerar PDF novamente' : 'Gerar PDF'}
+                </Button>
+              )}
+              {pdfPropostaPreview && (
+                <button onClick={handleBaixarPdfPropostaGerado} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition">
+                  <Download className="w-3.5 h-3.5" /> Baixar PDF
+                </button>
+              )}
+            </div>
+            {erroPdfProposta && <p className="text-[11.5px] text-negative-400">{erroPdfProposta}</p>}
+            {pdfPropostaPreview && (
+              <iframe src={pdfPropostaPreview.url} title="Prévia do PDF da Proposta Readequada" className="w-full h-[480px] rounded-lg border border-base-700 bg-base-100" />
+            )}
+
+            {statusProposta === 'rascunho' && podeEditar && (
+              <button onClick={handleMarcarPropostaEnviada} disabled={updateBidding.isPending} className="self-start flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition">
+                <Send className="w-3.5 h-3.5" /> Marcar como Enviada ao Cliente
+              </button>
+            )}
+
+            {statusProposta === 'enviado' && podeEditar && (
+              <div className="flex items-center gap-2 bg-accent-500/10 border border-dashed border-accent-500/30 rounded-lg px-3 py-2 flex-wrap">
+                <span className="text-[11px] text-accent-300 flex-1 min-w-[200px]">
+                  📎 Aguardando o cliente devolver a proposta assinada — anexe o arquivo aqui quando chegar.
+                </span>
+                <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-base-950 bg-accent-500 hover:bg-accent-400 rounded-lg px-3 py-1.5 transition cursor-pointer">
+                  {enviandoPropostaAssinada ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Paperclip className="w-3.5 h-3.5" />}
+                  {enviandoPropostaAssinada ? 'Enviando...' : 'Anexar Assinada'}
+                  <input type="file" accept=".pdf" className="hidden" disabled={enviandoPropostaAssinada} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAnexarPropostaAssinada(f); e.target.value = '' }} />
+                </label>
+              </div>
+            )}
+
+            {statusProposta === 'assinado' && (
+              <span className="flex items-center gap-1.5 text-[11px] font-bold text-positive-400 bg-positive-500/10 border border-positive-500/25 rounded-full px-2.5 py-1 self-start">
+                <Check className="w-3.5 h-3.5" /> Assinada — disponível no ZIP de Documentos Finais
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Itens da Licitação</p>
@@ -1641,7 +1931,7 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
 
           {(analise.checklistDocumentacao?.length ?? 0) > 0 && (
             <p className="text-[11px] text-base-500 italic">
-              {analise.checklistDocumentacao!.length} documento(s) sugerido(s) pela análise pra habilitação — adicione na aba Checklist &amp; Habilitação.
+              {analise.checklistDocumentacao!.length} documento(s) sugerido(s) pela análise já preenchidos automaticamente na aba Checklist &amp; Habilitação.
             </p>
           )}
 
@@ -1699,6 +1989,7 @@ export default function LicitacaoPage() {
 
   const { files: anexos, uploadFile: uploadAnexo, uploadProgress, deleteFile: deleteAnexo, getDownloadUrl: getAnexoUrl } = useAttachedFiles('licitacao', bidding?.id)
   const { items, addItem, updateItem, deleteItem, limparItensIA, addItensEmLote, marcarNaoAplicavel, reverterNaoAplicavel } = useBiddingChecklist(bidding?.id)
+  const { analisar: analisarAnexosDeclaracao } = useDeclaracaoAnexos(bidding?.id)
   const { documents: clientDocs, uploadAndSave: uploadClientDoc } = useClientDocuments(bidding?.clientId)
   const { atestados, addAtestado } = useAtestados(bidding?.clientId)
   const clienteDaLicitacao = clients.find((c) => c.id === bidding?.clientId)
@@ -1738,6 +2029,32 @@ export default function LicitacaoPage() {
     (doc) => !descricoesJaNoChecklist.has(extrairNumeroEdital(doc.descricao).descricao)
   )
 
+  // Assim que uma análise de edital termina (a primeira ou uma refeita), o
+  // checklist e os anexos de declaração se preenchem sozinhos — sem os
+  // antigos botões manuais "Adicionar ao Checklist" e "Analisar Anexos do
+  // Edital". A chave inclui analysis.updatedAt (não só bidding.id) pra
+  // rearmar em cada nova análise concluída, sem duplicar o que já rodou
+  // pra essa mesma versão da análise.
+  const chaveAnaliseConcluida = bidding && analysis?.status === 'concluido' ? `${bidding.id}:${analysis.updatedAt}` : null
+
+  const checklistAutoPreenchidoRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!podeEditar || !chaveAnaliseConcluida) return
+    if (checklistAutoPreenchidoRef.current === chaveAnaliseConcluida) return
+    if (checklistSugeridoPendente.length === 0) return
+    checklistAutoPreenchidoRef.current = chaveAnaliseConcluida
+    addItensEmLote.mutate(checklistSugeridoPendente)
+  }, [podeEditar, chaveAnaliseConcluida, checklistSugeridoPendente, addItensEmLote])
+
+  const anexosAutoAnalisadosRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!podeEditar || !chaveAnaliseConcluida) return
+    if (anexosAutoAnalisadosRef.current === chaveAnaliseConcluida) return
+    if (!anexos.some((a) => a.category === 'Edital')) return
+    anexosAutoAnalisadosRef.current = chaveAnaliseConcluida
+    analisarAnexosDeclaracao.mutate()
+  }, [podeEditar, chaveAnaliseConcluida, anexos, analisarAnexosDeclaracao])
+
   const [enviando, setEnviando] = useState<string | null>(null)
   const [showNovoItem, setShowNovoItem] = useState(false)
   const [novoItem, setNovoItem] = useState({ numeroEdital: '', descricao: '', categoria: CATEGORIAS_CHECKLIST[0], obrigatorio: true, prazo: '', responsavelNome: '' })
@@ -1751,8 +2068,6 @@ export default function LicitacaoPage() {
   const [atestadoForm, setAtestadoForm] = useState({ nome: '', objeto: '', orgaoEmissor: '', valor: '', dataEmissao: '' })
   const [atestadoFileSelecionado, setAtestadoFileSelecionado] = useState<File | null>(null)
   const [mostrarDownloadModal, setMostrarDownloadModal] = useState(false)
-  const [gerandoReadequada, setGerandoReadequada] = useState(false)
-  const [erroReadequada, setErroReadequada] = useState<string | null>(null)
   const [confirmandoExclusaoEdital, setConfirmandoExclusaoEdital] = useState(false)
   const [itemMarcandoNaoAplicavel, setItemMarcandoNaoAplicavel] = useState<BiddingChecklistItem | null>(null)
   const [justificativaNaoAplicavel, setJustificativaNaoAplicavel] = useState('')
@@ -1913,37 +2228,6 @@ export default function LicitacaoPage() {
     setCertFileSelecionado(null)
     setAtestadoFileSelecionado(null)
     setAtestadoForm({ nome: item.descricao, objeto: bidding.objeto, orgaoEmissor: '', valor: '', dataEmissao: new Date().toISOString().split('T')[0] })
-  }
-
-  // Reaproveita a mesma function que já gera a Proposta Readequada em
-  // Cadastros → Licitações — só que aqui, além de baixar na hora, também
-  // guarda o resultado em Documentos Finais (categoria 'Proposta
-  // Readequada'), pra não precisar gerar de novo só pra ver/baixar depois.
-  const handleGerarPropostaReadequada = async () => {
-    setGerandoReadequada(true)
-    setErroReadequada(null)
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/gerar-proposta`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ clientId: bidding.clientId, biddingId: bidding.id, tipo: 'readequada' }),
-      })
-      const resultado = await res.json()
-      if (!res.ok || resultado.error) throw new Error(resultado.error || 'Erro desconhecido ao gerar a proposta')
-
-      const bytes = Uint8Array.from(atob(resultado.fileBase64), (c) => c.charCodeAt(0))
-      const blob = new Blob([bytes], { type: resultado.mimeType })
-      const arquivoAntigo = propostaReadequada
-      const file = new File([blob], resultado.fileName || 'proposta-readequada.docx', { type: resultado.mimeType })
-      await uploadAnexo.mutateAsync({ file, category: 'Proposta Readequada' })
-      if (arquivoAntigo) await deleteAnexo.mutateAsync(arquivoAntigo)
-    } catch (err) {
-      setErroReadequada(err instanceof Error ? err.message : String(err))
-    } finally {
-      setGerandoReadequada(false)
-    }
   }
 
   const handleAbrirAnexo = async (anexo: { id: string; storagePath: string }) => {
@@ -2539,21 +2823,12 @@ export default function LicitacaoPage() {
               {checklistDocumentacao.length > 0 && (
                 <div className="mt-3 bg-accent-500/10 border border-accent-500/25 rounded-lg p-3">
                   {checklistSugeridoPendente.length > 0 ? (
-                    <>
-                      <p className="text-[12px] text-accent-300 mb-2">
-                        {checklistSugeridoPendente.length} documento(s) sugerido(s) pela análise pra habilitação
-                        {checklistSugeridoPendente.length < checklistDocumentacao.length
-                          && ` (${checklistDocumentacao.length - checklistSugeridoPendente.length} já adicionado(s))`}.
-                      </p>
-                      {podeEditar && (
-                        <Button variant="secondary" onClick={() => addItensEmLote.mutate(checklistSugeridoPendente)} disabled={addItensEmLote.isPending}>
-                          <Plus className="w-4 h-4" /> {addItensEmLote.isPending ? 'Adicionando...' : 'Adicionar ao Checklist'}
-                        </Button>
-                      )}
-                    </>
+                    <p className="text-[12px] text-accent-300 flex items-center gap-1.5">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Adicionando automaticamente {checklistSugeridoPendente.length} documento(s) sugerido(s) pela análise ao checklist...
+                    </p>
                   ) : (
                     <p className="text-[12px] text-positive-400 flex items-center gap-1.5">
-                      <Check className="w-3.5 h-3.5" /> {checklistDocumentacao.length} documento(s) sugerido(s) pela análise já {checklistDocumentacao.length === 1 ? 'foi adicionado' : 'foram adicionados'} ao checklist.
+                      <Check className="w-3.5 h-3.5" /> {checklistDocumentacao.length} documento(s) sugerido(s) pela análise {checklistDocumentacao.length === 1 ? 'foi adicionado' : 'foram adicionados'} automaticamente ao checklist.
                     </p>
                   )}
                 </div>
@@ -2604,65 +2879,6 @@ export default function LicitacaoPage() {
                   </div>
                 </div>
               )}
-            </div>
-
-            <div>
-              <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">Proposta</p>
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-xl px-4 py-3">
-                  <FileText className="w-5 h-5 text-accent-400 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] text-base-200 truncate">{propostaEnviada ? propostaEnviada.name : 'Proposta enviada na plataforma'}</p>
-                    {!propostaEnviada && <p className="text-[10.5px] text-base-500">o que você importou/enviou de volta pro portal</p>}
-                  </div>
-                  {propostaEnviada ? (
-                    <>
-                      <button onClick={() => handleVisualizarAnexo(propostaEnviada)} title="Visualizar" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
-                        <Eye className="w-3.5 h-3.5" />
-                      </button>
-                      {podeEditar && (
-                        <label title="Trocar" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition cursor-pointer">
-                          {enviando === 'Proposta' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                          <input type="file" accept=".pdf,.doc,.docx" className="hidden" disabled={!!enviando} onChange={(e) => { const f = e.target.files?.[0]; if (f) { deleteAnexo.mutate(propostaEnviada); handleUploadAnexo(f, 'Proposta') } e.target.value = '' }} />
-                        </label>
-                      )}
-                      {podeEditar && (
-                        <button onClick={() => deleteAnexo.mutate(propostaEnviada)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </>
-                  ) : podeEditar ? (
-                    <label className="inline-flex items-center gap-1.5 shrink-0 bg-base-800 hover:bg-base-700 text-base-200 border border-base-700 font-semibold text-sm px-4 py-2 rounded-lg transition cursor-pointer">
-                      {enviando === 'Proposta' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                      {enviando === 'Proposta' ? `Enviando...${uploadProgress !== null ? ` ${uploadProgress}%` : ''}` : 'Enviar'}
-                      <input type="file" accept=".pdf,.doc,.docx" className="hidden" disabled={!!enviando} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadAnexo(f, 'Proposta'); e.target.value = '' }} />
-                    </label>
-                  ) : null}
-                </div>
-
-                <div className="flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-xl px-4 py-3">
-                  <Wand2 className="w-5 h-5 text-accent-400 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] text-base-200 truncate">{propostaReadequada ? propostaReadequada.name : 'Proposta Readequada'}</p>
-                    <p className="text-[10.5px] text-base-500">{propostaReadequada ? 'gerada a partir dos itens/valores atuais' : 'gerada a partir dos itens/valores atuais da licitação'}</p>
-                  </div>
-                  {propostaReadequada && (
-                    <button onClick={() => handleAbrirAnexo(propostaReadequada)} disabled={abrindo === propostaReadequada.id} title="Baixar" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
-                      <Download className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  {podeEditar && (
-                    <Button variant="secondary" onClick={handleGerarPropostaReadequada} disabled={gerandoReadequada} className="shrink-0">
-                      {gerandoReadequada ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-                      {gerandoReadequada ? 'Gerando...' : propostaReadequada ? 'Gerar novamente' : 'Gerar'}
-                    </Button>
-                  )}
-                </div>
-                {erroReadequada && (
-                  <p className="text-[11.5px] text-negative-400">{erroReadequada}</p>
-                )}
-              </div>
             </div>
 
             <div>

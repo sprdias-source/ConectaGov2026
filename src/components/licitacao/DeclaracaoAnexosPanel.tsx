@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Sparkles, Loader2, Copy, Send, Paperclip, Trash2, Check } from 'lucide-react'
+import { Sparkles, Loader2, FileDown, Send, Paperclip, Trash2, Check } from 'lucide-react'
 import { Button } from '../ui/FormControls'
 import { useDeclaracaoAnexos } from '../../hooks/useDeclaracaoAnexos'
 import { useAttachedFiles } from '../../hooks/useAttachedFiles'
@@ -37,7 +37,7 @@ function AnexoCard({ anexo, checklistItems, podeEditar, bidding }: {
   podeEditar: boolean
   bidding: Bidding
 }) {
-  const { atualizarTexto, marcarEnviado, anexarAssinado, deleteAnexo } = useDeclaracaoAnexos(bidding.id)
+  const { atualizarTexto, gerarPdf, marcarEnviado, anexarAssinado, deleteAnexo } = useDeclaracaoAnexos(bidding.id)
   const { uploadFile } = useAttachedFiles('licitacao', bidding.id)
   const { showToast } = useToast()
   const [texto, setTexto] = useState(anexo.texto)
@@ -47,14 +47,16 @@ function AnexoCard({ anexo, checklistItems, podeEditar, bidding }: {
   const itensResolvidos = checklistItems.filter((i) => anexo.itensChecklistIds.includes(i.id))
   const textoMudou = texto !== anexo.texto
 
-  const handleCopiar = () => {
-    navigator.clipboard.writeText(texto)
-    showToast('Texto copiado.')
-  }
-
   const handleSalvarTexto = () => {
     atualizarTexto.mutate({ id: anexo.id, texto }, {
       onError: (err) => showToast(`Erro ao salvar: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+    })
+  }
+
+  const handleGerarPdf = () => {
+    if (textoMudou) handleSalvarTexto()
+    gerarPdf.mutate(anexo.id, {
+      onError: (err) => showToast(`Erro ao gerar o PDF: ${err instanceof Error ? err.message : String(err)}`, 'error'),
     })
   }
 
@@ -114,9 +116,12 @@ function AnexoCard({ anexo, checklistItems, podeEditar, bidding }: {
         />
 
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={handleCopiar} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition">
-            <Copy className="w-3.5 h-3.5" /> Copiar
-          </button>
+          {podeEditar && (
+            <button onClick={handleGerarPdf} disabled={gerarPdf.isPending} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition disabled:opacity-60">
+              {gerarPdf.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+              {gerarPdf.isPending ? 'Gerando PDF...' : 'Gerar PDF'}
+            </button>
+          )}
 
           {podeEditar && anexo.status === 'rascunho' && (
             <>
@@ -165,27 +170,18 @@ export default function DeclaracaoAnexosPanel({ bidding, checklistItems }: { bid
   const { anexos, isLoading, analisar } = useDeclaracaoAnexos(bidding.id)
   const { nivel } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivel === 'edicao'
-  const { showToast } = useToast()
-
-  const handleAnalisar = () => {
-    analisar.mutate(undefined, {
-      onSuccess: (data) => showToast(data.criados > 0 ? `${data.criados} anexo(s) de declaração encontrado(s) e preenchido(s).` : 'Nenhum anexo-modelo de declaração foi encontrado neste edital.'),
-      onError: (err) => showToast(`Erro ao analisar os anexos: ${err instanceof Error ? err.message : String(err)}`, 'error'),
-    })
-  }
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3 flex-wrap bg-base-850/60 border border-base-800 rounded-xl px-4 py-3">
         <div>
           <p className="text-[12px] font-bold text-base-200 flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5 text-accent-400" /> Anexos de Declaração</p>
-          <p className="text-[11px] text-base-500 mt-0.5">A IA lê os anexos-modelo do próprio edital (Anexo II, III...) e já preenche com os dados do cliente — revise, mande pro cliente assinar e anexe o arquivo assinado de volta.</p>
+          <p className="text-[11px] text-base-500 mt-0.5">Preenchido automaticamente ao analisar o edital: a IA acha os anexos-modelo de declaração (Anexo II, III...) e já preenche com os dados do cliente — revise, gere o PDF, mande pro cliente assinar e anexe o arquivo assinado de volta.</p>
         </div>
-        {podeEditar && (
-          <Button onClick={handleAnalisar} disabled={analisar.isPending}>
-            {analisar.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-            {analisar.isPending ? 'Analisando...' : anexos.length > 0 ? 'Analisar Novamente' : 'Analisar Anexos do Edital'}
-          </Button>
+        {analisar.isPending && (
+          <span className="flex items-center gap-1.5 text-[11px] font-semibold text-accent-300 shrink-0">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Analisando anexos do edital...
+          </span>
         )}
       </div>
 
