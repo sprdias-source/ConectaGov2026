@@ -5,12 +5,21 @@
 // (que só copiava o texto pra área de transferência) por um documento de
 // verdade, formatado, que o usuário baixa e envia.
 //
-// O texto do anexo já vem pronto (Analisar-anexos-declaracao preenche e
-// prefixa o cabeçalho salvo do cliente) — aqui é só o texto virando PDF:
-// o primeiro bloco (separado por linha em branco) é o cabeçalho, renderizado
-// centralizado com a primeira linha em destaque (mesma convenção usada em
-// clients.cabecalho_declaracao); os blocos seguintes são parágrafos normais,
-// com quebra de linha automática e quebra de página quando necessário.
+// Estrutura do documento (igual ao modelo real do Anexo do edital):
+// 1. Cabeçalho do cliente — centralizado, primeira linha em destaque (mesma
+//    convenção de clients.cabecalho_declaracao).
+// 2. Bloco "PROCESSO LICITATÓRIO Nº .../[MODALIDADE] Nº ..." — negrito,
+//    alinhado à esquerda, vindo dos dados da própria licitação (não do
+//    texto da IA).
+// 3. Título do anexo (bidding_declaracao_anexos.titulo) — centralizado,
+//    negrito.
+// 4. Corpo do texto (anexo.texto, já preenchido pela IA em
+//    Analisar-anexos-declaracao) — parágrafos justificados com recuo de
+//    primeira linha (padrão ABNT/jurídico); os dois últimos blocos (data e
+//    bloco de assinatura) não levam recuo/justificado, e respeitam quebras
+//    de linha simples dentro do próprio bloco (ex: assinatura, nome e cargo
+//    cada um na sua linha) — antes essas quebras eram ignoradas e tudo
+//    virava um parágrafo corrido.
 //
 // Recebe { anexoId } e devolve { success, fileBase64, mimeType, fileName }
 // — o frontend decodifica o base64 e baixa o arquivo; esta function não
@@ -40,6 +49,7 @@ const PAGINA_LARGURA = 595.28
 const PAGINA_ALTURA = 841.89
 const MARGEM = 56
 const LARGURA_UTIL = PAGINA_LARGURA - MARGEM * 2
+const RECUO_PRIMEIRA_LINHA = 28 // ~1cm, recuo de parágrafo padrão
 
 function toBase64(bytes: Uint8Array): string {
   let binary = ''
@@ -50,16 +60,17 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-// Quebra um texto em linhas que cabem em LARGURA_UTIL na fonte/tamanho
-// dados — pdf-lib não quebra linha sozinho, então isso é feito à mão,
-// palavra por palavra.
-function quebrarLinha(texto: string, fonte: PDFFont, tamanho: number): string[] {
+// Quebra um texto em linhas que cabem em larguraMax na fonte/tamanho dados
+// — pdf-lib não quebra linha sozinho, então isso é feito à mão, palavra por
+// palavra. Não mexe em quebras de linha explícitas (\n) — isso é
+// responsabilidade de quem chama, ver desenharBloco.
+function quebrarLinha(texto: string, fonte: PDFFont, tamanho: number, larguraMax: number): string[] {
   const palavras = texto.split(/\s+/).filter(Boolean)
   const linhas: string[] = []
   let atual = ''
   for (const palavra of palavras) {
     const teste = atual ? `${atual} ${palavra}` : palavra
-    if (fonte.widthOfTextAtSize(teste, tamanho) > LARGURA_UTIL && atual) {
+    if (fonte.widthOfTextAtSize(teste, tamanho) > larguraMax && atual) {
       linhas.push(atual)
       atual = palavra
     } else {
@@ -67,7 +78,7 @@ function quebrarLinha(texto: string, fonte: PDFFont, tamanho: number): string[] 
     }
   }
   if (atual) linhas.push(atual)
-  return linhas
+  return linhas.length ? linhas : ['']
 }
 
 Deno.serve(async (req: Request) => {
@@ -87,12 +98,18 @@ Deno.serve(async (req: Request) => {
 
     const { data: anexo, error: anexoError } = await supabase
       .from('bidding_declaracao_anexos')
-      .select('id, user_id, titulo, texto')
+      .select('id, user_id, bidding_id, titulo, texto')
       .eq('id', anexoId)
       .single()
     if (anexoError || !anexo) return json({ error: 'Anexo de declaração não encontrado' }, 404)
     if (anexo.user_id !== user.id) return json({ error: 'Sem permissão para este anexo' }, 403)
     if (!anexo.texto?.trim()) return json({ error: 'Este anexo ainda não tem texto preenchido' }, 400)
+
+    const { data: bidding } = await supabase
+      .from('biddings')
+      .select('processo, modalidade, numero_edital')
+      .eq('id', anexo.bidding_id)
+      .single()
 
     const doc = await PDFDocument.create()
     const fonte = await doc.embedFont(StandardFonts.Helvetica)
@@ -118,18 +135,20 @@ Deno.serve(async (req: Request) => {
 
     // Justificado (padrão ABNT) — pdf-lib não tem alinhamento justificado
     // pronto, então distribui manualmente o espaço sobrando entre as
-    // palavras da linha até encostar na margem direita. A ÚLTIMA linha de
-    // cada parágrafo nunca é esticada (regra tipográfica padrão — só a
-    // última linha fica "curta" e alinhada à esquerda, como no Word/ABNT).
-    const desenharLinhaJustificada = (texto: string, tamanho: number, fonteUsada: PDFFont, ultimaLinhaDoParagrafo: boolean) => {
+    // palavras da linha até encostar na margem direita. A última linha de
+    // cada bloco/quebra manual nunca é esticada (regra tipográfica padrão).
+    // `recuar` desloca essa linha específica pelo recuo de primeira linha.
+    const desenharLinhaJustificada = (texto: string, tamanho: number, fonteUsada: PDFFont, justificar: boolean, recuar: boolean) => {
       garantirEspaco(tamanho * 1.4)
+      const xInicial = MARGEM + (recuar ? RECUO_PRIMEIRA_LINHA : 0)
       const palavras = texto.split(/\s+/).filter(Boolean)
-      if (ultimaLinhaDoParagrafo || palavras.length <= 1) {
-        pagina.drawText(texto, { x: MARGEM, y, size: tamanho, font: fonteUsada })
+      if (!justificar || palavras.length <= 1) {
+        pagina.drawText(texto, { x: xInicial, y, size: tamanho, font: fonteUsada })
       } else {
+        const larguraUtilLinha = LARGURA_UTIL - (recuar ? RECUO_PRIMEIRA_LINHA : 0)
         const larguraPalavras = palavras.reduce((s, p) => s + fonteUsada.widthOfTextAtSize(p, tamanho), 0)
-        const espacoEntrePalavras = (LARGURA_UTIL - larguraPalavras) / (palavras.length - 1)
-        let x = MARGEM
+        const espacoEntrePalavras = (larguraUtilLinha - larguraPalavras) / (palavras.length - 1)
+        let x = xInicial
         for (const palavra of palavras) {
           pagina.drawText(palavra, { x, y, size: tamanho, font: fonteUsada })
           x += fonteUsada.widthOfTextAtSize(palavra, tamanho) + espacoEntrePalavras
@@ -138,29 +157,75 @@ Deno.serve(async (req: Request) => {
       y -= tamanho * 1.4
     }
 
-    // Primeiro bloco (separado por linha em branco) = cabeçalho do
-    // cliente, sempre centralizado, primeira linha em destaque — mesma
-    // convenção de clients.cabecalho_declaracao. Os blocos seguintes são
-    // parágrafos normais, alinhados à esquerda.
-    const paragrafos = anexo.texto.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
-
-    paragrafos.forEach((paragrafo, idx) => {
-      if (idx === 0) {
-        const linhasCabecalho = paragrafo.split('\n').map((l) => l.trim()).filter(Boolean)
-        linhasCabecalho.forEach((linha, li) => {
-          const negrito = li === 0
-          const tamanho = negrito ? 13 : 10
-          const fonteLinha = negrito ? fonteNegrito : fonte
-          for (const l of quebrarLinha(linha, fonteLinha, tamanho)) {
-            desenharLinha(l, tamanho, fonteLinha, true)
-          }
+    // Desenha um bloco de texto respeitando quebras de linha explícitas
+    // (\n) dentro dele — cada uma vira uma linha "forçada", que só quebra
+    // mais se não couber na largura (quebrarLinha). Isso é o que faz o
+    // bloco de assinatura (assinatura / nome / cargo, cada um na sua linha)
+    // funcionar em vez de virar um parágrafo corrido só. `comRecuo` aplica
+    // o recuo de primeira linha (só faz sentido pro corpo da declaração,
+    // não pra data nem pro bloco de assinatura). `comJustificado` decide se
+    // as linhas quebradas automaticamente esticam até a margem.
+    const desenharBloco = (texto: string, tamanho: number, fonteUsada: PDFFont, opts: { comRecuo?: boolean; comJustificado?: boolean; espacoDepois?: number } = {}) => {
+      const linhasForcadas = texto.split('\n').map((l) => l.trim()).filter(Boolean)
+      linhasForcadas.forEach((linhaForcada, fIdx) => {
+        const primeiraLinhaForcada = fIdx === 0
+        const recuarEstaLinha = !!opts.comRecuo && primeiraLinhaForcada
+        const larguraDisponivel = LARGURA_UTIL - (recuarEstaLinha ? RECUO_PRIMEIRA_LINHA : 0)
+        const subLinhas = quebrarLinha(linhaForcada, fonteUsada, tamanho, larguraDisponivel)
+        subLinhas.forEach((sub, sIdx) => {
+          const ultimaSubLinha = sIdx === subLinhas.length - 1
+          desenharLinhaJustificada(sub, tamanho, fonteUsada, !!opts.comJustificado && !ultimaSubLinha, recuarEstaLinha && sIdx === 0)
         })
-        y -= 10
-      } else {
-        const linhas = quebrarLinha(paragrafo, fonte, 11)
-        linhas.forEach((linha, li) => desenharLinhaJustificada(linha, 11, fonte, li === linhas.length - 1))
-        y -= 8
+      })
+      y -= opts.espacoDepois ?? 8
+    }
+
+    // 1) Cabeçalho do cliente — primeiro bloco de anexo.texto (separado por
+    // linha em branco), sempre centralizado, primeira linha em destaque.
+    const blocos = anexo.texto.split(/\n{2,}/).map((p: string) => p.trim()).filter(Boolean)
+    const [blocoCabecalho, ...blocosCorpo] = blocos
+
+    const linhasCabecalho = blocoCabecalho.split('\n').map((l) => l.trim()).filter(Boolean)
+    linhasCabecalho.forEach((linha, li) => {
+      const negrito = li === 0
+      const tamanho = negrito ? 13 : 10
+      const fonteLinha = negrito ? fonteNegrito : fonte
+      for (const l of quebrarLinha(linha, fonteLinha, tamanho, LARGURA_UTIL)) {
+        desenharLinha(l, tamanho, fonteLinha, true)
       }
+    })
+    y -= 10
+
+    // 2) Processo/Pregão — negrito, alinhado à esquerda, vindo da própria
+    // licitação (não do texto gerado pela IA).
+    if (bidding?.processo || bidding?.numero_edital) {
+      if (bidding.processo) desenharLinha(`PROCESSO LICITATÓRIO Nº ${bidding.processo}`, 10.5, fonteNegrito, false)
+      if (bidding.numero_edital) desenharLinha(`${(bidding.modalidade ?? '').toUpperCase()} Nº ${bidding.numero_edital}`, 10.5, fonteNegrito, false)
+      y -= 10
+    }
+
+    // 3) Título do anexo — centralizado, negrito.
+    if (anexo.titulo?.trim()) {
+      for (const l of quebrarLinha(anexo.titulo.trim().toUpperCase(), fonteNegrito, 11.5, LARGURA_UTIL)) {
+        desenharLinha(l, 11.5, fonteNegrito, true)
+      }
+      y -= 14
+    }
+
+    // 4) Corpo — os blocos do meio (a declaração em si) levam recuo de
+    // primeira linha + justificado; os dois últimos (data e assinatura,
+    // sempre presentes nessa ordem — ver prompt de Analisar-anexos-
+    // declaracao) não levam recuo, e o bloco de assinatura respeita as
+    // quebras de linha simples que separam assinatura/nome/cargo.
+    const indiceData = blocosCorpo.length - 2
+    const indiceAssinatura = blocosCorpo.length - 1
+    blocosCorpo.forEach((bloco, idx) => {
+      const ehDataOuAssinatura = idx === indiceData || idx === indiceAssinatura
+      desenharBloco(bloco, 11, fonte, {
+        comRecuo: !ehDataOuAssinatura,
+        comJustificado: !ehDataOuAssinatura,
+        espacoDepois: idx === indiceData ? 14 : 8,
+      })
     })
 
     const bytes = await doc.save()
