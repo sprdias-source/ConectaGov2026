@@ -805,6 +805,14 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
   )
 }
 
+// Mesma lógica de supabase/functions/gerar-proposta-pdf/index.ts — pra pré-
+// preencher o texto de fechamento editável com o mesmo valor que o PDF usaria
+// por padrão, sem repetir "dias" se o campo já vier com a palavra escrita.
+function formatarValidadeTexto(valor: string | null | undefined): string {
+  const texto = (valor ?? '60 (sessenta)').trim()
+  return /\bdias?\b/i.test(texto) ? texto : `${texto} dias`
+}
+
 function AbaProposta({ bidding }: { bidding: Bidding }) {
   const { items, isLoading, salvarRateio, sincronizarItens } = useBiddingItemsDaLicitacao(bidding.id)
   const { nivel } = usePermissaoFerramenta('licitacoes')
@@ -828,6 +836,29 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   const [erroPdfProposta, setErroPdfProposta] = useState<string | null>(null)
   const [pdfPropostaPreview, setPdfPropostaPreview] = useState<{ url: string; nome: string } | null>(null)
   const [enviandoPropostaAssinada, setEnviandoPropostaAssinada] = useState(false)
+
+  // Texto editável que entra no PDF gerado (abertura antes da tabela de
+  // itens, fechamento depois) — a tabela em si nunca é editável aqui, ela
+  // sempre vem de bidding_items, pra não correr o risco do PDF divergir do
+  // que está cadastrado na licitação. Pré-preenchido com o mesmo texto
+  // padrão que a function usaria, pra não começar em branco.
+  const textoAberturaPadrao = `Ao órgão licitante ${bidding.orgao ?? '—'}, apresentamos nossa proposta comercial referente ao ${bidding.modalidade} nº ${bidding.numeroEdital ?? '—'}, conforme planilha abaixo:`
+  const textoFechamentoPadrao = [
+    'Nos preços indicados acima estão incluídos, além dos produtos, todos os custos, benefícios, encargos, tributos e demais contribuições pertinentes.',
+    'Declaramos conhecer a legislação de referência desta licitação e que os produtos serão fornecidos de acordo com as condições estabelecidas neste Edital, o que conhecemos e aceitamos em todos os termos, inclusive quanto ao pagamento e outros.',
+    `Esta proposta é válida por ${formatarValidadeTexto(bidding.diasValidadeProposta)}, a contar da data de sua apresentação.`,
+    'Cumpre informar, ainda, que foram examinados os documentos da licitação, estando a empresa inteirada dos mesmos para elaboração da presente proposta.',
+  ].join('\n\n')
+  const [textoAbertura, setTextoAbertura] = useState(bidding.propostaTextoAbertura ?? textoAberturaPadrao)
+  const [textoFechamento, setTextoFechamento] = useState(bidding.propostaTextoFechamento ?? textoFechamentoPadrao)
+  const textoPropostaMudou = textoAbertura !== (bidding.propostaTextoAbertura ?? textoAberturaPadrao) || textoFechamento !== (bidding.propostaTextoFechamento ?? textoFechamentoPadrao)
+
+  const handleSalvarTextoProposta = () => {
+    updateBidding.mutate(
+      { bidding: { ...bidding, propostaTextoAbertura: textoAbertura, propostaTextoFechamento: textoFechamento }, items: [] },
+      { onError: (err) => showToast(`Erro ao salvar: ${err instanceof Error ? err.message : String(err)}`, 'error') }
+    )
+  }
 
   const handleAbrirAnexoProposta = async (anexo: { storagePath: string }) => {
     try {
@@ -909,6 +940,9 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
     setGerandoPdfProposta(true)
     setErroPdfProposta(null)
     try {
+      if (textoPropostaMudou) {
+        await updateBidding.mutateAsync({ bidding: { ...bidding, propostaTextoAbertura: textoAbertura, propostaTextoFechamento: textoFechamento }, items: [] })
+      }
       const { data: { session } } = await supabase.auth.getSession()
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
       const res = await fetch(`${SUPABASE_URL}/functions/v1/gerar-proposta-pdf`, {
@@ -1137,7 +1171,43 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
           {erroReadequada && <p className="text-[11.5px] text-negative-400">{erroReadequada}</p>}
         </div>
 
-        {propostaReadequada && (
+        {items.length > 0 && (
+          <div className="flex flex-col gap-2.5 bg-base-900/50 border border-base-800 rounded-xl px-4 py-3">
+            <p className="text-[10px] font-bold text-base-500 uppercase tracking-wider">Texto da Proposta — usado ao gerar o PDF</p>
+            <div>
+              <label className="text-[10.5px] font-semibold text-base-500 mb-1 block">Abertura (antes da tabela de itens)</label>
+              <textarea
+                value={textoAbertura}
+                onChange={(e) => setTextoAbertura(e.target.value)}
+                disabled={!podeEditar || statusProposta !== 'rascunho'}
+                rows={3}
+                className="w-full bg-base-900 border border-base-700 rounded-lg px-3 py-2 text-[12px] leading-relaxed text-base-200 focus:border-accent-400 outline-none disabled:opacity-60 disabled:cursor-not-allowed font-sans"
+              />
+            </div>
+            <div className="flex items-center gap-2 text-[10px] text-base-500 py-0.5">
+              <span className="flex-1 h-px bg-base-800" />
+              <span className="flex items-center gap-1 shrink-0"><FileSpreadsheet className="w-3 h-3" /> Tabela de Lote/Item, quantidades e valores — gerada automaticamente</span>
+              <span className="flex-1 h-px bg-base-800" />
+            </div>
+            <div>
+              <label className="text-[10.5px] font-semibold text-base-500 mb-1 block">Fechamento (validade, declarações — depois da tabela)</label>
+              <textarea
+                value={textoFechamento}
+                onChange={(e) => setTextoFechamento(e.target.value)}
+                disabled={!podeEditar || statusProposta !== 'rascunho'}
+                rows={6}
+                className="w-full bg-base-900 border border-base-700 rounded-lg px-3 py-2 text-[12px] leading-relaxed text-base-200 focus:border-accent-400 outline-none disabled:opacity-60 disabled:cursor-not-allowed font-sans"
+              />
+            </div>
+            {podeEditar && statusProposta === 'rascunho' && textoPropostaMudou && (
+              <Button onClick={handleSalvarTextoProposta} disabled={updateBidding.isPending} className="self-start">
+                {updateBidding.isPending ? 'Salvando...' : 'Salvar Alterações'}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {items.length > 0 && (
           <div className="flex flex-col gap-2 bg-base-900/50 border border-base-800 rounded-xl px-4 py-3">
             <p className="text-[10px] font-bold text-base-500 uppercase tracking-wider">PDF — pronto pra assinatura</p>
             <div className="flex items-center gap-2 flex-wrap">

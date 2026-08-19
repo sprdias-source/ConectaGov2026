@@ -104,7 +104,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: bidding, error: biddingError } = await supabase
       .from('biddings')
-      .select('id, user_id, client_id, orgao, modalidade, numero_edital, tipo_disputa, dias_validade_proposta')
+      .select('id, user_id, client_id, orgao, modalidade, numero_edital, tipo_disputa, dias_validade_proposta, proposta_texto_abertura, proposta_texto_fechamento')
       .eq('id', biddingId)
       .single()
     if (biddingError || !bidding) return json({ error: 'Licitação não encontrada' }, 404)
@@ -267,7 +267,9 @@ Deno.serve(async (req: Request) => {
     ], { tamanho: 9 })
     y -= 10
 
-    desenharParagrafo(`Ao órgão licitante ${bidding.orgao ?? '—'}, apresentamos nossa proposta comercial referente ao ${bidding.modalidade} nº ${bidding.numero_edital ?? '—'}, conforme planilha abaixo:`, { tamanho: 10, espacoDepois: 10 })
+    const textoAberturaPadrao = `Ao órgão licitante ${bidding.orgao ?? '—'}, apresentamos nossa proposta comercial referente ao ${bidding.modalidade} nº ${bidding.numero_edital ?? '—'}, conforme planilha abaixo:`
+    const textoAbertura = bidding.proposta_texto_abertura?.trim() || textoAberturaPadrao
+    desenharParagrafo(textoAbertura, { tamanho: 10, espacoDepois: 10 })
 
     const W_ID = Math.round(LARGURA_UTIL * 0.07)
     const W_ESP = Math.round(LARGURA_UTIL * 0.29)
@@ -333,10 +335,17 @@ Deno.serve(async (req: Request) => {
     desenharTabela(colunasItens, linhasItens, { tamanho: 8.5, linhaCabecalho: linhaCabecalhoItens })
     y -= 12
 
-    desenharParagrafo('Nos preços indicados acima estão incluídos, além dos produtos, todos os custos, benefícios, encargos, tributos e demais contribuições pertinentes.', { tamanho: 10, espacoDepois: 8 })
-    desenharParagrafo('Declaramos conhecer a legislação de referência desta licitação e que os produtos serão fornecidos de acordo com as condições estabelecidas neste Edital, o que conhecemos e aceitamos em todos os termos, inclusive quanto ao pagamento e outros.', { tamanho: 10, espacoDepois: 8 })
-    desenharParagrafo(`Esta proposta é válida por ${formatarValidadeProposta(bidding.dias_validade_proposta)}, a contar da data de sua apresentação.`, { tamanho: 10, espacoDepois: 8 })
-    desenharParagrafo('Cumpre informar, ainda, que foram examinados os documentos da licitação, estando a empresa inteirada dos mesmos para elaboração da presente proposta.', { tamanho: 10, espacoDepois: 20 })
+    const textoFechamentoPadrao = [
+      'Nos preços indicados acima estão incluídos, além dos produtos, todos os custos, benefícios, encargos, tributos e demais contribuições pertinentes.',
+      'Declaramos conhecer a legislação de referência desta licitação e que os produtos serão fornecidos de acordo com as condições estabelecidas neste Edital, o que conhecemos e aceitamos em todos os termos, inclusive quanto ao pagamento e outros.',
+      `Esta proposta é válida por ${formatarValidadeProposta(bidding.dias_validade_proposta)}, a contar da data de sua apresentação.`,
+      'Cumpre informar, ainda, que foram examinados os documentos da licitação, estando a empresa inteirada dos mesmos para elaboração da presente proposta.',
+    ].join('\n\n')
+    const textoFechamento = bidding.proposta_texto_fechamento?.trim() || textoFechamentoPadrao
+    const paragrafosFechamento = textoFechamento.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
+    paragrafosFechamento.forEach((paragrafo, idx) => {
+      desenharParagrafo(paragrafo, { tamanho: 10, espacoDepois: idx === paragrafosFechamento.length - 1 ? 20 : 8 })
+    })
 
     const hoje = new Date()
     desenharParagrafo(`${client.cidade || '[cidade]'}, ${dataPorExtenso(hoje)}.`, { tamanho: 10, negrito: true, espacoDepois: 30 })
