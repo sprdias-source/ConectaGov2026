@@ -1,18 +1,23 @@
 // Edge Function: gerar-anexo-declaracao-word
 //
 // Gera o .docx de uma declaração já preenchida (bidding_declaracao_anexos) —
-// mesmo conteúdo e mesma formatação do gerar-anexo-declaracao (PDF): primeiro
-// bloco (separado por linha em branco) é o cabeçalho do cliente, centralizado
-// com a primeira linha em destaque; os blocos seguintes são parágrafos
-// justificados (padrão ABNT), com quebra de página automática do próprio
-// Word. Serve pra quem prefere ajustar o texto no Word antes de mandar pro
-// cliente assinar, em vez de ir direto pro PDF.
+// mesmo conteúdo e mesma formatação do gerar-anexo-declaracao (PDF):
+// 1. Cabeçalho do cliente — centralizado, primeira linha em destaque.
+// 2. Bloco "PROCESSO LICITATÓRIO Nº .../[MODALIDADE] Nº ..." — negrito,
+//    alinhado à esquerda, vindo dos dados da própria licitação.
+// 3. Título do anexo (bidding_declaracao_anexos.titulo) — centralizado,
+//    negrito.
+// 4. Corpo do texto — parágrafos justificados com recuo de primeira linha
+//    (padrão ABNT/jurídico); a data e o bloco de assinatura (os dois
+//    últimos blocos) não levam recuo/justificado, e cada linha interna
+//    deles (assinatura / nome / cargo) vira uma quebra de linha de verdade
+//    dentro do mesmo parágrafo, em vez de virar texto corrido.
 //
 // Diferente de gerar-proposta (que usa um modelo .docx com {{placeholders}}
 // no Storage), aqui não existe planilha/tabela pra montar — é só texto
 // corrido — então o documento é construído direto via biblioteca `docx`, que
-// já suporta alinhamento justificado nativamente (sem precisar montar OOXML
-// à mão feito o pdf-lib exige pro PDF).
+// já suporta alinhamento justificado e recuo de primeira linha nativamente
+// (sem precisar montar OOXML à mão feito o pdf-lib exige pro PDF).
 //
 // Recebe { anexoId } e devolve { success, fileBase64, mimeType, fileName }
 // — o frontend decodifica o base64 e baixa o arquivo; esta function não
@@ -46,6 +51,18 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
+// Recuo de primeira linha padrão (~1cm) em twips (1cm ≈ 567 twips) — mesma
+// medida usada no PDF (RECUO_PRIMEIRA_LINHA lá é em pontos, aqui em twips).
+const RECUO_PRIMEIRA_LINHA_TWIPS = 560
+
+// Um parágrafo com quebras de linha internas (\n) — ex: assinatura / nome /
+// cargo, cada um na sua linha — vira UM parágrafo do Word com várias
+// TextRun separadas por `break: 1`, em vez de virar texto corrido.
+function construirRunsComQuebras(texto: string, tamanho: number): TextRun[] {
+  const linhas = texto.split('\n').map((l) => l.trim()).filter(Boolean)
+  return linhas.map((linha, idx) => new TextRun({ text: linha, size: tamanho, break: idx > 0 ? 1 : undefined }))
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -63,38 +80,76 @@ Deno.serve(async (req: Request) => {
 
     const { data: anexo, error: anexoError } = await supabase
       .from('bidding_declaracao_anexos')
-      .select('id, user_id, titulo, texto')
+      .select('id, user_id, bidding_id, titulo, texto')
       .eq('id', anexoId)
       .single()
     if (anexoError || !anexo) return json({ error: 'Anexo de declaração não encontrado' }, 404)
     if (anexo.user_id !== user.id) return json({ error: 'Sem permissão para este anexo' }, 403)
     if (!anexo.texto?.trim()) return json({ error: 'Este anexo ainda não tem texto preenchido' }, 400)
 
-    // Primeiro bloco (separado por linha em branco) = cabeçalho do cliente,
-    // centralizado, primeira linha em destaque — mesma convenção do PDF
-    // (gerar-anexo-declaracao) e de clients.cabecalho_declaracao. Os blocos
-    // seguintes são parágrafos normais, justificados.
-    const paragrafosTexto = anexo.texto.split(/\n{2,}/).map((p: string) => p.trim()).filter(Boolean)
+    const { data: bidding } = await supabase
+      .from('biddings')
+      .select('processo, modalidade, numero_edital')
+      .eq('id', anexo.bidding_id)
+      .single()
+
+    const blocos = anexo.texto.split(/\n{2,}/).map((p: string) => p.trim()).filter(Boolean)
+    const [blocoCabecalho, ...blocosCorpo] = blocos
 
     const paragrafosDoc: Paragraph[] = []
-    paragrafosTexto.forEach((paragrafo: string, idx: number) => {
-      if (idx === 0) {
-        const linhasCabecalho = paragrafo.split('\n').map((l) => l.trim()).filter(Boolean)
-        linhasCabecalho.forEach((linha, li) => {
-          const negrito = li === 0
-          paragrafosDoc.push(new Paragraph({
-            alignment: AlignmentType.CENTER,
-            spacing: { after: li === linhasCabecalho.length - 1 ? 200 : 40 },
-            children: [new TextRun({ text: linha, bold: negrito, size: negrito ? 26 : 20 })],
-          }))
-        })
-      } else {
+
+    // 1) Cabeçalho do cliente — centralizado, primeira linha em destaque.
+    const linhasCabecalho = blocoCabecalho.split('\n').map((l) => l.trim()).filter(Boolean)
+    linhasCabecalho.forEach((linha, li) => {
+      const negrito = li === 0
+      paragrafosDoc.push(new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: li === linhasCabecalho.length - 1 ? 200 : 40 },
+        children: [new TextRun({ text: linha, bold: negrito, size: negrito ? 26 : 20 })],
+      }))
+    })
+
+    // 2) Processo/Pregão — negrito, alinhado à esquerda, vindo da própria
+    // licitação (não do texto gerado pela IA).
+    if (bidding?.processo || bidding?.numero_edital) {
+      if (bidding.processo) {
         paragrafosDoc.push(new Paragraph({
-          alignment: AlignmentType.JUSTIFIED,
-          spacing: { after: 160, line: 360, lineRule: 'auto' },
-          children: [new TextRun({ text: paragrafo, size: 22 })],
+          spacing: { before: 200, after: 0 },
+          children: [new TextRun({ text: `PROCESSO LICITATÓRIO Nº ${bidding.processo}`, bold: true, size: 21 })],
         }))
       }
+      if (bidding.numero_edital) {
+        paragrafosDoc.push(new Paragraph({
+          spacing: { after: 200 },
+          children: [new TextRun({ text: `${(bidding.modalidade ?? '').toUpperCase()} Nº ${bidding.numero_edital}`, bold: true, size: 21 })],
+        }))
+      }
+    }
+
+    // 3) Título do anexo — centralizado, negrito.
+    if (anexo.titulo?.trim()) {
+      paragrafosDoc.push(new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 280 },
+        children: [new TextRun({ text: anexo.titulo.trim().toUpperCase(), bold: true, size: 23 })],
+      }))
+    }
+
+    // 4) Corpo — os blocos do meio (a declaração em si) levam recuo de
+    // primeira linha + justificado; os dois últimos (data e assinatura,
+    // sempre presentes nessa ordem — ver prompt de Analisar-anexos-
+    // declaracao) não levam recuo, e o bloco de assinatura respeita as
+    // quebras de linha simples que separam assinatura/nome/cargo.
+    const indiceData = blocosCorpo.length - 2
+    const indiceAssinatura = blocosCorpo.length - 1
+    blocosCorpo.forEach((bloco: string, idx: number) => {
+      const ehDataOuAssinatura = idx === indiceData || idx === indiceAssinatura
+      paragrafosDoc.push(new Paragraph({
+        alignment: ehDataOuAssinatura ? AlignmentType.LEFT : AlignmentType.JUSTIFIED,
+        indent: ehDataOuAssinatura ? undefined : { firstLine: RECUO_PRIMEIRA_LINHA_TWIPS },
+        spacing: { after: idx === indiceData ? 280 : 160, line: 360, lineRule: 'auto' },
+        children: construirRunsComQuebras(bloco, 22),
+      }))
     })
 
     const doc = new Document({
