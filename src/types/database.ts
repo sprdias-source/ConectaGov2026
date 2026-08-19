@@ -605,6 +605,8 @@ export type Database = {
           dias_validade_proposta: string | null
           proposta_readequada_enviada_em: string | null
           proposta_readequada_assinada_em: string | null
+          proposta_texto_abertura: string | null
+          proposta_texto_fechamento: string | null
           etapa: string | null
           id: string
           is_active: boolean
@@ -642,6 +644,8 @@ export type Database = {
           dias_validade_proposta?: string | null
           proposta_readequada_enviada_em?: string | null
           proposta_readequada_assinada_em?: string | null
+          proposta_texto_abertura?: string | null
+          proposta_texto_fechamento?: string | null
           etapa?: string | null
           id?: string
           is_active?: boolean
@@ -679,6 +683,8 @@ export type Database = {
           dias_validade_proposta?: string | null
           proposta_readequada_enviada_em?: string | null
           proposta_readequada_assinada_em?: string | null
+          proposta_texto_abertura?: string | null
+          proposta_texto_fechamento?: string | null
           etapa?: string | null
           id?: string
           is_active?: boolean

@@ -112,6 +112,8 @@ export interface Bidding {
   diasValidadeProposta: string | null
   propostaReadequadaEnviadaEm: string | null
   propostaReadequadaAssinadaEm: string | null
+  propostaTextoAbertura: string | null
+  propostaTextoFechamento: string | null
   modeloCustomizadoPath: string | null
   motivoPerda: string | null
   motivoDesistencia: string | null
