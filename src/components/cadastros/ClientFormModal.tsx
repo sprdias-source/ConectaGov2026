@@ -12,7 +12,7 @@ const emptyForm: Partial<Client> = {
   name: '', cnpj: '', address: '', cep: '', bairro: '', cidade: '', inscricaoEstadual: '',
   phone: '', whatsapp: '', email: '', website: '',
   bancoNome: '', bancoAgencia: '', bancoConta: '',
-  responsavelNome: '', responsavelCpf: '', responsavelCargo: '', responsavelRg: '',
+  responsavelNome: '', responsavelCpf: '', responsavelCargo: '', responsavelRg: '', estadoCivil: '',
   porteEmpresa: '', cabecalhoDeclaracao: '',
   isMensalista: false, valorMensalidade: undefined, periodoMeses: 12, diaVencimento: 10,
   dataCadastro: todayLocalISO(),
@@ -202,12 +202,22 @@ export default function ClientFormModal({
               <Input value={form.responsavelCargo ?? ''} onChange={(e) => setForm({ ...form, responsavelCargo: e.target.value })} placeholder="Ex: Sócio Administrador" />
             </Field>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Field label="CPF do Responsável">
               <Input value={form.responsavelCpf ?? ''} onChange={(e) => setForm({ ...form, responsavelCpf: e.target.value })} placeholder="000.000.000-00" />
             </Field>
             <Field label="RG do Responsável">
               <Input value={form.responsavelRg ?? ''} onChange={(e) => setForm({ ...form, responsavelRg: e.target.value })} placeholder="Carteira de Identidade" />
+            </Field>
+            <Field label="Estado Civil">
+              <Select value={form.estadoCivil ?? ''} onChange={(e) => setForm({ ...form, estadoCivil: e.target.value })}>
+                <option value="">Não informado</option>
+                <option value="Solteiro(a)">Solteiro(a)</option>
+                <option value="Casado(a)">Casado(a)</option>
+                <option value="Divorciado(a)">Divorciado(a)</option>
+                <option value="Viúvo(a)">Viúvo(a)</option>
+                <option value="União Estável">União Estável</option>
+              </Select>
             </Field>
           </div>
         </div>

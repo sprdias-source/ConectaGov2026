@@ -916,6 +916,7 @@ export type Database = {
           responsavel_cpf: string | null
           responsavel_nome: string | null
           responsavel_rg: string | null
+          estado_civil: string | null
           porte_empresa: string | null
           cabecalho_declaracao: string | null
           updated_at: string
@@ -950,6 +951,7 @@ export type Database = {
           responsavel_cpf?: string | null
           responsavel_nome?: string | null
           responsavel_rg?: string | null
+          estado_civil?: string | null
           porte_empresa?: string | null
           cabecalho_declaracao?: string | null
           updated_at?: string
@@ -984,6 +986,7 @@ export type Database = {
           responsavel_cpf?: string | null
           responsavel_nome?: string | null
           responsavel_rg?: string | null
+          estado_civil?: string | null
           porte_empresa?: string | null
           cabecalho_declaracao?: string | null
           updated_at?: string

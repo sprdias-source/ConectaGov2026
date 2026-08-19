@@ -56,6 +56,7 @@ export interface Client {
   responsavelCpf: string | null
   responsavelCargo: string | null
   responsavelRg: string | null
+  estadoCivil: string | null
   porteEmpresa: string | null
   cabecalhoDeclaracao: string | null
   isMensalista: boolean
