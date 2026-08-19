@@ -85,6 +85,26 @@ export function useDeclaracaoAnexos(biddingId?: string) {
     },
   })
 
+  // Mesma ideia do gerarPdf acima, mas em .docx — mesmo conteúdo e mesma
+  // formatação (cabeçalho centralizado + corpo justificado), pra quem
+  // prefere ajustar o texto no Word antes de mandar pro cliente assinar.
+  const gerarWord = useMutation({
+    mutationFn: async (anexoId: string) => {
+      const { data, error } = await supabase.functions.invoke('gerar-anexo-declaracao-word', { body: { anexoId } })
+      if (error) throw error
+      if (data?.error) throw new Error(data.error)
+      const resultado = data as { fileBase64: string; mimeType: string; fileName: string }
+      const bytes = Uint8Array.from(atob(resultado.fileBase64), (c) => c.charCodeAt(0))
+      const blob = new Blob([bytes], { type: resultado.mimeType })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = resultado.fileName
+      a.click()
+      URL.revokeObjectURL(url)
+    },
+  })
+
   // Passo 1 -> 2: registra que foi mandado pro cliente assinar. O texto
   // não é travado no banco (isso é só uma regra de UI) — só o status muda.
   const marcarEnviado = useMutation({
@@ -129,6 +149,7 @@ export function useDeclaracaoAnexos(biddingId?: string) {
     analisar,
     atualizarTexto,
     gerarPdf,
+    gerarWord,
     marcarEnviado,
     anexarAssinado,
     deleteAnexo,

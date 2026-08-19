@@ -172,11 +172,34 @@ Deno.serve(async (req: Request) => {
       pagina.drawText(texto, { x, y, size: tamanho, font: fonteUsada })
       y -= tamanho * 1.4
     }
+    // Justificado (padrão ABNT) — pdf-lib não tem alinhamento justificado
+    // pronto, então distribui manualmente o espaço sobrando entre as
+    // palavras da linha até encostar na margem direita. A ÚLTIMA linha de
+    // cada parágrafo nunca é esticada (regra tipográfica padrão).
+    function desenharLinhaJustificada(texto: string, tamanho: number, fonteUsada: PDFFont, ultimaLinhaDoParagrafo: boolean) {
+      garantirEspaco(tamanho * 1.4)
+      const palavras = texto.split(/\s+/).filter(Boolean)
+      if (ultimaLinhaDoParagrafo || palavras.length <= 1) {
+        pagina.drawText(texto, { x: MARGEM, y, size: tamanho, font: fonteUsada })
+      } else {
+        const larguraPalavras = palavras.reduce((s, p) => s + fonteUsada.widthOfTextAtSize(p, tamanho), 0)
+        const espacoEntrePalavras = (LARGURA_UTIL - larguraPalavras) / (palavras.length - 1)
+        let x = MARGEM
+        for (const palavra of palavras) {
+          pagina.drawText(palavra, { x, y, size: tamanho, font: fonteUsada })
+          x += fonteUsada.widthOfTextAtSize(palavra, tamanho) + espacoEntrePalavras
+        }
+      }
+      y -= tamanho * 1.4
+    }
     function desenharParagrafo(texto: string, opts: { tamanho?: number; negrito?: boolean; centralizado?: boolean; espacoDepois?: number } = {}) {
       const tamanho = opts.tamanho ?? 10.5
       const fonteUsada = opts.negrito ? fonteNegrito : fonte
-      for (const l of quebrarLinha(texto, fonteUsada, tamanho, LARGURA_UTIL)) {
-        desenharLinhaTexto(l, tamanho, fonteUsada, opts.centralizado ?? false)
+      const linhas = quebrarLinha(texto, fonteUsada, tamanho, LARGURA_UTIL)
+      if (opts.centralizado) {
+        linhas.forEach((l) => desenharLinhaTexto(l, tamanho, fonteUsada, true))
+      } else {
+        linhas.forEach((l, idx) => desenharLinhaJustificada(l, tamanho, fonteUsada, idx === linhas.length - 1))
       }
       y -= opts.espacoDepois ?? 6
     }
