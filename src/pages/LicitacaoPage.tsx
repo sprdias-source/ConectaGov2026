@@ -813,11 +813,22 @@ function formatarValidadeTexto(valor: string | null | undefined): string {
   return /\bdias?\b/i.test(texto) ? texto : `${texto} dias`
 }
 
+// Mesma lógica de gerar-proposta/gerar-proposta-pdf — evita mostrar bairro/
+// cidade duplicados na prévia (client.address já vem completo).
+function extrairLogradouroPreview(endereco: string, bairro: string | null | undefined): string {
+  const texto = endereco.trim()
+  if (!bairro?.trim()) return texto
+  const regex = new RegExp(`\\s*-\\s*${bairro.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b.*$`, 'i')
+  return texto.replace(regex, '').trim() || texto
+}
+
 function AbaProposta({ bidding }: { bidding: Bidding }) {
   const { items, isLoading, salvarRateio, sincronizarItens } = useBiddingItemsDaLicitacao(bidding.id)
   const { nivel } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivel === 'edicao'
   const { updateBidding } = useBiddings()
+  const { clients } = useClients()
+  const client = clients.find((c) => c.id === bidding.clientId)
   const { showToast } = useToast()
 
   // Auto-contido (mesmo padrão de AbaCadastrarProposta): busca os anexos
@@ -829,19 +840,17 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   const propostaEnviada = anexosProposta.find((f) => f.category === 'Proposta')
   const propostaReadequada = anexosProposta.find((f) => f.category === 'Proposta Readequada')
 
-  const [enviandoProposta, setEnviandoProposta] = useState<'Proposta' | 'Proposta Readequada' | null>(null)
-  const [gerandoReadequada, setGerandoReadequada] = useState(false)
-  const [erroReadequada, setErroReadequada] = useState<string | null>(null)
+  const [enviandoProposta, setEnviandoProposta] = useState<'Proposta' | null>(null)
+  const [gerandoDocx, setGerandoDocx] = useState<'novo' | 'ajustado' | null>(null)
+  const [erroDocx, setErroDocx] = useState<string | null>(null)
   const [gerandoPdfProposta, setGerandoPdfProposta] = useState(false)
   const [erroPdfProposta, setErroPdfProposta] = useState<string | null>(null)
   const [pdfPropostaPreview, setPdfPropostaPreview] = useState<{ url: string; nome: string } | null>(null)
   const [enviandoPropostaAssinada, setEnviandoPropostaAssinada] = useState(false)
 
-  // Texto editável que entra no PDF gerado (abertura antes da tabela de
-  // itens, fechamento depois) — a tabela em si nunca é editável aqui, ela
-  // sempre vem de bidding_items, pra não correr o risco do PDF divergir do
-  // que está cadastrado na licitação. Pré-preenchido com o mesmo texto
-  // padrão que a function usaria, pra não começar em branco.
+  // Texto editável que entra no Word e no PDF gerados (abertura antes da
+  // tabela de itens, fechamento depois). Pré-preenchido com o mesmo texto
+  // padrão que as functions usariam, pra não começar em branco.
   const textoAberturaPadrao = `Ao órgão licitante ${bidding.orgao ?? '—'}, apresentamos nossa proposta comercial referente ao ${bidding.modalidade} nº ${bidding.numeroEdital ?? '—'}, conforme planilha abaixo:`
   const textoFechamentoPadrao = [
     'Nos preços indicados acima estão incluídos, além dos produtos, todos os custos, benefícios, encargos, tributos e demais contribuições pertinentes.',
@@ -882,14 +891,32 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
     }
   }
 
-  // Gera o .docx a partir dos itens/valores atuais da licitação. Reinicia o
-  // ciclo de assinatura (enviada/assinada voltam pra null) — uma proposta
-  // gerada de novo, mesmo em cima de uma anterior já assinada, é uma
-  // versão nova que ainda não foi mandada pra ninguém assinar.
-  const handleGerarPropostaReadequada = async () => {
-    setGerandoReadequada(true)
-    setErroReadequada(null)
+  // Gera o .docx a partir dos itens/valores atuais da licitação e do texto
+  // de abertura/fechamento — usada tanto por "Gerar Proposta Novamente"
+  // (reseta o texto pro padrão antes de gerar, um recomeço do zero) quanto
+  // por "Subir Versão Ajustada" (mantém o texto editado na tela, uma nova
+  // versão em cima dos ajustes). As duas sempre reiniciam o ciclo de
+  // assinatura (enviada/assinada voltam pra null): mesmo em cima de uma
+  // versão já assinada, gerar de novo é sempre uma versão nova que ainda
+  // não foi mandada pra ninguém assinar.
+  const gerarWord = async (opts: { resetarTexto: boolean }) => {
+    setGerandoDocx(opts.resetarTexto ? 'novo' : 'ajustado')
+    setErroDocx(null)
     try {
+      const atualizacaoBidding: Partial<Bidding> = { propostaReadequadaEnviadaEm: null, propostaReadequadaAssinadaEm: null }
+      if (opts.resetarTexto) {
+        atualizacaoBidding.propostaTextoAbertura = null
+        atualizacaoBidding.propostaTextoFechamento = null
+      } else {
+        atualizacaoBidding.propostaTextoAbertura = textoAbertura
+        atualizacaoBidding.propostaTextoFechamento = textoFechamento
+      }
+      await updateBidding.mutateAsync({ bidding: { ...bidding, ...atualizacaoBidding }, items: [] })
+      if (opts.resetarTexto) {
+        setTextoAbertura(textoAberturaPadrao)
+        setTextoFechamento(textoFechamentoPadrao)
+      }
+
       const { data: { session } } = await supabase.auth.getSession()
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
       const res = await fetch(`${SUPABASE_URL}/functions/v1/gerar-proposta`, {
@@ -908,29 +935,15 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
       if (arquivoAntigo) await deleteAnexoProposta.mutateAsync(arquivoAntigo)
       if (pdfPropostaPreview) URL.revokeObjectURL(pdfPropostaPreview.url)
       setPdfPropostaPreview(null)
-      await updateBidding.mutateAsync({ bidding: { ...bidding, propostaReadequadaEnviadaEm: null, propostaReadequadaAssinadaEm: null }, items: [] })
     } catch (err) {
-      setErroReadequada(err instanceof Error ? err.message : String(err))
+      setErroDocx(err instanceof Error ? err.message : String(err))
     } finally {
-      setGerandoReadequada(false)
+      setGerandoDocx(null)
     }
   }
 
-  // Documento editável: baixa o Word gerado, ajusta fora do sistema, e sobe
-  // a versão ajustada aqui — substitui o arquivo, sem mexer no ciclo de
-  // assinatura (a proposta continua no mesmo passo em que estava).
-  const handleUploadWordAjustado = async (file: File) => {
-    setEnviandoProposta('Proposta Readequada')
-    try {
-      const antigo = propostaReadequada
-      await uploadAnexoProposta.mutateAsync({ file, category: 'Proposta Readequada' })
-      if (antigo) await deleteAnexoProposta.mutateAsync(antigo)
-    } catch (err) {
-      showToast(`Erro ao subir a versão ajustada: ${err instanceof Error ? err.message : String(err)}`, 'error')
-    } finally {
-      setEnviandoProposta(null)
-    }
-  }
+  const handleGerarPropostaReadequada = () => gerarWord({ resetarTexto: true })
+  const handleSubirVersaoAjustada = () => gerarWord({ resetarTexto: false })
 
   // PDF gerado direto dos dados da licitação (não a partir do .docx acima
   // — ver comentário em supabase/functions/gerar-proposta-pdf/index.ts) —
@@ -1032,6 +1045,14 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
     timeoutRef.current = setTimeout(dispararSincronizacao, 1200)
   }
 
+  // Edição direta na tabela da prévia do documento — mesmo pipeline de
+  // autosave debounçado usado pelo editor completo "Itens da Licitação"
+  // logo abaixo (handleItemsChange), então editar aqui ou lá é a mesma
+  // gravação, e as duas visões ficam sempre em sincronia.
+  const handleAlterarItemPreview = (id: string, patch: Partial<BiddingItem>) => {
+    handleItemsChange(items.map((it) => (it.id === id ? { ...it, ...patch } : it)))
+  }
+
   useEffect(() => {
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
@@ -1052,6 +1073,35 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   // licitações antigas ganhas por inteiro que nunca precisaram marcar item
   // por item.
   const itensGanhos = items.some((i) => i.ganhou) ? items.filter((i) => i.ganhou) : items
+
+  // Mesmo agrupamento por lote (com subtotal) usado em gerar-proposta e
+  // gerar-proposta-pdf — pra prévia na tela ficar igual ao documento
+  // gerado. Especificação/Modelo/Marca/Quant./Vl. Unit. são editáveis célula
+  // a célula (via handleAlterarItemPreview); subtotal e total são sempre
+  // recalculados, nunca digitados.
+  const porLotePreview = bidding.tipoDisputa === 'Lote'
+  const itensPreviewOrdenados = [...itensGanhos].sort((a, b) =>
+    compararNumeroItem(a.lote || a.numeroItem, b.lote || b.numeroItem) || compararNumeroItem(a.numeroItem, b.numeroItem)
+  )
+  type LinhaPreview = { tipo: 'item'; item: BiddingItem } | { tipo: 'subtotal'; lote: string; total: number }
+  const linhasPreview: LinhaPreview[] = []
+  let totalGeralPreview = 0
+  let loteAtualPreview: string | null = null
+  let totalLotePreview = 0
+  for (const item of itensPreviewOrdenados) {
+    const identificador = porLotePreview ? (item.lote || '—') : item.numeroItem
+    if (porLotePreview && identificador !== loteAtualPreview) {
+      if (loteAtualPreview !== null) linhasPreview.push({ tipo: 'subtotal', lote: loteAtualPreview, total: totalLotePreview })
+      loteAtualPreview = identificador
+      totalLotePreview = 0
+    }
+    const valorUnitPreview = item.valorUnitarioOfertado ?? item.valorUnitarioLicitado
+    const valorTotalItemPreview = item.quantidade * valorUnitPreview
+    totalLotePreview += valorTotalItemPreview
+    totalGeralPreview += valorTotalItemPreview
+    linhasPreview.push({ tipo: 'item', item })
+  }
+  if (porLotePreview && loteAtualPreview !== null) linhasPreview.push({ tipo: 'subtotal', lote: loteAtualPreview, total: totalLotePreview })
 
   const somaOriginal = itensGanhos.reduce((s, i) => s + i.quantidade * i.valorUnitarioLicitado, 0)
 
@@ -1140,117 +1190,179 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
         </div>
 
         <div className="flex flex-col gap-2 bg-base-900/50 border border-base-800 rounded-xl px-4 py-3">
-          <p className="text-[10px] font-bold text-base-500 uppercase tracking-wider">Word — editável</p>
-          <div className="flex items-center gap-3">
-            <Wand2 className="w-5 h-5 text-accent-400 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-[13px] text-base-200 truncate">{propostaReadequada ? propostaReadequada.name : 'Proposta Readequada'}</p>
-              <p className="text-[10.5px] text-base-500">{propostaReadequada ? 'gerada a partir dos itens/valores atuais' : 'gerada a partir dos itens/valores atuais da licitação'}</p>
-            </div>
-            {propostaReadequada && (
-              <button onClick={() => handleAbrirAnexoProposta(propostaReadequada)} title="Baixar" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
-                <Download className="w-3.5 h-3.5" />
+          <p className="text-[10px] font-bold text-base-500 uppercase tracking-wider">Proposta Readequada</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            {podeEditar && (
+              <Button variant="secondary" onClick={handleGerarPropostaReadequada} disabled={!!gerandoDocx}>
+                {gerandoDocx === 'novo' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                {gerandoDocx === 'novo' ? 'Gerando...' : propostaReadequada ? 'Gerar Proposta Novamente' : 'Gerar Word'}
+              </Button>
+            )}
+            {podeEditar && propostaReadequada && statusProposta === 'rascunho' && (
+              <button onClick={handleSubirVersaoAjustada} disabled={!!gerandoDocx} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition disabled:opacity-60">
+                {gerandoDocx === 'ajustado' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                {gerandoDocx === 'ajustado' ? 'Gerando...' : 'Subir Versão Ajustada'}
               </button>
             )}
-          </div>
-          {podeEditar && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button variant="secondary" onClick={handleGerarPropostaReadequada} disabled={gerandoReadequada}>
-                {gerandoReadequada ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-                {gerandoReadequada ? 'Gerando...' : propostaReadequada ? 'Gerar novamente' : 'Gerar Word'}
-              </Button>
-              {propostaReadequada && (
-                <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition cursor-pointer">
-                  {enviandoProposta === 'Proposta Readequada' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                  {enviandoProposta === 'Proposta Readequada' ? 'Enviando...' : 'Subir versão ajustada'}
-                  <input type="file" accept=".doc,.docx" className="hidden" disabled={!!enviandoProposta} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadWordAjustado(f); e.target.value = '' }} />
-                </label>
-              )}
-            </div>
-          )}
-          {erroReadequada && <p className="text-[11.5px] text-negative-400">{erroReadequada}</p>}
-        </div>
-
-        {items.length > 0 && (
-          <div className="flex flex-col gap-2.5 bg-base-900/50 border border-base-800 rounded-xl px-4 py-3">
-            <p className="text-[10px] font-bold text-base-500 uppercase tracking-wider">Texto da Proposta — usado ao gerar o PDF</p>
-            <div>
-              <label className="text-[10.5px] font-semibold text-base-500 mb-1 block">Abertura (antes da tabela de itens)</label>
-              <textarea
-                value={textoAbertura}
-                onChange={(e) => setTextoAbertura(e.target.value)}
-                disabled={!podeEditar || statusProposta !== 'rascunho'}
-                rows={3}
-                className="w-full bg-base-900 border border-base-700 rounded-lg px-3 py-2 text-[12px] leading-relaxed text-base-200 focus:border-accent-400 outline-none disabled:opacity-60 disabled:cursor-not-allowed font-sans"
-              />
-            </div>
-            <div className="flex items-center gap-2 text-[10px] text-base-500 py-0.5">
-              <span className="flex-1 h-px bg-base-800" />
-              <span className="flex items-center gap-1 shrink-0"><FileSpreadsheet className="w-3 h-3" /> Tabela de Lote/Item, quantidades e valores — gerada automaticamente</span>
-              <span className="flex-1 h-px bg-base-800" />
-            </div>
-            <div>
-              <label className="text-[10.5px] font-semibold text-base-500 mb-1 block">Fechamento (validade, declarações — depois da tabela)</label>
-              <textarea
-                value={textoFechamento}
-                onChange={(e) => setTextoFechamento(e.target.value)}
-                disabled={!podeEditar || statusProposta !== 'rascunho'}
-                rows={6}
-                className="w-full bg-base-900 border border-base-700 rounded-lg px-3 py-2 text-[12px] leading-relaxed text-base-200 focus:border-accent-400 outline-none disabled:opacity-60 disabled:cursor-not-allowed font-sans"
-              />
-            </div>
-            {podeEditar && statusProposta === 'rascunho' && textoPropostaMudou && (
-              <Button onClick={handleSalvarTextoProposta} disabled={updateBidding.isPending} className="self-start">
-                {updateBidding.isPending ? 'Salvando...' : 'Salvar Alterações'}
+            {propostaReadequada && (
+              <button onClick={() => handleAbrirAnexoProposta(propostaReadequada)} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition">
+                <Download className="w-3.5 h-3.5" /> Baixar Word
+              </button>
+            )}
+            {propostaReadequada && items.length > 0 && <div className="w-px self-stretch bg-base-800" />}
+            {items.length > 0 && podeEditar && statusProposta === 'rascunho' && (
+              <Button variant="secondary" onClick={handleGerarPdfProposta} disabled={gerandoPdfProposta}>
+                {gerandoPdfProposta ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSignature className="w-3.5 h-3.5" />}
+                {gerandoPdfProposta ? 'Gerando PDF...' : pdfPropostaPreview ? 'Gerar PDF novamente' : 'Gerar PDF'}
               </Button>
             )}
-          </div>
-        )}
-
-        {items.length > 0 && (
-          <div className="flex flex-col gap-2 bg-base-900/50 border border-base-800 rounded-xl px-4 py-3">
-            <p className="text-[10px] font-bold text-base-500 uppercase tracking-wider">PDF — pronto pra assinatura</p>
-            <div className="flex items-center gap-2 flex-wrap">
-              {podeEditar && statusProposta === 'rascunho' && (
-                <Button variant="secondary" onClick={handleGerarPdfProposta} disabled={gerandoPdfProposta}>
-                  {gerandoPdfProposta ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSignature className="w-3.5 h-3.5" />}
-                  {gerandoPdfProposta ? 'Gerando PDF...' : pdfPropostaPreview ? 'Gerar PDF novamente' : 'Gerar PDF'}
-                </Button>
-              )}
-              {pdfPropostaPreview && (
-                <button onClick={handleBaixarPdfPropostaGerado} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition">
-                  <Download className="w-3.5 h-3.5" /> Baixar PDF
-                </button>
-              )}
-            </div>
-            {erroPdfProposta && <p className="text-[11.5px] text-negative-400">{erroPdfProposta}</p>}
             {pdfPropostaPreview && (
-              <iframe src={pdfPropostaPreview.url} title="Prévia do PDF da Proposta Readequada" className="w-full h-[480px] rounded-lg border border-base-700 bg-base-100" />
+              <button onClick={handleBaixarPdfPropostaGerado} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition">
+                <Download className="w-3.5 h-3.5" /> Baixar PDF
+              </button>
             )}
-
-            {statusProposta === 'rascunho' && podeEditar && (
-              <button onClick={handleMarcarPropostaEnviada} disabled={updateBidding.isPending} className="self-start flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition">
+            {statusProposta === 'rascunho' && podeEditar && propostaReadequada && (
+              <button onClick={handleMarcarPropostaEnviada} disabled={updateBidding.isPending} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition">
                 <Send className="w-3.5 h-3.5" /> Marcar como Enviada ao Cliente
               </button>
             )}
-
             {statusProposta === 'enviado' && podeEditar && (
-              <div className="flex items-center gap-2 bg-accent-500/10 border border-dashed border-accent-500/30 rounded-lg px-3 py-2 flex-wrap">
-                <span className="text-[11px] text-accent-300 flex-1 min-w-[200px]">
-                  📎 Aguardando o cliente devolver a proposta assinada — anexe o arquivo aqui quando chegar.
-                </span>
-                <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-base-950 bg-accent-500 hover:bg-accent-400 rounded-lg px-3 py-1.5 transition cursor-pointer">
-                  {enviandoPropostaAssinada ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Paperclip className="w-3.5 h-3.5" />}
-                  {enviandoPropostaAssinada ? 'Enviando...' : 'Anexar Assinada'}
-                  <input type="file" accept=".pdf" className="hidden" disabled={enviandoPropostaAssinada} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAnexarPropostaAssinada(f); e.target.value = '' }} />
-                </label>
-              </div>
+              <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-base-950 bg-accent-500 hover:bg-accent-400 rounded-lg px-3 py-1.5 transition cursor-pointer">
+                {enviandoPropostaAssinada ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Paperclip className="w-3.5 h-3.5" />}
+                {enviandoPropostaAssinada ? 'Enviando...' : 'Anexar Assinada'}
+                <input type="file" accept=".pdf" className="hidden" disabled={enviandoPropostaAssinada} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAnexarPropostaAssinada(f); e.target.value = '' }} />
+              </label>
             )}
-
             {statusProposta === 'assinado' && (
-              <span className="flex items-center gap-1.5 text-[11px] font-bold text-positive-400 bg-positive-500/10 border border-positive-500/25 rounded-full px-2.5 py-1 self-start">
+              <span className="flex items-center gap-1.5 text-[11px] font-bold text-positive-400 bg-positive-500/10 border border-positive-500/25 rounded-full px-2.5 py-1">
                 <Check className="w-3.5 h-3.5" /> Assinada — disponível no ZIP de Documentos Finais
               </span>
+            )}
+          </div>
+          {statusProposta === 'enviado' && podeEditar && (
+            <p className="text-[11px] text-accent-300">📎 Aguardando o cliente devolver a proposta assinada — anexe o arquivo no botão acima quando chegar.</p>
+          )}
+          {erroDocx && <p className="text-[11.5px] text-negative-400">{erroDocx}</p>}
+          {erroPdfProposta && <p className="text-[11.5px] text-negative-400">{erroPdfProposta}</p>}
+        </div>
+
+        {propostaReadequada && items.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-bold text-base-500 uppercase tracking-wider">Prévia — cópia fiel do Word gerado</p>
+              {podeEditar && statusProposta === 'rascunho' && <span className="text-[10px] font-mono font-bold text-accent-400">✎ texto e tabela editáveis</span>}
+            </div>
+            <div className="bg-[#f4f1e9] text-[#20241f] rounded-lg border border-base-700 px-8 py-8 flex flex-col" style={{ fontFamily: 'Georgia, serif' }}>
+              <div className="text-center leading-relaxed mb-2">
+                {(client?.cabecalhoDeclaracao?.trim() || `${client?.name ?? ''}\nCNPJ: ${client?.cnpj ?? ''}`).split('\n').filter(Boolean).map((linha, idx) => (
+                  <p key={idx} className={idx === 0 ? 'font-bold text-[15px]' : 'text-[10.5px] text-[#4a4d47]'}>{linha}</p>
+                ))}
+              </div>
+              <div className="h-px bg-[#b9beb0] mb-4" />
+
+              <p className="text-center font-extrabold text-[14px] tracking-wide">PROPOSTA READEQUADA</p>
+              <p className="text-center font-bold text-[11.5px] text-[#333] mb-4">{bidding.modalidade} Nº {bidding.numeroEdital ?? '—'}</p>
+
+              <table className="w-full text-[10.5px] mb-4">
+                <tbody>
+                  <tr><td className="py-0.5 pr-2"><b>Razão Social:</b> {client?.name ?? '—'}</td><td className="py-0.5"><b>CNPJ:</b> {client?.cnpj ?? '—'}</td></tr>
+                  <tr><td className="py-0.5 pr-2"><b>I.E:</b> {client?.inscricaoEstadual ?? '—'}</td><td className="py-0.5"><b>Endereço:</b> {extrairLogradouroPreview(client?.address ?? '', client?.bairro)}</td></tr>
+                  <tr><td className="py-0.5 pr-2"><b>Bairro:</b> {client?.bairro ?? '—'}</td><td className="py-0.5"><b>Cidade:</b> {client?.cidade ?? '—'}</td></tr>
+                  <tr><td className="py-0.5 pr-2"><b>Telefone:</b> {client?.phone ?? '—'}</td><td className="py-0.5"><b>E-mail:</b> {client?.email ?? '—'}</td></tr>
+                </tbody>
+              </table>
+
+              <div className="relative border-[1.5px] border-dashed border-accent-500/60 rounded px-2.5 py-2 mb-4">
+                {podeEditar && statusProposta === 'rascunho' && <span className="absolute -top-2 left-2 bg-accent-500 text-white text-[8.5px] font-mono font-bold px-1.5 rounded-full">editável</span>}
+                <textarea
+                  value={textoAbertura}
+                  onChange={(e) => setTextoAbertura(e.target.value)}
+                  disabled={!podeEditar || statusProposta !== 'rascunho'}
+                  rows={2}
+                  className="w-full bg-transparent text-[11px] leading-relaxed outline-none resize-none disabled:cursor-not-allowed"
+                  style={{ fontFamily: 'Georgia, serif' }}
+                />
+              </div>
+
+              <div className="relative border-[1.5px] border-dashed border-accent-500/60 rounded px-2 pt-3 pb-1.5 mb-4">
+                {podeEditar && statusProposta === 'rascunho' && <span className="absolute -top-2 left-2 bg-accent-500 text-white text-[8.5px] font-mono font-bold px-1.5 rounded-full">editável — clique numa célula</span>}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[9.5px] border-collapse">
+                    <thead>
+                      <tr className="bg-[#e9e6da]">
+                        <th className="border border-[#b9beb0] px-1 py-1 font-bold">{porLotePreview ? 'Lote' : 'Item'}</th>
+                        <th className="border border-[#b9beb0] px-1 py-1 font-bold">Especificação</th>
+                        <th className="border border-[#b9beb0] px-1 py-1 font-bold">Modelo</th>
+                        <th className="border border-[#b9beb0] px-1 py-1 font-bold">Marca/Fabricante</th>
+                        <th className="border border-[#b9beb0] px-1 py-1 font-bold">Quant.</th>
+                        <th className="border border-[#b9beb0] px-1 py-1 font-bold">Valor Unit. R$</th>
+                        <th className="border border-[#b9beb0] px-1 py-1 font-bold">V. Total R$</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {linhasPreview.map((linha, idx) => linha.tipo === 'subtotal' ? (
+                        <tr key={`sub-${idx}`} className="bg-[#f1efe6] font-bold">
+                          <td colSpan={6} className="border border-[#b9beb0] px-1 py-1 text-right">Subtotal — Lote {linha.lote}</td>
+                          <td className="border border-[#b9beb0] px-1 py-1 text-right font-mono">{formatarNumeroPtBR(linha.total)}</td>
+                        </tr>
+                      ) : (
+                        <tr key={linha.item.id}>
+                          <td className="border border-[#b9beb0] px-1 py-1 text-center font-mono">{porLotePreview ? (linha.item.lote || '—') : linha.item.numeroItem}</td>
+                          <td className="border border-[#b9beb0] px-0.5 py-0.5">
+                            <input disabled={!podeEditar || statusProposta !== 'rascunho'} value={linha.item.descricao} onChange={(e) => handleAlterarItemPreview(linha.item.id, { descricao: e.target.value })} className="w-full min-w-[140px] bg-transparent px-1 py-0.5 outline-none disabled:cursor-not-allowed" />
+                          </td>
+                          <td className="border border-[#b9beb0] px-0.5 py-0.5">
+                            <input disabled={!podeEditar || statusProposta !== 'rascunho'} value={linha.item.referencia ?? ''} onChange={(e) => handleAlterarItemPreview(linha.item.id, { referencia: e.target.value })} className="w-full min-w-[70px] bg-transparent px-1 py-0.5 outline-none disabled:cursor-not-allowed" />
+                          </td>
+                          <td className="border border-[#b9beb0] px-0.5 py-0.5">
+                            <input disabled={!podeEditar || statusProposta !== 'rascunho'} value={linha.item.marca ?? ''} onChange={(e) => handleAlterarItemPreview(linha.item.id, { marca: e.target.value })} className="w-full min-w-[70px] bg-transparent px-1 py-0.5 outline-none disabled:cursor-not-allowed" />
+                          </td>
+                          <td className="border border-[#b9beb0] px-0.5 py-0.5">
+                            <input type="number" disabled={!podeEditar || statusProposta !== 'rascunho'} value={linha.item.quantidade} onChange={(e) => handleAlterarItemPreview(linha.item.id, { quantidade: parseFloat(e.target.value) || 0 })} className="w-full min-w-[50px] bg-transparent px-1 py-0.5 text-right font-mono outline-none disabled:cursor-not-allowed" />
+                          </td>
+                          <td className="border border-[#b9beb0] px-0.5 py-0.5">
+                            <input type="number" step="0.01" disabled={!podeEditar || statusProposta !== 'rascunho'} value={linha.item.valorUnitarioOfertado ?? linha.item.valorUnitarioLicitado} onChange={(e) => handleAlterarItemPreview(linha.item.id, { valorUnitarioOfertado: parseFloat(e.target.value) || 0 })} className="w-full min-w-[60px] bg-transparent px-1 py-0.5 text-right font-mono outline-none disabled:cursor-not-allowed" />
+                          </td>
+                          <td className="border border-[#b9beb0] px-1 py-1 text-right font-mono">{formatarNumeroPtBR(linha.item.quantidade * (linha.item.valorUnitarioOfertado ?? linha.item.valorUnitarioLicitado))}</td>
+                        </tr>
+                      ))}
+                      <tr className="bg-[#e4e1d3] font-extrabold">
+                        <td colSpan={6} className="border border-[#b9beb0] px-1 py-1 text-right">Valor total da Proposta</td>
+                        <td className="border border-[#b9beb0] px-1 py-1 text-right font-mono">{formatarNumeroPtBR(totalGeralPreview)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="relative border-[1.5px] border-dashed border-accent-500/60 rounded px-2.5 py-2 mb-5">
+                {podeEditar && statusProposta === 'rascunho' && <span className="absolute -top-2 left-2 bg-accent-500 text-white text-[8.5px] font-mono font-bold px-1.5 rounded-full">editável</span>}
+                <textarea
+                  value={textoFechamento}
+                  onChange={(e) => setTextoFechamento(e.target.value)}
+                  disabled={!podeEditar || statusProposta !== 'rascunho'}
+                  rows={6}
+                  className="w-full bg-transparent text-[11px] leading-relaxed outline-none resize-none disabled:cursor-not-allowed"
+                  style={{ fontFamily: 'Georgia, serif' }}
+                />
+              </div>
+
+              <p className="text-right font-bold text-[11px] mb-6">{client?.cidade || '[cidade]'}, {new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}.</p>
+              <div className="text-[10.5px] leading-loose">
+                <div className="w-[280px] border-t border-[#333] mb-1" />
+                Assinatura do representante legal<br />
+                Nome: {client?.responsavelNome ?? '—'}<br />
+                CPF: {client?.responsavelCpf ?? '—'}<br />
+                Cargo: {client?.responsavelCargo ?? '—'}
+              </div>
+            </div>
+            {podeEditar && statusProposta === 'rascunho' && textoPropostaMudou && (
+              <Button onClick={handleSalvarTextoProposta} disabled={updateBidding.isPending} className="self-start">
+                {updateBidding.isPending ? 'Salvando...' : 'Salvar Texto (sem gerar documento novo)'}
+              </Button>
+            )}
+            {pdfPropostaPreview && (
+              <iframe src={pdfPropostaPreview.url} title="Prévia do PDF da Proposta Readequada" className="w-full h-[480px] rounded-lg border border-base-700 bg-base-100" />
             )}
           </div>
         )}
