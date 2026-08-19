@@ -73,6 +73,31 @@ function escapeRegex(texto: string): string {
   return texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+// Substitui o parágrafo inteiro que contém {{token}} por um ou mais
+// parágrafos — um por trecho separado por linha em branco em `texto` —
+// preservando o <w:pPr> (alinhamento/espaçamento/estilo) do parágrafo
+// original do modelo. Diferente de substituirPlaceholders (que só troca o
+// texto dentro de um <w:t>), isso é necessário pra texto com múltiplos
+// parágrafos funcionar: não existe quebra de parágrafo dentro de um <w:t>
+// só, precisa ser um <w:p> por parágrafo. Usado pro texto de
+// abertura/fechamento editável da Proposta Readequada (ver AbaProposta em
+// LicitacaoPage.tsx). Se o modelo ainda não tiver esse placeholder (modelo
+// antigo, anterior a essa funcionalidade), não faz nada — o parágrafo fixo
+// original do modelo continua como estava, sem erro.
+function substituirParagrafoEditavel(xml: string, token: string, texto: string): string {
+  const regex = new RegExp(`<w:p\\b[^>]*>(?:(?!<\\/w:p>)[\\s\\S])*?\\{\\{${token}\\}\\}[\\s\\S]*?<\\/w:p>`)
+  const match = xml.match(regex)
+  if (!match) return xml
+  const paragrafoOriginal = match[0]
+  const pPrMatch = paragrafoOriginal.match(/<w:pPr\b[^>]*>[\s\S]*?<\/w:pPr>/)
+  const pPr = pPrMatch ? pPrMatch[0] : ''
+  const paragrafos = texto.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
+  const novosParagrafos = paragrafos
+    .map((p) => `<w:p>${pPr}<w:r><w:t xml:space="preserve">${escapeXml(p)}</w:t></w:r></w:p>`)
+    .join('')
+  return xml.replace(paragrafoOriginal, novosParagrafos)
+}
+
 // clients.address é preenchido (pelo autocomplete de CNPJ/CEP em
 // ClientFormModal) já como o endereço COMPLETO — "Rua, nº - Bairro, Cidade -
 // UF" — e é usado assim, sozinho, no resto do sistema (NFS-e, contratos,
@@ -201,6 +226,18 @@ Deno.serve(async (req) => {
       data_emissao: escapeXml(formatarData(hoje.toISOString().split('T')[0])),
     }
 
+    // Texto editável na tela (aba Proposta Readequada) — mesmo texto padrão
+    // usado em gerar-proposta-pdf/index.ts quando ainda não foi customizado.
+    const textoAberturaEditavel = (bidding.proposta_texto_abertura as string | null)?.trim() ||
+      `Ao órgão licitante ${bidding.orgao ?? '—'}, apresentamos nossa proposta comercial referente ao ${bidding.modalidade} nº ${bidding.numero_edital ?? '—'}, conforme planilha abaixo:`
+    const textoFechamentoEditavel = (bidding.proposta_texto_fechamento as string | null)?.trim() ||
+      [
+        'Nos preços indicados acima estão incluídos, além dos produtos, todos os custos, benefícios, encargos, tributos e demais contribuições pertinentes.',
+        'Declaramos conhecer a legislação de referência desta licitação e que os produtos serão fornecidos de acordo com as condições estabelecidas neste Edital, o que conhecemos e aceitamos em todos os termos, inclusive quanto ao pagamento e outros.',
+        `Esta proposta é válida por ${formatarValidadeProposta(bidding.dias_validade_proposta)}, a contar da data de sua apresentação.`,
+        'Cumpre informar, ainda, que foram examinados os documentos da licitação, estando a empresa inteirada dos mesmos para elaboração da presente proposta.',
+      ].join('\n\n')
+
     // --- Processa word/header1.xml (cabeçalho de página do cliente) ---
     // O cabeçalho é um cabeçalho de página de verdade do Word (repete em
     // todas as páginas), não texto solto no corpo do documento. O
@@ -305,6 +342,11 @@ Deno.serve(async (req) => {
     }
 
     documentXml = documentXml.replace(blocoModeloTabela, linhasGeradas.join(''))
+
+    // Texto editável de abertura (antes da tabela) e fechamento (depois),
+    // salvo pelo usuário na tela — ver comentário de substituirParagrafoEditavel.
+    documentXml = substituirParagrafoEditavel(documentXml, 'texto_abertura', textoAberturaEditavel)
+    documentXml = substituirParagrafoEditavel(documentXml, 'texto_fechamento', textoFechamentoEditavel)
 
     // Substitui o restante dos placeholders fixos (fora da tabela de itens),
     // incluindo o valor total geral da proposta (soma de todos os itens,
