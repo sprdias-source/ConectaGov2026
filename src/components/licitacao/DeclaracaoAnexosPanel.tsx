@@ -40,35 +40,52 @@ function AnexoCard({ anexo, checklistItems, podeEditar, bidding }: {
   const { atualizarTexto, gerarPdf, gerarWord, marcarEnviado, anexarAssinado, deleteAnexo } = useDeclaracaoAnexos(bidding.id)
   const { uploadFile } = useAttachedFiles('licitacao', bidding.id)
   const { showToast } = useToast()
-  const [texto, setTexto] = useState(anexo.texto)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [enviandoAssinado, setEnviandoAssinado] = useState(false)
 
+  // Prévia editável unificada (mesmo padrão da Proposta Readequada): em vez
+  // de uma textarea solta com o texto inteiro, o cabeçalho/Processo-Pregão/
+  // título ficam fixos (mesma lógica de gerar-anexo-declaracao — vêm do
+  // primeiro bloco do texto e dos dados da licitação), e só o corpo da
+  // declaração (excluindo data e assinatura, que ficam nos 2 últimos
+  // blocos) é editável, já mostrado justificado/recuado como vai sair no
+  // documento final. Não precisou separar em duas caixas como na Proposta
+  // porque aqui não tem tabela travada no meio — é um bloco só.
+  const blocos = anexo.texto.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
+  const [blocoCabecalho, ...blocosCorpo] = blocos
+  const indiceData = blocosCorpo.length - 2
+  const indiceAssinatura = blocosCorpo.length - 1
+  const corpoPadrao = blocosCorpo.slice(0, Math.max(indiceData, 0)).join('\n\n')
+  const blocoData = indiceData >= 0 ? blocosCorpo[indiceData] : ''
+  const blocoAssinatura = indiceAssinatura >= 0 ? blocosCorpo[indiceAssinatura] : ''
+
+  const [corpo, setCorpo] = useState(corpoPadrao)
+  const corpoMudou = corpo !== corpoPadrao
   const itensResolvidos = checklistItems.filter((i) => anexo.itensChecklistIds.includes(i.id))
-  const textoMudou = texto !== anexo.texto
 
   const handleSalvarTexto = () => {
-    atualizarTexto.mutate({ id: anexo.id, texto }, {
+    const novoTexto = [blocoCabecalho, corpo, blocoData, blocoAssinatura].filter((b) => b.trim()).join('\n\n')
+    atualizarTexto.mutate({ id: anexo.id, texto: novoTexto }, {
       onError: (err) => showToast(`Erro ao salvar: ${err instanceof Error ? err.message : String(err)}`, 'error'),
     })
   }
 
   const handleGerarPdf = () => {
-    if (textoMudou) handleSalvarTexto()
+    if (corpoMudou) handleSalvarTexto()
     gerarPdf.mutate(anexo.id, {
       onError: (err) => showToast(`Erro ao gerar o PDF: ${err instanceof Error ? err.message : String(err)}`, 'error'),
     })
   }
 
   const handleGerarWord = () => {
-    if (textoMudou) handleSalvarTexto()
+    if (corpoMudou) handleSalvarTexto()
     gerarWord.mutate(anexo.id, {
       onError: (err) => showToast(`Erro ao gerar o Word: ${err instanceof Error ? err.message : String(err)}`, 'error'),
     })
   }
 
   const handleMarcarEnviado = () => {
-    if (textoMudou) handleSalvarTexto()
+    if (corpoMudou) handleSalvarTexto()
     marcarEnviado.mutate(anexo.id, {
       onSuccess: () => showToast('Marcado como enviado ao cliente.'),
       onError: (err) => showToast(`Erro: ${err instanceof Error ? err.message : String(err)}`, 'error'),
@@ -114,13 +131,51 @@ function AnexoCard({ anexo, checklistItems, podeEditar, bidding }: {
       </div>
 
       <div className="p-4 flex flex-col gap-2.5">
-        <textarea
-          value={texto}
-          onChange={(e) => setTexto(e.target.value)}
-          disabled={anexo.status !== 'rascunho' || !podeEditar}
-          rows={10}
-          className="w-full bg-base-900 border border-base-700 rounded-lg px-3 py-2.5 text-[12.5px] leading-relaxed text-base-200 focus:border-accent-400 outline-none disabled:opacity-60 disabled:cursor-not-allowed font-sans"
-        />
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] font-bold text-base-500 uppercase tracking-wider">Prévia — cópia fiel do documento gerado</p>
+          {podeEditar && anexo.status === 'rascunho' && <span className="text-[10px] font-mono font-bold text-accent-400">✎ texto editável aqui</span>}
+        </div>
+
+        {/* Prévia editável unificada: cabeçalho/Processo-Pregão/título fixos
+            (mesma fonte de dados de gerar-anexo-declaracao), corpo editável
+            já mostrado justificado/recuado, data/assinatura fixas. */}
+        <div className="bg-[#f4f1e9] text-[#20241f] rounded-lg border border-base-700 px-7 py-7" style={{ fontFamily: 'Georgia, serif' }}>
+          <div className="text-center leading-relaxed mb-2">
+            {blocoCabecalho.split('\n').filter(Boolean).map((linha, idx) => (
+              <p key={idx} className={idx === 0 ? 'font-bold text-[13px]' : 'text-[9.5px] text-[#4a4d47]'} style={{ fontFamily: 'Inter, sans-serif' }}>{linha}</p>
+            ))}
+          </div>
+          <div className="h-px bg-[#b9beb0] mb-3" />
+
+          {(bidding.processo || bidding.numeroEdital) && (
+            <p className="font-bold text-[10.5px] leading-relaxed mb-2" style={{ fontFamily: 'Inter, sans-serif' }}>
+              {bidding.processo && <>PROCESSO LICITATÓRIO Nº {bidding.processo}<br /></>}
+              {bidding.numeroEdital && <>{(bidding.modalidade ?? '').toUpperCase()} Nº {bidding.numeroEdital}</>}
+            </p>
+          )}
+          {anexo.titulo && <p className="text-center font-extrabold text-[11px] mb-1" style={{ fontFamily: 'Inter, sans-serif' }}>{anexo.titulo.toUpperCase()}</p>}
+
+          <div className="relative border-[1.5px] border-dashed border-accent-500/60 rounded px-2.5 py-2 my-3">
+            {podeEditar && anexo.status === 'rascunho' && <span className="absolute -top-2 left-2 bg-accent-500 text-white text-[8.5px] font-mono font-bold px-1.5 rounded-full">editável</span>}
+            <textarea
+              value={corpo}
+              onChange={(e) => setCorpo(e.target.value)}
+              disabled={anexo.status !== 'rascunho' || !podeEditar}
+              rows={8}
+              className="w-full bg-transparent text-[11px] leading-relaxed outline-none resize-y disabled:cursor-not-allowed"
+              style={{ fontFamily: 'Georgia, serif', textAlign: 'justify', textIndent: '2em' }}
+            />
+          </div>
+
+          {blocoData && <p className="text-[10.5px] mb-3">{blocoData}</p>}
+          {blocoAssinatura && (
+            <div className="text-[9.5px] leading-loose" style={{ fontFamily: 'Inter, sans-serif' }}>
+              {blocoAssinatura.split('\n').filter(Boolean).map((linha, idx) => (
+                <p key={idx} className={idx === 0 ? 'border-t border-[#333] w-[220px] pt-1 mb-0.5' : 'mb-0.5'}>{idx === 0 ? '' : linha}</p>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="flex items-center gap-2 flex-wrap">
           {podeEditar && (
@@ -138,7 +193,7 @@ function AnexoCard({ anexo, checklistItems, podeEditar, bidding }: {
 
           {podeEditar && anexo.status === 'rascunho' && (
             <>
-              {textoMudou && (
+              {corpoMudou && (
                 <Button onClick={handleSalvarTexto} disabled={atualizarTexto.isPending}>
                   {atualizarTexto.isPending ? 'Salvando...' : 'Salvar Alterações'}
                 </Button>
