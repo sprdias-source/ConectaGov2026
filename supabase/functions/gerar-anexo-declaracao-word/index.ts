@@ -94,7 +94,22 @@ Deno.serve(async (req: Request) => {
       .single()
 
     const blocos = anexo.texto.split(/\n{2,}/).map((p: string) => p.trim()).filter(Boolean)
-    const [blocoCabecalho, ...blocosCorpo] = blocos
+    const [blocoCabecalho, ...resto] = blocos
+
+    // Data e assinatura são identificados pelo CONTEÚDO (padrão de data /
+    // a palavra "assinatura"), não por posição ("os 2 últimos blocos") — a
+    // IA nem sempre separa esses blocos com linha em branco igual o prompt
+    // pede; assumir cegamente a posição gruda a declaração inteira dentro
+    // do bloco de assinatura e perde o recuo/justificado dela.
+    const ultimoIdx = resto.length - 1
+    const ultimoEhAssinatura = ultimoIdx >= 0 && /assinatura/i.test(resto[ultimoIdx]) && resto[ultimoIdx].length < 300
+    const idxAssinaturaResto = ultimoEhAssinatura ? ultimoIdx : -1
+    const idxDataResto = ultimoEhAssinatura && ultimoIdx - 1 >= 0 && /\d{1,2}\s+de\s+[a-zçãõéê]+\s+de\s+\d{4}/i.test(resto[ultimoIdx - 1]) ? ultimoIdx - 1 : -1
+    const blocosCorpo = resto.filter((_: string, i: number) => i !== idxDataResto && i !== idxAssinaturaResto)
+    let indiceData = -1
+    let indiceAssinatura = -1
+    if (idxDataResto >= 0) { indiceData = blocosCorpo.length; blocosCorpo.push(resto[idxDataResto]) }
+    if (idxAssinaturaResto >= 0) { indiceAssinatura = blocosCorpo.length; blocosCorpo.push(resto[idxAssinaturaResto]) }
 
     const paragrafosDoc: Paragraph[] = []
 
@@ -136,12 +151,9 @@ Deno.serve(async (req: Request) => {
     }
 
     // 4) Corpo — os blocos do meio (a declaração em si) levam recuo de
-    // primeira linha + justificado; os dois últimos (data e assinatura,
-    // sempre presentes nessa ordem — ver prompt de Analisar-anexos-
-    // declaracao) não levam recuo, e o bloco de assinatura respeita as
+    // primeira linha + justificado; data e assinatura (identificados acima
+    // por conteúdo) não levam recuo, e o bloco de assinatura respeita as
     // quebras de linha simples que separam assinatura/nome/cargo.
-    const indiceData = blocosCorpo.length - 2
-    const indiceAssinatura = blocosCorpo.length - 1
     blocosCorpo.forEach((bloco: string, idx: number) => {
       const ehDataOuAssinatura = idx === indiceData || idx === indiceAssinatura
       paragrafosDoc.push(new Paragraph({
