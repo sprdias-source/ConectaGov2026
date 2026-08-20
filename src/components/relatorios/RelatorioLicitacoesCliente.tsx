@@ -17,8 +17,26 @@ interface ResumoItensBidding {
   valorLicitado: number
   valorParticipado: number
   valorGanho: number
+  // Só a parte licitada dos itens/licitações efetivamente ganhos — é o
+  // denominador do Decremento (quanto caiu em relação ao que foi licitado
+  // NOS itens ganhos, não no edital inteiro).
+  valorLicitadoGanhos: number
   diferenca: number
   temItens: boolean
+}
+
+// Percentual de queda entre o que foi licitado e o que foi efetivamente
+// ganho — mesma lógica do Decremento por item (BiddingItemsEditor), só que
+// agregado. null quando não há base de comparação (nada ganho ainda).
+function calcularDecrementoPct(diferenca: number, valorLicitadoGanhos: number): number | null {
+  if (valorLicitadoGanhos <= 0) return null
+  return (diferenca / valorLicitadoGanhos) * 100
+}
+
+function formatDecremento(pct: number | null): string {
+  if (pct === null) return '—'
+  const sinal = pct >= 0 ? '−' : '+'
+  return `${sinal}${Math.abs(pct).toFixed(2).replace('.', ',')}%`
 }
 
 // Cruza a licitação com os itens dela pra saber, de verdade, quanto era o
@@ -30,10 +48,12 @@ interface ResumoItensBidding {
 function resumoItensBidding(b: Bidding, itens: BiddingItem[]): ResumoItensBidding {
   if (itens.length === 0) {
     const valorGanho = b.status === 'Ganhou' ? valorRelevante(b) : 0
+    const valorLicitadoGanhos = b.status === 'Ganhou' ? b.valorLicitado : 0
     return {
       valorLicitado: b.valorLicitado,
       valorParticipado: b.status !== 'Cancelada' && b.status !== 'Desistiu' ? b.valorLicitado : 0,
       valorGanho,
+      valorLicitadoGanhos,
       diferenca: b.status === 'Ganhou' ? b.valorLicitado - valorGanho : 0,
       temItens: false,
     }
@@ -48,6 +68,7 @@ function resumoItensBidding(b: Bidding, itens: BiddingItem[]): ResumoItensBiddin
     valorLicitado,
     valorParticipado,
     valorGanho,
+    valorLicitadoGanhos,
     diferenca: valorLicitadoGanhos - valorGanho,
     temItens: true,
   }
@@ -101,13 +122,18 @@ export default function RelatorioLicitacoesCliente({ clients, biddings }: { clie
     // "Quanto deixou de ganhar" = soma do valor das oportunidades perdidas.
     const valorPerdido = perdeu.reduce((s, b) => s + valorRelevante(b), 0)
     const valorEmAndamento = emAndamento.reduce((s, b) => s + b.valorLicitado, 0)
+    const diferencaGanhas = valorParticipadoGanhas - valorGanhoDeFato
     return {
       totalTodas: doCliente.length,
       valorTotalEdital,
       totalGanhou: ganhou.length,
       valorParticipadoGanhas,
       valorGanhoDeFato,
-      diferencaGanhas: valorParticipadoGanhas - valorGanhoDeFato,
+      diferencaGanhas,
+      // Mesmo cálculo do Decremento por item (BiddingItemsEditor), só que
+      // agregado: quanto, em média, o valor caiu entre o licitado e o
+      // efetivamente ganho, nas licitações vencidas.
+      decrementoMedioPct: calcularDecrementoPct(diferencaGanhas, valorParticipadoGanhas),
       totalPerdeu: perdeu.length,
       valorPerdido,
       totalEmAndamento: emAndamento.length,
@@ -177,10 +203,11 @@ export default function RelatorioLicitacoesCliente({ clients, biddings }: { clie
                 Dentro do que Ganhamos
                 <span className="font-normal normal-case text-base-600">— só as {stats.totalGanhou} licitações com status Ganhou</span>
               </p>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <CardEstatistica label="Valor Participado" valor={formatBRL(stats.valorParticipadoGanhas)} cor="text-positive-400" mono />
                 <CardEstatistica label="Valor Ganho de Fato" valor={formatBRL(stats.valorGanhoDeFato)} cor="text-positive-400" mono />
                 <CardEstatistica label="Diferença" valor={formatBRL(stats.diferencaGanhas)} cor="text-accent-400" mono />
+                <CardEstatistica label="Decremento Médio" valor={formatDecremento(stats.decrementoMedioPct)} cor="text-warning-400" mono />
               </div>
             </div>
 
@@ -218,6 +245,7 @@ export default function RelatorioLicitacoesCliente({ clients, biddings }: { clie
                   <tr><td className="py-0.5 pr-2 font-semibold">Valor Participado (nas Ganhas):</td><td>{formatBRL(stats.valorParticipadoGanhas)}</td></tr>
                   <tr><td className="py-0.5 pr-2 font-semibold">Valor Ganho de Fato (nas Ganhas):</td><td>{formatBRL(stats.valorGanhoDeFato)}</td></tr>
                   <tr><td className="py-0.5 pr-2 font-semibold">Diferença (Participado − Ganho de Fato):</td><td>{formatBRL(stats.diferencaGanhas)}</td></tr>
+                  <tr><td className="py-0.5 pr-2 font-semibold">Decremento Médio (nas Ganhas):</td><td>{formatDecremento(stats.decrementoMedioPct)}</td></tr>
                   <tr><td className="py-0.5 pr-2 font-semibold">Licitações Perdidas:</td><td>{stats.totalPerdeu} · {formatBRL(stats.valorPerdido)}</td></tr>
                   <tr><td className="py-0.5 pr-2 font-semibold">Em Andamento:</td><td>{stats.totalEmAndamento} · {formatBRL(stats.valorEmAndamento)}</td></tr>
                 </tbody>
@@ -235,7 +263,8 @@ export default function RelatorioLicitacoesCliente({ clients, biddings }: { clie
                       <th className="py-1.5 pr-2 text-right">Vl. Licitado</th>
                       <th className="py-1.5 pr-2 text-right">Vl. Participado</th>
                       <th className="py-1.5 pr-2 text-right">Vl. Ganho</th>
-                      <th className="py-1.5 text-right">Diferença</th>
+                      <th className="py-1.5 pr-2 text-right">Diferença</th>
+                      <th className="py-1.5 text-right">Decremento Médio</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -251,7 +280,8 @@ export default function RelatorioLicitacoesCliente({ clients, biddings }: { clie
                           <td className="py-1 pr-2 text-right">{formatBRL(r.valorLicitado)}</td>
                           <td className="py-1 pr-2 text-right">{formatBRL(r.valorParticipado)}</td>
                           <td className="py-1 pr-2 text-right">{formatBRL(r.valorGanho)}</td>
-                          <td className="py-1 text-right">{r.valorGanho > 0 ? formatBRL(r.diferenca) : '—'}</td>
+                          <td className="py-1 pr-2 text-right">{r.valorGanho > 0 ? formatBRL(r.diferenca) : '—'}</td>
+                          <td className="py-1 text-right">{formatDecremento(calcularDecrementoPct(r.diferenca, r.valorLicitadoGanhos))}</td>
                         </tr>
                       )
                     })}
@@ -275,23 +305,28 @@ export default function RelatorioLicitacoesCliente({ clients, biddings }: { clie
                               <th className="py-1 pr-2 text-right">Vl. Unit. Licitado</th>
                               <th className="py-1 pr-2 text-right">Vl. Total Licitado</th>
                               <th className="py-1 pr-2 text-right">Vl. Unit. Ofertado</th>
+                              <th className="py-1 pr-2 text-right">Decremento</th>
                               <th className="py-1 pr-2">Participou</th>
                               <th className="py-1 text-right">Ganhou</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {itens.map((i) => (
-                              <tr key={i.id} className="border-b border-slate-200">
-                                <td className="py-1 pr-2">{i.numeroItem}</td>
-                                <td className="py-1 pr-2">{i.descricao}</td>
-                                <td className="py-1 pr-2 text-right">{i.quantidade}</td>
-                                <td className="py-1 pr-2 text-right">{formatBRL(i.valorUnitarioLicitado)}</td>
-                                <td className="py-1 pr-2 text-right">{formatBRL(i.quantidade * i.valorUnitarioLicitado)}</td>
-                                <td className="py-1 pr-2 text-right">{i.valorUnitarioOfertado !== null ? formatBRL(i.valorUnitarioOfertado) : '—'}</td>
-                                <td className="py-1 pr-2">{i.valorUnitarioOfertado !== null ? 'Sim' : 'Não'}</td>
-                                <td className="py-1 text-right">{i.ganhou ? 'Sim' : 'Não'}</td>
-                              </tr>
-                            ))}
+                            {itens.map((i) => {
+                              const decremento = i.valorUnitarioOfertado !== null ? calcularDecrementoPct(i.valorUnitarioLicitado - i.valorUnitarioOfertado, i.valorUnitarioLicitado) : null
+                              return (
+                                <tr key={i.id} className="border-b border-slate-200">
+                                  <td className="py-1 pr-2">{i.numeroItem}</td>
+                                  <td className="py-1 pr-2">{i.descricao}</td>
+                                  <td className="py-1 pr-2 text-right">{i.quantidade}</td>
+                                  <td className="py-1 pr-2 text-right">{formatBRL(i.valorUnitarioLicitado)}</td>
+                                  <td className="py-1 pr-2 text-right">{formatBRL(i.quantidade * i.valorUnitarioLicitado)}</td>
+                                  <td className="py-1 pr-2 text-right">{i.valorUnitarioOfertado !== null ? formatBRL(i.valorUnitarioOfertado) : '—'}</td>
+                                  <td className="py-1 pr-2 text-right">{formatDecremento(decremento)}</td>
+                                  <td className="py-1 pr-2">{i.valorUnitarioOfertado !== null ? 'Sim' : 'Não'}</td>
+                                  <td className="py-1 text-right">{i.ganhou ? 'Sim' : 'Não'}</td>
+                                </tr>
+                              )
+                            })}
                           </tbody>
                         </table>
                       )}
@@ -322,11 +357,13 @@ function TabelaConsolidada({ doCliente, resumos }: { doCliente: Bidding[]; resum
               <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Vl. Participado</th>
               <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Vl. Ganho</th>
               <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right bg-base-850/40">Diferença</th>
+              <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Decremento Médio</th>
             </tr>
           </thead>
           <tbody>
             {doCliente.map((b) => {
               const r = resumos.get(b.id)!
+              const decremento = calcularDecrementoPct(r.diferenca, r.valorLicitadoGanhos)
               return (
                 <tr key={b.id} className="border-b border-base-800/60 hover:bg-base-850/40 transition">
                   <td className="px-4 py-2.5 text-base-300 text-[12px] whitespace-nowrap">{new Date(b.dataAbertura + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
@@ -341,6 +378,9 @@ function TabelaConsolidada({ doCliente, resumos }: { doCliente: Bidding[]; resum
                   <td className="px-4 py-2.5 text-right font-mono font-bold text-[12px] bg-base-850/25">
                     {r.valorGanho > 0 ? <span className={r.diferenca >= 0 ? 'text-positive-400' : 'text-negative-400'}>{formatBRL(r.diferenca)}</span> : <span className="text-base-600">—</span>}
                   </td>
+                  <td className="px-4 py-2.5 text-right font-mono font-bold text-[12px]">
+                    {decremento !== null ? <span className="text-warning-400">{formatDecremento(decremento)}</span> : <span className="text-base-600">—</span>}
+                  </td>
                 </tr>
               )
             })}
@@ -348,7 +388,7 @@ function TabelaConsolidada({ doCliente, resumos }: { doCliente: Bidding[]; resum
         </table>
       </div>
       <p className="text-[11px] text-base-500 px-4 py-2 border-t border-base-800">
-        Vl. Participado = soma dos itens em que houve oferta. Vl. Ganho = soma só dos itens vencidos. Diferença = valor licitado menos valor ganho, nos itens vencidos.
+        Vl. Participado = soma dos itens em que houve oferta. Vl. Ganho = soma só dos itens vencidos. Diferença = valor licitado menos valor ganho, nos itens vencidos. Decremento Médio = Diferença ÷ valor licitado dos itens vencidos.
       </p>
     </Card>
   )
@@ -381,6 +421,7 @@ function TabelaNormal({ doCliente, itensPorBidding }: { doCliente: Bidding[]; it
                       <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Vl. Unit. Licitado</th>
                       <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Vl. Total Licitado</th>
                       <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Vl. Unit. Ofertado</th>
+                      <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Decremento</th>
                       <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-base-500 text-center">Participou</th>
                       <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-base-500 text-center bg-base-850/40">Ganhou</th>
                     </tr>
@@ -388,6 +429,7 @@ function TabelaNormal({ doCliente, itensPorBidding }: { doCliente: Bidding[]; it
                   <tbody>
                     {itens.map((i) => {
                       const participou = i.valorUnitarioOfertado !== null
+                      const decremento = participou ? calcularDecrementoPct(i.valorUnitarioLicitado - i.valorUnitarioOfertado!, i.valorUnitarioLicitado) : null
                       return (
                         <tr key={i.id} className="border-b border-base-800/60 hover:bg-base-850/40 transition">
                           <td className="px-4 py-2 text-base-300 text-[12px]">{i.numeroItem}</td>
@@ -396,6 +438,9 @@ function TabelaNormal({ doCliente, itensPorBidding }: { doCliente: Bidding[]; it
                           <td className="px-4 py-2 text-right font-mono text-base-300 text-[12px]">{formatBRL(i.valorUnitarioLicitado)}</td>
                           <td className="px-4 py-2 text-right font-mono text-base-300 text-[12px]">{formatBRL(i.quantidade * i.valorUnitarioLicitado)}</td>
                           <td className="px-4 py-2 text-right font-mono text-base-300 text-[12px]">{participou ? formatBRL(i.valorUnitarioOfertado!) : '—'}</td>
+                          <td className="px-4 py-2 text-right font-mono font-bold text-[12px]">
+                            {decremento !== null ? <span className="text-warning-400">{formatDecremento(decremento)}</span> : <span className="text-base-600">—</span>}
+                          </td>
                           <td className="px-4 py-2 text-center">
                             <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold uppercase border ${participou ? 'bg-accent-500/15 text-accent-400 border-accent-500/30' : 'bg-base-700/30 text-base-500 border-base-600/40'}`}>
                               {participou ? 'Sim' : 'Não'}

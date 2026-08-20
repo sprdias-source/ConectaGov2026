@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Trash2, Upload, FileSpreadsheet } from 'lucide-react'
+import { Plus, Trash2, Upload, FileSpreadsheet, Lock, Wand2, Check } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { Input } from '../ui/FormControls'
 import { parseFlexibleNumber, compararNumeroItem } from '../../lib/numberParsing'
@@ -12,12 +12,44 @@ type ItemDraft = Partial<BiddingItem> & { _key: string }
 let keyCounter = 0
 const newKey = () => `item-${Date.now()}-${keyCounter++}`
 
+// Percentual e valor em R$ da queda entre o que foi licitado e o que foi
+// ofertado — null enquanto o valor ofertado ainda não foi preenchido (não
+// dá pra calcular decremento de nada). É só um número calculado na hora
+// pra visualização/relatórios, nunca persistido.
+function calcularDecremento(d: ItemDraft): { pct: number; abs: number } | null {
+  const licitado = d.valorUnitarioLicitado ?? 0
+  const ofertado = d.valorUnitarioOfertado
+  if (ofertado == null || licitado <= 0) return null
+  return { abs: licitado - ofertado, pct: ((licitado - ofertado) / licitado) * 100 }
+}
+
+function DecrementoView({ item }: { item: ItemDraft }) {
+  const dec = calcularDecremento(item)
+  if (!dec) return <span className="text-base-600">—</span>
+  const sinal = dec.pct >= 0 ? '−' : '+'
+  return (
+    <span className={`font-mono font-bold ${dec.pct >= 0 ? 'text-warning-400' : 'text-negative-400'}`}>
+      {sinal}{Math.abs(dec.pct).toFixed(2).replace('.', ',')}%
+      <span className="block text-[9.5px] font-medium text-base-500">{formatBRL(Math.abs(dec.abs))}</span>
+    </span>
+  )
+}
+
 export default function BiddingItemsEditor({
-  items, onChange, tipoDisputa,
+  items, onChange, tipoDisputa, travarValorLicitado, onGerarPrevia, previaGerada,
 }: {
   items: Partial<BiddingItem>[]
   onChange: (items: Partial<BiddingItem>[]) => void
   tipoDisputa: 'Item' | 'Lote'
+  // "Vl. Unit. Licitado" só é travado no contexto da Proposta Readequada —
+  // lá o valor tem que vir da análise do edital, sem risco de alguém mudar
+  // sem querer. No cadastro inicial da licitação (BiddingFormModal) esse
+  // valor ainda está sendo digitado pela primeira vez, então continua editável.
+  travarValorLicitado?: boolean
+  // Botão "Gerar Proposta Prévia" só aparece quando o pai (AbaProposta)
+  // passa esse callback — ele é quem controla o estado de trava/destrava.
+  onGerarPrevia?: () => void
+  previaGerada?: boolean
 }) {
   const { showToast } = useToast()
   const [drafts, setDrafts] = useState<ItemDraft[]>([])
@@ -154,6 +186,12 @@ export default function BiddingItemsEditor({
   const totalLicitado = drafts.reduce((s, d) => s + (d.quantidade ?? 0) * (d.valorUnitarioLicitado ?? 0), 0)
   const totalOfertado = drafts.reduce((s, d) => s + (d.quantidade ?? 0) * (d.valorUnitarioOfertado ?? d.valorUnitarioLicitado ?? 0), 0)
 
+  // Mesmo fallback usado na prévia da Proposta Readequada: se algum item já
+  // foi marcado como "Ganhou", o total geral considera só esses; senão,
+  // ainda não dá pra saber o que foi ganho, então soma todos.
+  const itensGanhosOuTodos = drafts.some((d) => d.ganhou) ? drafts.filter((d) => d.ganhou) : drafts
+  const totalGeralGanhos = itensGanhosOuTodos.reduce((s, d) => s + (d.quantidade ?? 0) * (d.valorUnitarioOfertado ?? d.valorUnitarioLicitado ?? 0), 0)
+
   // Quando a disputa é por lote, agrupa os itens pelo campo "lote" (na ordem
   // em que cada lote apareceu pela primeira vez) pra mostrar um subtotal
   // logo abaixo de cada grupo — assim fica fácil conferir o valor de cada
@@ -201,10 +239,22 @@ export default function BiddingItemsEditor({
         <Input value={d.referencia ?? ''} onChange={(e) => updateRow(d._key, { referencia: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
       </td>
       <td className="px-2 py-1.5">
-        <Input type="number" step="0.01" value={d.valorUnitarioLicitado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioLicitado: parseFloat(e.target.value) || 0 })} className="!py-1 !px-2 text-[12px]" />
+        {travarValorLicitado ? (
+          <span className="flex items-center justify-end gap-1 font-mono text-[12px] text-base-500 py-1 px-2" title="Vem da análise do edital — não editável aqui">
+            {formatBRL(d.valorUnitarioLicitado ?? 0)} <Lock className="w-3 h-3 shrink-0" />
+          </span>
+        ) : (
+          <Input type="number" step="0.01" value={d.valorUnitarioLicitado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioLicitado: parseFloat(e.target.value) || 0 })} className="!py-1 !px-2 text-[12px]" />
+        )}
       </td>
       <td className="px-2 py-1.5">
         <Input type="number" step="0.01" value={d.valorUnitarioOfertado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioOfertado: parseFloat(e.target.value) || undefined })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
+      </td>
+      <td className="px-2 py-1.5 text-right font-mono text-[12px] text-base-300">
+        {formatBRL((d.quantidade ?? 0) * (d.valorUnitarioOfertado ?? d.valorUnitarioLicitado ?? 0))}
+      </td>
+      <td className="px-2 py-1.5 text-right text-[11px]">
+        <DecrementoView item={d} />
       </td>
       <td className="px-2 py-1.5 text-center">
         <input
@@ -228,7 +278,8 @@ export default function BiddingItemsEditor({
       <td colSpan={7} className="px-2 py-1.5 text-right text-[11px] font-bold text-accent-300">Subtotal do Lote {lote}:</td>
       <td className="px-2 py-1.5 font-mono font-bold text-base-200">{formatBRL(subtotalLicitado)}</td>
       <td className="px-2 py-1.5 font-mono font-bold text-accent-300">{formatBRL(subtotalOfertado)}</td>
-      <td colSpan={2} />
+      <td className="px-2 py-1.5 font-mono font-bold text-accent-300">{formatBRL(subtotalOfertado)}</td>
+      <td colSpan={3} />
     </tr>
   )
 
@@ -272,12 +323,24 @@ export default function BiddingItemsEditor({
           <Input value={d.referencia ?? ''} onChange={(e) => updateRow(d._key, { referencia: e.target.value })} className="!py-1.5 !px-2 text-[13px]" placeholder="—" />
         </div>
         <div>
-          <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Vl. Unit. Licitado</p>
-          <Input type="number" step="0.01" value={d.valorUnitarioLicitado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioLicitado: parseFloat(e.target.value) || 0 })} className="!py-1.5 !px-2 text-[13px]" />
+          <p className="text-[9px] font-bold uppercase text-base-500 mb-1 flex items-center gap-1">Vl. Unit. Licitado {travarValorLicitado && <Lock className="w-2.5 h-2.5" />}</p>
+          {travarValorLicitado ? (
+            <p className="font-mono text-[13px] text-base-500 py-1.5">{formatBRL(d.valorUnitarioLicitado ?? 0)}</p>
+          ) : (
+            <Input type="number" step="0.01" value={d.valorUnitarioLicitado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioLicitado: parseFloat(e.target.value) || 0 })} className="!py-1.5 !px-2 text-[13px]" />
+          )}
         </div>
         <div>
           <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Vl. Unit. Ofertado</p>
           <Input type="number" step="0.01" value={d.valorUnitarioOfertado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioOfertado: parseFloat(e.target.value) || undefined })} className="!py-1.5 !px-2 text-[13px]" placeholder="—" />
+        </div>
+        <div>
+          <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Vl. Total</p>
+          <p className="font-mono text-[13px] text-base-200 py-1.5">{formatBRL((d.quantidade ?? 0) * (d.valorUnitarioOfertado ?? d.valorUnitarioLicitado ?? 0))}</p>
+        </div>
+        <div>
+          <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Decremento</p>
+          <p className="py-1.5"><DecrementoView item={d} /></p>
         </div>
       </div>
 
@@ -320,6 +383,15 @@ export default function BiddingItemsEditor({
           <button type="button" onClick={addRow} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-950 bg-accent-500 hover:bg-accent-400 rounded-lg px-3 py-1.5 transition">
             <Plus className="w-3.5 h-3.5" /> Adicionar Item
           </button>
+          {onGerarPrevia && (
+            <button
+              type="button" onClick={onGerarPrevia} disabled={previaGerada}
+              className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-850 border border-base-700 rounded-lg px-3 py-1.5 transition disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {previaGerada ? <Check className="w-3.5 h-3.5 text-positive-400" /> : <Wand2 className="w-3.5 h-3.5" />}
+              {previaGerada ? 'Prévia Gerada' : 'Gerar Proposta Prévia'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -345,8 +417,12 @@ export default function BiddingItemsEditor({
                   <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-20">Qtd.</th>
                   <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Marca</th>
                   <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Modelo</th>
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Vl. Unit. Licitado</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">
+                    <span className="flex items-center gap-1">Vl. Unit. Licitado {travarValorLicitado && <Lock className="w-3 h-3 text-base-600" />}</span>
+                  </th>
                   <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Vl. Unit. Ofertado</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Vl. Total</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Decremento</th>
                   <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-16 text-center">Ganhou?</th>
                   <th className="px-2 py-2 w-8" />
                 </tr>
@@ -364,7 +440,13 @@ export default function BiddingItemsEditor({
                   <td colSpan={tipoDisputa === 'Lote' ? 7 : 6} className="px-2 py-2 text-right text-[11px] font-bold text-base-400">Totais:</td>
                   <td className="px-2 py-2 font-mono font-bold text-base-200">{formatBRL(totalLicitado)}</td>
                   <td className="px-2 py-2 font-mono font-bold text-accent-300">{formatBRL(totalOfertado)}</td>
-                  <td colSpan={2} />
+                  <td colSpan={4} />
+                </tr>
+                <tr className="border-t border-positive-500 bg-positive-500/10">
+                  <td colSpan={tipoDisputa === 'Lote' ? 10 : 9} className="px-2 py-2 text-right text-[11px] font-extrabold text-positive-400">
+                    Total Geral (itens ganhos):
+                  </td>
+                  <td colSpan={3} className="px-2 py-2 font-mono font-extrabold text-positive-400">{formatBRL(totalGeralGanhos)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -386,6 +468,10 @@ export default function BiddingItemsEditor({
                 <span className="font-mono font-bold text-base-200">{formatBRL(totalLicitado)}</span>
                 <span className="font-mono font-bold text-accent-300">{formatBRL(totalOfertado)}</span>
               </div>
+            </div>
+            <div className="border border-positive-500/40 rounded-lg p-3 bg-positive-500/10 flex items-center justify-between text-[12px]">
+              <span className="font-extrabold text-positive-400">Total Geral (itens ganhos):</span>
+              <span className="font-mono font-extrabold text-positive-400">{formatBRL(totalGeralGanhos)}</span>
             </div>
           </div>
         </>
