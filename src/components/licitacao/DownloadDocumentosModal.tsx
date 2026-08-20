@@ -145,7 +145,7 @@ export default function DownloadDocumentosModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Baixar documentos" maxWidth="max-w-lg">
+    <Modal open={open} onClose={onClose} title="Zipar Documento" maxWidth="max-w-lg">
       <div className="flex flex-col gap-4">
         {todasEntradas.length === 0 ? (
           <p className="text-[13px] text-base-500 italic">Nenhum documento anexado ainda pra baixar.</p>

@@ -832,21 +832,24 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   const { showToast } = useToast()
 
   // Auto-contido (mesmo padrão de AbaCadastrarProposta): busca os anexos
-  // desta licitação direto, em vez de receber por prop — os cartões de
-  // "Proposta enviada na plataforma" e "Proposta Readequada" vieram de
-  // Documentos Finais pra cá, porque é aqui que faz sentido acessá-los (é
-  // aqui que se mexe nos valores/itens da proposta).
-  const { files: anexosProposta, uploadFile: uploadAnexoProposta, deleteFile: deleteAnexoProposta, getDownloadUrl: getAnexoUrlProposta, uploadProgress: uploadProgressProposta } = useAttachedFiles('licitacao', bidding.id)
-  const propostaEnviada = anexosProposta.find((f) => f.category === 'Proposta')
+  // desta licitação direto, em vez de receber por prop — "Proposta
+  // Readequada" veio de Documentos Finais pra cá, porque é aqui que faz
+  // sentido acessá-la (é aqui que se mexe nos valores/itens da proposta).
+  const { files: anexosProposta, uploadFile: uploadAnexoProposta, deleteFile: deleteAnexoProposta, getDownloadUrl: getAnexoUrlProposta } = useAttachedFiles('licitacao', bidding.id)
   const propostaReadequada = anexosProposta.find((f) => f.category === 'Proposta Readequada')
 
-  const [enviandoProposta, setEnviandoProposta] = useState<'Proposta' | null>(null)
   const [gerandoDocx, setGerandoDocx] = useState<'novo' | 'ajustado' | null>(null)
   const [erroDocx, setErroDocx] = useState<string | null>(null)
   const [gerandoPdfProposta, setGerandoPdfProposta] = useState(false)
   const [erroPdfProposta, setErroPdfProposta] = useState<string | null>(null)
   const [pdfPropostaPreview, setPdfPropostaPreview] = useState<{ url: string; nome: string } | null>(null)
   const [enviandoPropostaAssinada, setEnviandoPropostaAssinada] = useState(false)
+  // Trava/destrava a prévia editável: "Gerar Proposta Prévia" marca como
+  // gerada (desabilita o próprio botão); qualquer edição nos itens ou nos
+  // textos de abertura/fechamento destrava de novo. É um estado só de UI —
+  // não precisa persistir, a prévia em si já é sempre recalculada ao vivo
+  // a partir de items/textoAbertura/textoFechamento.
+  const [previaGerada, setPreviaGerada] = useState(false)
 
   // Texto editável que entra no Word e no PDF gerados (abertura antes da
   // tabela de itens, fechamento depois). Pré-preenchido com o mesmo texto
@@ -861,6 +864,9 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   const [textoAbertura, setTextoAbertura] = useState(bidding.propostaTextoAbertura ?? textoAberturaPadrao)
   const [textoFechamento, setTextoFechamento] = useState(bidding.propostaTextoFechamento ?? textoFechamentoPadrao)
   const textoPropostaMudou = textoAbertura !== (bidding.propostaTextoAbertura ?? textoAberturaPadrao) || textoFechamento !== (bidding.propostaTextoFechamento ?? textoFechamentoPadrao)
+
+  const handleTextoAberturaChange = (v: string) => { setTextoAbertura(v); setPreviaGerada(false) }
+  const handleTextoFechamentoChange = (v: string) => { setTextoFechamento(v); setPreviaGerada(false) }
 
   const handleSalvarTextoProposta = () => {
     updateBidding.mutate(
@@ -878,32 +884,19 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
     }
   }
 
-  const handleUploadPropostaEnviada = async (file: File) => {
-    setEnviandoProposta('Proposta')
-    try {
-      const antigo = propostaEnviada
-      await uploadAnexoProposta.mutateAsync({ file, category: 'Proposta' })
-      if (antigo) await deleteAnexoProposta.mutateAsync(antigo)
-    } catch (err) {
-      showToast(`Erro ao enviar o arquivo: ${err instanceof Error ? err.message : String(err)}`, 'error')
-    } finally {
-      setEnviandoProposta(null)
-    }
-  }
-
   // Gera o .docx a partir dos itens/valores atuais da licitação e do texto
-  // de abertura/fechamento — usada tanto por "Gerar Proposta Novamente"
-  // (reseta o texto pro padrão antes de gerar, um recomeço do zero) quanto
-  // por "Subir Versão Ajustada" (mantém o texto editado na tela, uma nova
-  // versão em cima dos ajustes). As duas sempre reiniciam o ciclo de
-  // assinatura (enviada/assinada voltam pra null): mesmo em cima de uma
-  // versão já assinada, gerar de novo é sempre uma versão nova que ainda
-  // não foi mandada pra ninguém assinar.
+  // de abertura/fechamento — usada tanto por "Gerar Word" (mantém o texto
+  // editado na tela — é a geração normal, a partir da prévia) quanto por
+  // "Gerar Proposta Novamente" (reseta o texto pro padrão antes de gerar,
+  // um recomeço do zero — só pra corrigir bug/bagunça, não é o caminho
+  // principal). As duas sempre reiniciam o ciclo de assinatura (assinada
+  // volta pra null): mesmo em cima de uma versão já assinada, gerar de novo
+  // é sempre uma versão nova que ainda não foi importada assinada.
   const gerarWord = async (opts: { resetarTexto: boolean }) => {
     setGerandoDocx(opts.resetarTexto ? 'novo' : 'ajustado')
     setErroDocx(null)
     try {
-      const atualizacaoBidding: Partial<Bidding> = { propostaReadequadaEnviadaEm: null, propostaReadequadaAssinadaEm: null }
+      const atualizacaoBidding: Partial<Bidding> = { propostaReadequadaAssinadaEm: null }
       if (opts.resetarTexto) {
         atualizacaoBidding.propostaTextoAbertura = null
         atualizacaoBidding.propostaTextoFechamento = null
@@ -935,6 +928,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
       if (arquivoAntigo) await deleteAnexoProposta.mutateAsync(arquivoAntigo)
       if (pdfPropostaPreview) URL.revokeObjectURL(pdfPropostaPreview.url)
       setPdfPropostaPreview(null)
+      setPreviaGerada(true)
     } catch (err) {
       setErroDocx(err instanceof Error ? err.message : String(err))
     } finally {
@@ -942,8 +936,12 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
     }
   }
 
-  const handleGerarPropostaReadequada = () => gerarWord({ resetarTexto: true })
-  const handleSubirVersaoAjustada = () => gerarWord({ resetarTexto: false })
+  // Ação principal: gera o Word a partir da prévia atual (mantém o texto
+  // editado na tela).
+  const handleGerarWord = () => gerarWord({ resetarTexto: false })
+  // Ação secundária/de recuperação: reseta tudo pro padrão e gera do zero —
+  // só pra quando alguma edição bagunçou o texto e é mais fácil recomeçar.
+  const handleGerarPropostaNovamente = () => gerarWord({ resetarTexto: true })
 
   // PDF gerado direto dos dados da licitação (não a partir do .docx acima
   // — ver comentário em supabase/functions/gerar-proposta-pdf/index.ts) —
@@ -969,6 +967,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
       const blob = new Blob([bytes], { type: resultado.mimeType })
       if (pdfPropostaPreview) URL.revokeObjectURL(pdfPropostaPreview.url)
       setPdfPropostaPreview({ url: URL.createObjectURL(blob), nome: resultado.fileName || 'Proposta_Readequada.pdf' })
+      setPreviaGerada(true)
     } catch (err) {
       setErroPdfProposta(err instanceof Error ? err.message : String(err))
     } finally {
@@ -984,35 +983,26 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
     a.click()
   }
 
-  const handleMarcarPropostaEnviada = () => {
-    updateBidding.mutate(
-      { bidding: { ...bidding, propostaReadequadaEnviadaEm: new Date().toISOString() }, items: [] },
-      { onSuccess: () => showToast('Marcado como enviada ao cliente.') }
-    )
-  }
-
-  // Passo final: a versão assinada substitui o arquivo em "Proposta
-  // Readequada" — é esse mesmo arquivo (categoria) que já alimenta o ZIP
-  // de Documentos Finais, então não precisa de mais nada pra aparecer lá.
-  const handleAnexarPropostaAssinada = async (file: File) => {
+  // Importa direto a proposta já assinada pelo cliente — substitui o
+  // arquivo em "Proposta Readequada" (mesma categoria que já alimenta o ZIP
+  // de Documentos Finais, então não precisa de mais nada pra aparecer lá).
+  const handleImportarPropostaAssinada = async (file: File) => {
     setEnviandoPropostaAssinada(true)
     try {
       const antigo = propostaReadequada
       await uploadAnexoProposta.mutateAsync({ file, category: 'Proposta Readequada' })
       if (antigo) await deleteAnexoProposta.mutateAsync(antigo)
       await updateBidding.mutateAsync({ bidding: { ...bidding, propostaReadequadaAssinadaEm: new Date().toISOString() }, items: [] })
-      showToast('Proposta assinada anexada — já disponível no ZIP de Documentos Finais.')
+      showToast('Proposta assinada importada — já disponível no ZIP de Documentos Finais.')
     } catch (err) {
-      showToast(`Erro ao anexar a proposta assinada: ${err instanceof Error ? err.message : String(err)}`, 'error')
+      showToast(`Erro ao importar a proposta assinada: ${err instanceof Error ? err.message : String(err)}`, 'error')
     } finally {
       setEnviandoPropostaAssinada(false)
     }
   }
 
-  const statusProposta: 'rascunho' | 'enviado' | 'assinado' = bidding.propostaReadequadaAssinadaEm
-    ? 'assinado'
-    : bidding.propostaReadequadaEnviadaEm ? 'enviado' : 'rascunho'
-  const passoProposta = statusProposta === 'assinado' ? 2 : statusProposta === 'enviado' ? 1 : 0
+  const statusProposta: 'rascunho' | 'assinado' = bidding.propostaReadequadaAssinadaEm ? 'assinado' : 'rascunho'
+  const passoProposta = statusProposta === 'assinado' ? 1 : 0
 
   // Autosave debounçado: o editor completo (Nº, Descrição, Ganhou?, Excel,
   // Adicionar Item...) não tem botão de "Salvar" aqui — cada mudança
@@ -1041,6 +1031,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   const handleItemsChange = (novosItems: Partial<BiddingItem>[]) => {
     pendenteRef.current = novosItems
     setStatusSalvamento('pendente')
+    setPreviaGerada(false)
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
     timeoutRef.current = setTimeout(dispararSincronizacao, 1200)
   }
@@ -1142,7 +1133,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
         <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Proposta</p>
 
         <div className="flex items-center gap-1.5 flex-wrap">
-          {(['Word gerado', 'Enviada ao cliente', 'Assinada'] as const).map((label, idx) => (
+          {(['Proposta Gerada', 'Assinada e Importada'] as const).map((label, idx) => (
             <div key={label} className="flex items-center gap-1.5">
               {idx > 0 && <span className={`w-4 h-px ${idx <= passoProposta ? 'bg-positive-500' : 'bg-base-700'}`} />}
               <div className="flex items-center gap-1">
@@ -1157,51 +1148,22 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
           ))}
         </div>
 
-        <div className="flex items-center gap-3 bg-base-900/50 border border-base-800 rounded-xl px-4 py-3">
-          <FileText className="w-5 h-5 text-accent-400 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-[13px] text-base-200 truncate">{propostaEnviada ? propostaEnviada.name : 'Proposta enviada na plataforma'}</p>
-            {!propostaEnviada && <p className="text-[10.5px] text-base-500">o que você importou/enviou de volta pro portal</p>}
-          </div>
-          {propostaEnviada ? (
-            <>
-              <button onClick={() => handleAbrirAnexoProposta(propostaEnviada)} title="Visualizar" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
-                <Eye className="w-3.5 h-3.5" />
-              </button>
-              {podeEditar && (
-                <label title="Trocar" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition cursor-pointer">
-                  {enviandoProposta === 'Proposta' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                  <input type="file" accept=".pdf,.doc,.docx" className="hidden" disabled={!!enviandoProposta} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadPropostaEnviada(f); e.target.value = '' }} />
-                </label>
-              )}
-              {podeEditar && (
-                <button onClick={() => deleteAnexoProposta.mutate(propostaEnviada)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </>
-          ) : podeEditar ? (
-            <label className="inline-flex items-center gap-1.5 shrink-0 bg-base-800 hover:bg-base-700 text-base-200 border border-base-700 font-semibold text-sm px-4 py-2 rounded-lg transition cursor-pointer">
-              {enviandoProposta === 'Proposta' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-              {enviandoProposta === 'Proposta' ? `Enviando...${uploadProgressProposta !== null ? ` ${uploadProgressProposta}%` : ''}` : 'Enviar'}
-              <input type="file" accept=".pdf,.doc,.docx" className="hidden" disabled={!!enviandoProposta} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadPropostaEnviada(f); e.target.value = '' }} />
-            </label>
-          ) : null}
-        </div>
-
         <div className="flex flex-col gap-2 bg-base-900/50 border border-base-800 rounded-xl px-4 py-3">
           <p className="text-[10px] font-bold text-base-500 uppercase tracking-wider">Proposta Readequada</p>
           <div className="flex items-center gap-2 flex-wrap">
-            {podeEditar && (
-              <Button variant="secondary" onClick={handleGerarPropostaReadequada} disabled={!!gerandoDocx}>
-                {gerandoDocx === 'novo' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-                {gerandoDocx === 'novo' ? 'Gerando...' : propostaReadequada ? 'Gerar Proposta Novamente' : 'Gerar Word'}
-              </Button>
+            {podeEditar && items.length > 0 && statusProposta === 'rascunho' && (
+              <button
+                onClick={() => setPreviaGerada(true)} disabled={previaGerada}
+                className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {previaGerada ? <Check className="w-3.5 h-3.5 text-positive-400" /> : <Wand2 className="w-3.5 h-3.5" />}
+                {previaGerada ? 'Prévia Gerada' : 'Gerar Proposta Prévia'}
+              </button>
             )}
-            {podeEditar && propostaReadequada && statusProposta === 'rascunho' && (
-              <button onClick={handleSubirVersaoAjustada} disabled={!!gerandoDocx} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition disabled:opacity-60">
-                {gerandoDocx === 'ajustado' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                {gerandoDocx === 'ajustado' ? 'Gerando...' : 'Subir Versão Ajustada'}
+            {podeEditar && items.length > 0 && statusProposta === 'rascunho' && (
+              <button onClick={handleGerarWord} disabled={!!gerandoDocx} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition disabled:opacity-60">
+                {gerandoDocx === 'ajustado' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                {gerandoDocx === 'ajustado' ? 'Gerando...' : 'Gerar Word'}
               </button>
             )}
             {propostaReadequada && (
@@ -1209,39 +1171,43 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
                 <Download className="w-3.5 h-3.5" /> Baixar Word
               </button>
             )}
-            {propostaReadequada && items.length > 0 && <div className="w-px self-stretch bg-base-800" />}
             {items.length > 0 && podeEditar && statusProposta === 'rascunho' && (
-              <Button variant="secondary" onClick={handleGerarPdfProposta} disabled={gerandoPdfProposta}>
+              <button onClick={handleGerarPdfProposta} disabled={gerandoPdfProposta} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition disabled:opacity-60">
                 {gerandoPdfProposta ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSignature className="w-3.5 h-3.5" />}
                 {gerandoPdfProposta ? 'Gerando PDF...' : pdfPropostaPreview ? 'Gerar PDF novamente' : 'Gerar PDF'}
-              </Button>
+              </button>
             )}
             {pdfPropostaPreview && (
               <button onClick={handleBaixarPdfPropostaGerado} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition">
                 <Download className="w-3.5 h-3.5" /> Baixar PDF
               </button>
             )}
-            {statusProposta === 'rascunho' && podeEditar && propostaReadequada && (
-              <button onClick={handleMarcarPropostaEnviada} disabled={updateBidding.isPending} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition">
-                <Send className="w-3.5 h-3.5" /> Marcar como Enviada ao Cliente
-              </button>
-            )}
-            {statusProposta === 'enviado' && podeEditar && (
-              <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-base-950 bg-accent-500 hover:bg-accent-400 rounded-lg px-3 py-1.5 transition cursor-pointer">
-                {enviandoPropostaAssinada ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Paperclip className="w-3.5 h-3.5" />}
-                {enviandoPropostaAssinada ? 'Enviando...' : 'Anexar Assinada'}
-                <input type="file" accept=".pdf" className="hidden" disabled={enviandoPropostaAssinada} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAnexarPropostaAssinada(f); e.target.value = '' }} />
+            {podeEditar && propostaReadequada && statusProposta === 'rascunho' && (
+              <label className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition cursor-pointer">
+                {enviandoPropostaAssinada ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                {enviandoPropostaAssinada ? 'Importando...' : 'Importar Proposta Assinada'}
+                <input type="file" accept=".pdf" className="hidden" disabled={enviandoPropostaAssinada} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImportarPropostaAssinada(f); e.target.value = '' }} />
               </label>
             )}
             {statusProposta === 'assinado' && (
-              <span className="flex items-center gap-1.5 text-[11px] font-bold text-positive-400 bg-positive-500/10 border border-positive-500/25 rounded-full px-2.5 py-1">
-                <Check className="w-3.5 h-3.5" /> Assinada — disponível no ZIP de Documentos Finais
-              </span>
+              <>
+                <span className="flex items-center gap-1.5 text-[11px] font-bold text-positive-400 bg-positive-500/10 border border-positive-500/25 rounded-full px-2.5 py-1">
+                  <Check className="w-3.5 h-3.5" /> Proposta Assinada Importada
+                </span>
+                <span className="text-[10.5px] text-base-500">disponível no ZIP de Documentos Finais</span>
+              </>
+            )}
+            {podeEditar && propostaReadequada && statusProposta === 'rascunho' && (
+              <button
+                onClick={handleGerarPropostaNovamente} disabled={!!gerandoDocx}
+                title="Reseta o texto e a proposta pro padrão e gera do zero — use só se algo ficou bagunçado, não é o caminho normal"
+                className="flex items-center gap-1 text-[10.5px] font-semibold text-base-500 hover:text-base-300 transition ml-auto shrink-0"
+              >
+                {gerandoDocx === 'novo' ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                {gerandoDocx === 'novo' ? 'Gerando...' : 'Gerar Proposta Novamente'}
+              </button>
             )}
           </div>
-          {statusProposta === 'enviado' && podeEditar && (
-            <p className="text-[11px] text-accent-300">📎 Aguardando o cliente devolver a proposta assinada — anexe o arquivo no botão acima quando chegar.</p>
-          )}
           {erroDocx && <p className="text-[11.5px] text-negative-400">{erroDocx}</p>}
           {erroPdfProposta && <p className="text-[11.5px] text-negative-400">{erroPdfProposta}</p>}
         </div>
@@ -1276,7 +1242,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
                 {podeEditar && statusProposta === 'rascunho' && <span className="absolute -top-2 left-2 bg-accent-500 text-white text-[8.5px] font-mono font-bold px-1.5 rounded-full">editável</span>}
                 <textarea
                   value={textoAbertura}
-                  onChange={(e) => setTextoAbertura(e.target.value)}
+                  onChange={(e) => handleTextoAberturaChange(e.target.value)}
                   disabled={!podeEditar || statusProposta !== 'rascunho'}
                   rows={2}
                   className="w-full bg-transparent text-[11px] leading-relaxed outline-none resize-none disabled:cursor-not-allowed"
@@ -1339,7 +1305,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
                 {podeEditar && statusProposta === 'rascunho' && <span className="absolute -top-2 left-2 bg-accent-500 text-white text-[8.5px] font-mono font-bold px-1.5 rounded-full">editável</span>}
                 <textarea
                   value={textoFechamento}
-                  onChange={(e) => setTextoFechamento(e.target.value)}
+                  onChange={(e) => handleTextoFechamentoChange(e.target.value)}
                   disabled={!podeEditar || statusProposta !== 'rascunho'}
                   rows={6}
                   className="w-full bg-transparent text-[11px] leading-relaxed outline-none resize-none disabled:cursor-not-allowed"
@@ -1383,7 +1349,10 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
             <p className="text-[11px] text-base-500 mb-2">
               Confira e corrija aqui se a importação automática do edital vier incompleta ou errada — "Adicionar Item" e "Importar Excel" são o plano B pra montar a lista na mão quando for preciso. Cada mudança grava sozinha, não precisa de botão de salvar.
             </p>
-            <BiddingItemsEditor items={items} onChange={handleItemsChange} tipoDisputa={bidding.tipoDisputa} />
+            <BiddingItemsEditor
+              items={items} onChange={handleItemsChange} tipoDisputa={bidding.tipoDisputa}
+              travarValorLicitado onGerarPrevia={() => setPreviaGerada(true)} previaGerada={previaGerada}
+            />
           </>
         ) : (
           <div className="overflow-x-auto bg-base-850/60 border border-base-800 rounded-xl">
@@ -2566,7 +2535,14 @@ export default function LicitacaoPage() {
               </Card>
               <Card className="p-3">
                 <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Valor Total do Edital</p>
-                <p className="text-[13px] font-mono text-base-200">{formatBRL(bidding.valorLicitado)}</p>
+                {bidding.valorLicitado > 0 ? (
+                  <p className="text-[13px] font-mono text-base-200">{formatBRL(bidding.valorLicitado)}</p>
+                ) : (
+                  <>
+                    <p className="text-[13px] font-mono text-base-200">{formatBRL(somarValorLicitado(itensDaProposta))}</p>
+                    <p className="text-[9.5px] text-base-500 mt-0.5">≈ estimado — soma dos itens (o edital não declara um total)</p>
+                  </>
+                )}
               </Card>
               <Card className="p-3">
                 <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Valor de Participação</p>
@@ -3028,9 +3004,9 @@ export default function LicitacaoPage() {
         {aba === 'documentos' && (
           <>
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <p className="text-[12px] text-base-500">Pronto pra enviar pra plataforma? Baixe só o que precisa.</p>
+              <p className="text-[12px] text-base-500">Pronto pra enviar pra plataforma? Zipe só o que precisa.</p>
               <Button variant="secondary" onClick={() => setMostrarDownloadModal(true)}>
-                <FolderDown className="w-4 h-4" /> Baixar documentos
+                <FolderDown className="w-4 h-4" /> Zipar Documento
               </Button>
             </div>
 

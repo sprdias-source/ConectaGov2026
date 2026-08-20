@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Sparkles, Loader2, FileDown, FileText, Send, Paperclip, Trash2, Check } from 'lucide-react'
+import { Sparkles, Loader2, FileDown, FileText, Paperclip, Trash2, Check, Eye } from 'lucide-react'
 import { Button } from '../ui/FormControls'
 import { useDeclaracaoAnexos } from '../../hooks/useDeclaracaoAnexos'
 import { useAttachedFiles } from '../../hooks/useAttachedFiles'
@@ -7,8 +7,11 @@ import { useToast } from '../../hooks/useToast'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import type { Bidding, BiddingChecklistItem, DeclaracaoAnexo } from '../../types/domain'
 
-const PASSOS = ['Preenchido pela IA', 'Enviado ao cliente', 'Assinado e anexado'] as const
-const PASSO_DO_STATUS: Record<DeclaracaoAnexo['status'], number> = { rascunho: 0, enviado: 1, assinado: 2 }
+// "enviado" continua no tipo por compatibilidade com registros antigos (de
+// quando o fluxo tinha 3 passos), mas o fluxo atual pula direto de rascunho
+// pra assinado — nenhum anexo novo passa mais por esse status.
+const PASSOS = ['Preenchido pela IA', 'Assinado e Importado'] as const
+const PASSO_DO_STATUS: Record<DeclaracaoAnexo['status'], number> = { rascunho: 0, enviado: 0, assinado: 1 }
 
 function Stepper({ status }: { status: DeclaracaoAnexo['status'] }) {
   const passoAtual = PASSO_DO_STATUS[status]
@@ -37,11 +40,12 @@ function AnexoCard({ anexo, checklistItems, podeEditar, bidding }: {
   podeEditar: boolean
   bidding: Bidding
 }) {
-  const { atualizarTexto, gerarPdf, gerarWord, marcarEnviado, anexarAssinado, deleteAnexo } = useDeclaracaoAnexos(bidding.id)
-  const { uploadFile } = useAttachedFiles('licitacao', bidding.id)
+  const { atualizarTexto, gerarPdf, gerarWord, anexarAssinado, deleteAnexo } = useDeclaracaoAnexos(bidding.id)
+  const { files: arquivosAnexados, uploadFile, getDownloadUrl } = useAttachedFiles('licitacao', bidding.id)
   const { showToast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [enviandoAssinado, setEnviandoAssinado] = useState(false)
+  const arquivoAssinado = arquivosAnexados.find((f) => f.id === anexo.attachedFileId)
 
   // Prévia editável unificada (mesmo padrão da Proposta Readequada): em vez
   // de uma textarea solta com o texto inteiro, o cabeçalho/Processo-Pregão/
@@ -84,24 +88,27 @@ function AnexoCard({ anexo, checklistItems, podeEditar, bidding }: {
     })
   }
 
-  const handleMarcarEnviado = () => {
+  const handleImportarDeclaracao = async (file: File) => {
     if (corpoMudou) handleSalvarTexto()
-    marcarEnviado.mutate(anexo.id, {
-      onSuccess: () => showToast('Marcado como enviado ao cliente.'),
-      onError: (err) => showToast(`Erro: ${err instanceof Error ? err.message : String(err)}`, 'error'),
-    })
-  }
-
-  const handleAnexarAssinado = async (file: File) => {
     setEnviandoAssinado(true)
     try {
       const { id: attachedFileId } = await uploadFile.mutateAsync({ file, category: 'Declaração' })
       await anexarAssinado.mutateAsync({ anexoId: anexo.id, attachedFileId, itensChecklistIds: anexo.itensChecklistIds })
-      showToast(`Declaração assinada anexada — ${anexo.itensChecklistIds.length} item(ns) do checklist marcado(s) como atendido(s).`)
+      showToast(`Declaração importada — ${anexo.itensChecklistIds.length} item(ns) do checklist marcado(s) como atendido(s).`)
     } catch (err) {
-      showToast(`Erro ao anexar a declaração assinada: ${err instanceof Error ? err.message : String(err)}`, 'error')
+      showToast(`Erro ao importar a declaração: ${err instanceof Error ? err.message : String(err)}`, 'error')
     } finally {
       setEnviandoAssinado(false)
+    }
+  }
+
+  const handleVisualizarAssinado = async () => {
+    if (!arquivoAssinado) return
+    try {
+      const url = await getDownloadUrl(arquivoAssinado.storagePath)
+      window.open(url, '_blank')
+    } catch (err) {
+      showToast(`Erro ao abrir o arquivo: ${err instanceof Error ? err.message : String(err)}`, 'error')
     }
   }
 
@@ -202,31 +209,31 @@ function AnexoCard({ anexo, checklistItems, podeEditar, bidding }: {
               <button onClick={() => deleteAnexo.mutate(anexo.id)} className="text-base-500 hover:text-negative-400 transition p-1.5" title="Excluir rascunho">
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
-              <Button onClick={handleMarcarEnviado} disabled={marcarEnviado.isPending}>
-                <Send className="w-3.5 h-3.5" /> {marcarEnviado.isPending ? 'Marcando...' : 'Marcar como Enviado'}
-              </Button>
+              <input
+                ref={fileInputRef} type="file" accept=".pdf,.png,.jpg" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImportarDeclaracao(f); e.target.value = '' }}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()} disabled={enviandoAssinado}
+                className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition disabled:opacity-60"
+              >
+                {enviandoAssinado ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Paperclip className="w-3.5 h-3.5" />}
+                {enviandoAssinado ? 'Importando...' : 'Importar Declaração'}
+              </button>
             </>
           )}
 
-          {podeEditar && anexo.status === 'enviado' && (
-            <div className="flex-1 flex items-center gap-2 bg-accent-500/10 border border-dashed border-accent-500/30 rounded-lg px-3 py-2 flex-wrap">
-              <span className="text-[11px] text-accent-300 flex-1 min-w-[200px]">
-                📎 Aguardando o cliente devolver a declaração assinada — anexe o arquivo aqui quando chegar.
-              </span>
-              <input
-                ref={fileInputRef} type="file" accept=".pdf,.png,.jpg" className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAnexarAssinado(f) }}
-              />
-              <Button onClick={() => fileInputRef.current?.click()} disabled={enviandoAssinado}>
-                <Paperclip className="w-3.5 h-3.5" /> {enviandoAssinado ? 'Enviando...' : 'Anexar Assinada'}
-              </Button>
-            </div>
-          )}
-
           {anexo.status === 'assinado' && (
-            <span className="flex items-center gap-1.5 text-[11px] font-bold text-positive-400 bg-positive-500/10 border border-positive-500/25 rounded-full px-2.5 py-1">
-              <Check className="w-3.5 h-3.5" /> Anexada ao Checklist — {anexo.itensChecklistIds.length} item(ns) marcado(s) como atendido(s)
-            </span>
+            <>
+              <span className="flex items-center gap-1.5 text-[11px] font-bold text-positive-400 bg-positive-500/10 border border-positive-500/25 rounded-full px-2.5 py-1">
+                <Check className="w-3.5 h-3.5" /> Declaração Importada — {anexo.itensChecklistIds.length} item(ns) do checklist atendido(s)
+              </span>
+              {arquivoAssinado && (
+                <button onClick={handleVisualizarAssinado} title="Visualizar declaração assinada" className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition">
+                  <Eye className="w-3.5 h-3.5" /> Visualizar
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -244,7 +251,7 @@ export default function DeclaracaoAnexosPanel({ bidding, checklistItems }: { bid
       <div className="flex items-center justify-between gap-3 flex-wrap bg-base-850/60 border border-base-800 rounded-xl px-4 py-3">
         <div>
           <p className="text-[12px] font-bold text-base-200 flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5 text-accent-400" /> Anexos de Declaração</p>
-          <p className="text-[11px] text-base-500 mt-0.5">Preenchido automaticamente ao analisar o edital: a IA acha os anexos-modelo de declaração (Anexo II, III...) e já preenche com os dados do cliente, copiando fielmente a redação do edital — revise, gere o Word ou o PDF (já formatados: cabeçalho centralizado, corpo justificado), mande pro cliente assinar e anexe o arquivo assinado de volta.</p>
+          <p className="text-[11px] text-base-500 mt-0.5">Preenchido automaticamente ao analisar o edital: a IA acha os anexos-modelo de declaração (Anexo II, III...) e já preenche com os dados do cliente, copiando fielmente a redação do edital — revise, gere o Word ou o PDF (já formatados: cabeçalho centralizado, corpo justificado), mande pro cliente assinar e importe o arquivo assinado de volta, que já marca o(s) item(ns) do checklist correspondente(s) como atendido(s).</p>
         </div>
         {analisar.isPending && (
           <span className="flex items-center gap-1.5 text-[11px] font-semibold text-accent-300 shrink-0">

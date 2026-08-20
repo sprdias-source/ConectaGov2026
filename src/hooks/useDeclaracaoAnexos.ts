@@ -11,11 +11,13 @@ type RowComItens = Database['public']['Tables']['bidding_declaracao_anexos']['Ro
 }
 
 // Anexos-modelo de declaração extraídos do edital pela IA (ver
-// DeclaracaoAnexo em types/domain.ts). Fluxo de 3 passos: rascunho ->
-// enviado ao cliente -> assinado e anexado. O upload do arquivo assinado em
-// si acontece via useAttachedFiles (mesmo storage/tabela dos outros
-// documentos da licitação) — este hook só orquestra o status e propaga o
-// vínculo pros itens do checklist quando o passo 3 é concluído.
+// DeclaracaoAnexo em types/domain.ts). Fluxo de 2 passos: rascunho ->
+// assinado e importado (o upload da declaração já assinada pelo cliente
+// marca o passo final direto, sem passar por um "enviado" intermediário).
+// O upload do arquivo em si acontece via useAttachedFiles (mesmo
+// storage/tabela dos outros documentos da licitação) — este hook só
+// orquestra o status e propaga o vínculo pros itens do checklist quando o
+// passo final é concluído.
 export function useDeclaracaoAnexos(biddingId?: string) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -105,17 +107,7 @@ export function useDeclaracaoAnexos(biddingId?: string) {
     },
   })
 
-  // Passo 1 -> 2: registra que foi mandado pro cliente assinar. O texto
-  // não é travado no banco (isso é só uma regra de UI) — só o status muda.
-  const marcarEnviado = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('bidding_declaracao_anexos').update({ status: 'enviado', enviado_em: new Date().toISOString() }).eq('id', id)
-      if (error) throw error
-    },
-    onSuccess: invalidate,
-  })
-
-  // Passo 2 -> 3: o arquivo assinado (já enviado ao Storage via
+  // Rascunho -> assinado: o arquivo assinado (já enviado ao Storage via
   // useAttachedFiles, aqui só recebe o id) fica vinculado ao anexo, e o
   // mesmo attached_file_id é propagado pra cada item do checklist que esse
   // anexo resolve — é esse vínculo que faz o item marcar como atendido
@@ -150,7 +142,6 @@ export function useDeclaracaoAnexos(biddingId?: string) {
     atualizarTexto,
     gerarPdf,
     gerarWord,
-    marcarEnviado,
     anexarAssinado,
     deleteAnexo,
   }
