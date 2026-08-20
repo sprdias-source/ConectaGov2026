@@ -51,17 +51,27 @@ function AnexoCard({ anexo, checklistItems, podeEditar, bidding }: {
   // de uma textarea solta com o texto inteiro, o cabeçalho/Processo-Pregão/
   // título ficam fixos (mesma lógica de gerar-anexo-declaracao — vêm do
   // primeiro bloco do texto e dos dados da licitação), e só o corpo da
-  // declaração (excluindo data e assinatura, que ficam nos 2 últimos
-  // blocos) é editável, já mostrado justificado/recuado como vai sair no
-  // documento final. Não precisou separar em duas caixas como na Proposta
-  // porque aqui não tem tabela travada no meio — é um bloco só.
+  // declaração (excluindo data e assinatura) é editável, já mostrado
+  // justificado/recuado como vai sair no documento final. Não precisou
+  // separar em duas caixas como na Proposta porque aqui não tem tabela
+  // travada no meio — é um bloco só.
+  //
+  // Data e assinatura são identificados pelo CONTEÚDO (padrão de data tipo
+  // "20 de agosto de 2026" / a palavra "assinatura"), não só por posição
+  // ("os 2 últimos blocos") — a IA nem sempre separa esses blocos com linha
+  // em branco igual o prompt pede, e assumir cegamente a posição já fez o
+  // corpo inteiro sumir da prévia (ficou preso dentro do que o código achava
+  // que era só a assinatura).
   const blocos = anexo.texto.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
-  const [blocoCabecalho, ...blocosCorpo] = blocos
-  const indiceData = blocosCorpo.length - 2
-  const indiceAssinatura = blocosCorpo.length - 1
-  const corpoPadrao = blocosCorpo.slice(0, Math.max(indiceData, 0)).join('\n\n')
-  const blocoData = indiceData >= 0 ? blocosCorpo[indiceData] : ''
-  const blocoAssinatura = indiceAssinatura >= 0 ? blocosCorpo[indiceAssinatura] : ''
+  const [blocoCabecalho, ...resto] = blocos
+  const ultimo = resto.length - 1
+  const ultimoEhAssinatura = ultimo >= 0 && /assinatura/i.test(resto[ultimo]) && resto[ultimo].length < 300
+  const indiceAssinatura = ultimoEhAssinatura ? ultimo : -1
+  const indiceData = ultimoEhAssinatura && ultimo - 1 >= 0 && /\d{1,2}\s+de\s+[a-zçãõéê]+\s+de\s+\d{4}/i.test(resto[ultimo - 1]) ? ultimo - 1 : -1
+  const blocosCorpo = resto.filter((_, i) => i !== indiceData && i !== indiceAssinatura)
+  const corpoPadrao = blocosCorpo.join('\n\n')
+  const blocoData = indiceData >= 0 ? resto[indiceData] : ''
+  const blocoAssinatura = indiceAssinatura >= 0 ? resto[indiceAssinatura] : ''
 
   const [corpo, setCorpo] = useState(corpoPadrao)
   const corpoMudou = corpo !== corpoPadrao
@@ -177,9 +187,17 @@ function AnexoCard({ anexo, checklistItems, podeEditar, bidding }: {
           {blocoData && <p className="text-[10.5px] mb-3">{blocoData}</p>}
           {blocoAssinatura && (
             <div className="text-[9.5px] leading-loose" style={{ fontFamily: 'Inter, sans-serif' }}>
-              {blocoAssinatura.split('\n').filter(Boolean).map((linha, idx) => (
-                <p key={idx} className={idx === 0 ? 'border-t border-[#333] w-[220px] pt-1 mb-0.5' : 'mb-0.5'}>{idx === 0 ? '' : linha}</p>
-              ))}
+              {blocoAssinatura.split('\n').filter(Boolean).map((linha, idx) => {
+                // A linha de sublinhado ("_______") vira uma borda desenhada
+                // em vez de imprimir os underscores — só ESSA linha some,
+                // por conteúdo (nunca por posição: nada mais é escondido).
+                const ehLinhaDeAssinatura = /^_{5,}$/.test(linha.trim())
+                return (
+                  <p key={idx} className={ehLinhaDeAssinatura ? 'border-t border-[#333] w-[220px] pt-1 mb-0.5' : 'mb-0.5'}>
+                    {ehLinhaDeAssinatura ? '' : linha}
+                  </p>
+                )
+              })}
             </div>
           )}
         </div>
