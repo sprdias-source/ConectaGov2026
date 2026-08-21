@@ -33,7 +33,13 @@ function EncerrarDialog({ bidding, onClose }: { bidding: Bidding | null; onClose
 
   const salvar = () => {
     marcarResultado.mutate(
-      { biddingId: bidding.id, status: status as BiddingStatus, motivoPerda: null, motivoDesistencia: motivo },
+      {
+        biddingId: bidding.id,
+        status: status as BiddingStatus,
+        motivoPerda: null,
+        motivoDesistencia: status === 'Desistiu' ? motivo : null,
+        motivoCancelamento: status === 'Cancelada' ? motivo : null,
+      },
       {
         onSuccess: () => {
           showToast('Licitação encerrada.')
@@ -89,6 +95,13 @@ const CORES_COLUNA: Record<string, string> = {
 
 type Visualizacao = 'quadro' | 'lista'
 
+// Quando o edital não declara um valor total explícito, valorLicitado fica
+// 0 (a IA nunca inventa esse número somando os itens) — cai pra
+// valorParticipacao (soma do que decidimos participar) como aproximação,
+// em vez de mostrar "R$ 0,00" (mesmo ajuste já feito na Visão Geral da
+// licitação).
+const valorExibicaoEdital = (b: Bidding) => (b.valorLicitado > 0 ? b.valorLicitado : b.valorParticipacao ?? 0)
+
 // Hoisted fora do componente principal (não recriado a cada render) — importa
 // porque agora usa useDraggable, um hook: se ficasse redeclarado dentro do
 // componente pai a cada render, o dnd-kit perderia a referência do nó
@@ -134,7 +147,9 @@ function CardLicitacao({
       <p className="text-[11px] text-base-500 truncate">{clienteNome} — {b.orgao}</p>
       <SeloHabilitacaoBadge status={statusHabilitacao} />
       <div className="flex items-center justify-between mt-1">
-        <span className="text-[11px] font-mono font-semibold text-accent-300">{formatBRL(b.valorLicitado)}</span>
+        <span className="text-[11px] font-mono font-semibold text-accent-300" title={b.valorLicitado > 0 ? undefined : 'Edital não declara um total explícito — aproximado pela soma dos itens'}>
+          {formatBRL(valorExibicaoEdital(b))}
+        </span>
         <span className="text-[10px] text-base-500">{new Date(b.dataAbertura + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
       </div>
       {b.valorParticipacao != null && (
@@ -207,8 +222,11 @@ function CardLicitacaoGanha({ b, clienteNome, badges }: { b: Bidding; clienteNom
   )
 }
 
-function ColunaKanban({ id, titulo, cor, itens, children }: { id: string; titulo: string; cor?: string; itens: number; children: React.ReactNode }) {
-  const { setNodeRef, isOver } = useDroppable({ id })
+function ColunaKanban({ id, titulo, cor, itens, droppable = true, children }: { id: string; titulo: string; cor?: string; itens: number; droppable?: boolean; children: React.ReactNode }) {
+  // droppable=false pras colunas que só mostram informação (ex: "Ganhas —
+  // Pendência") — sem isso, a coluna acendia como "pode soltar aqui"
+  // durante o arraste mesmo não fazendo nada ao soltar de verdade.
+  const { setNodeRef, isOver } = useDroppable({ id, disabled: !droppable })
   return (
     <div
       ref={setNodeRef}
@@ -231,8 +249,13 @@ export default function KanbanLicitacoesPage() {
   const { empenhos } = useEmpenhos()
   const { habilitacaoPorId } = useHabilitacaoPorLicitacao(biddings)
   const { biddingIdsComPropostaReadequada, biddingIdsComContrato } = useBiddingIdsComDocumentosFinais()
-  const { nivel: nivelLicitacoes } = usePermissaoFerramenta('licitacoes')
-  const podeEditar = nivelLicitacoes === 'edicao'
+  const { nivel: nivelLicitacoes, carregando: carregandoPermissao } = usePermissaoFerramenta('licitacoes')
+  // Enquanto a permissão real ainda está carregando, o hook devolve 'edicao'
+  // por padrão (só pra não travar o dono da conta, que é o caso comum) — só
+  // que isso deixa os controles de editar/arrastar/encerrar aparecerem por
+  // um instante pra quem, na verdade, é só leitura. Aqui a gente trava isso
+  // localmente: só libera edição depois que a permissão real for confirmada.
+  const podeEditar = nivelLicitacoes === 'edicao' && !carregandoPermissao
   const { showToast } = useToast()
 
   const [visualizacao, setVisualizacao] = useState<Visualizacao>(
@@ -304,7 +327,7 @@ export default function KanbanLicitacoesPage() {
     return { semEtapa, porEtapa }
   }, [ativas])
 
-  const irParaEtapa = (bidding: Bidding, etapa: BiddingEtapa) => {
+  const irParaEtapa = (bidding: Bidding, etapa: BiddingEtapa | null) => {
     if (bidding.etapa === etapa) return
     updateEtapa.mutate({ biddingId: bidding.id, etapa }, {
       onError: (err) => showToast(`Erro ao mudar a etapa: ${err instanceof Error ? err.message : String(err)}`, 'error'),
@@ -328,8 +351,13 @@ export default function KanbanLicitacoesPage() {
     const { active, over } = event
     if (!over) return
     const bidding = ativas.find((b) => b.id === active.id)
+    if (!bidding) return
+    if (over.id === 'sem-etapa') {
+      irParaEtapa(bidding, null)
+      return
+    }
     const etapaDestino = ETAPAS.find((e) => e === over.id)
-    if (!bidding || !etapaDestino) return
+    if (!etapaDestino) return
     irParaEtapa(bidding, etapaDestino)
   }
 
@@ -385,17 +413,13 @@ export default function KanbanLicitacoesPage() {
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setArrastando(null)}>
           <div className="px-6 mt-4 overflow-x-auto">
             <div className="flex gap-3 min-w-max pb-4">
-              {colunas.semEtapa.length > 0 && (
-                <div className="w-72 shrink-0 bg-base-900/40 border border-base-800 border-t-2 border-t-base-600 rounded-xl p-3">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-base-400">Sem Etapa</p>
-                    <span className="text-[10px] font-bold bg-base-800 text-base-400 rounded-full px-2 py-0.5">{colunas.semEtapa.length}</span>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    {colunas.semEtapa.map(renderCard)}
-                  </div>
-                </div>
-              )}
+              <ColunaKanban id="sem-etapa" titulo="Sem Etapa" itens={colunas.semEtapa.length}>
+                {colunas.semEtapa.length === 0 ? (
+                  <p className="text-[11px] text-base-600 italic text-center py-6">Arraste um card aqui pra tirar a etapa</p>
+                ) : (
+                  colunas.semEtapa.map(renderCard)
+                )}
+              </ColunaKanban>
 
               {colunas.porEtapa.map(({ etapa, itens }) => (
                 <ColunaKanban key={etapa} id={etapa} titulo={etapa} cor={CORES_COLUNA[etapa]} itens={itens.length}>
@@ -408,7 +432,7 @@ export default function KanbanLicitacoesPage() {
               ))}
 
               {ganhasComPendencia.length > 0 && (
-                <ColunaKanban id="ganhas-pendencia" titulo="Ganhas — Pendência" cor="border-t-positive-500" itens={ganhasComPendencia.length}>
+                <ColunaKanban id="ganhas-pendencia" titulo="Ganhas — Pendência" cor="border-t-positive-500" itens={ganhasComPendencia.length} droppable={false}>
                   {ganhasComPendencia.map(({ bidding, badges }) => (
                     <CardLicitacaoGanha key={bidding.id} b={bidding} clienteNome={clientName(bidding.clientId)} badges={badges} />
                   ))}
@@ -455,7 +479,9 @@ export default function KanbanLicitacoesPage() {
                         </td>
                         <td className="px-4 py-3 text-base-300 text-[13px]">{clientName(b.clientId)}</td>
                         <td className="px-4 py-3 text-base-400 text-[12px]">{b.orgao}</td>
-                        <td className="px-4 py-3 font-mono font-semibold text-base-200 text-[13px]">{formatBRL(b.valorLicitado)}</td>
+                        <td className="px-4 py-3 font-mono font-semibold text-base-200 text-[13px]" title={b.valorLicitado > 0 ? undefined : 'Edital não declara um total explícito — aproximado pela soma dos itens'}>
+                          {formatBRL(valorExibicaoEdital(b))}
+                        </td>
                         <td className="px-4 py-3"><SeloHabilitacaoBadge status={habilitacaoPorId.get(b.id)?.status ?? null} /></td>
                         <td className="px-4 py-3 text-base-400 text-[12px]">{b.etapa ?? '—'}</td>
                         {podeEditar && (

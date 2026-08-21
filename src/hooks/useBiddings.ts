@@ -243,18 +243,20 @@ export function useBiddings() {
   })
 
   // Registra o resultado final da disputa — separada do updateBidding pra
-  // não arriscar mexer nos itens da licitação. O motivo da perda só faz
-  // sentido quando o status é 'Perdeu' (idem motivoDesistencia com
-  // 'Desistiu'); qualquer outro status limpa os dois campos, pra não deixar
-  // um motivo "fantasma" de uma edição anterior.
+  // não arriscar mexer nos itens da licitação. O motivo só faz sentido pro
+  // status correspondente (motivoPerda com 'Perdeu', motivoDesistencia com
+  // 'Desistiu', motivoCancelamento com 'Cancelada'); qualquer outro status
+  // limpa os três campos, pra não deixar um motivo "fantasma" de uma edição
+  // anterior.
   const marcarResultado = useMutation({
-    mutationFn: async ({ biddingId, status, motivoPerda, motivoDesistencia }: { biddingId: string; status: BiddingStatus; motivoPerda: string | null; motivoDesistencia?: string | null }) => {
+    mutationFn: async ({ biddingId, status, motivoPerda, motivoDesistencia, motivoCancelamento }: { biddingId: string; status: BiddingStatus; motivoPerda: string | null; motivoDesistencia?: string | null; motivoCancelamento?: string | null }) => {
       const { data, error } = await supabase
         .from('biddings')
         .update({
           status,
           motivo_perda: status === 'Perdeu' ? motivoPerda : null,
           motivo_desistencia: status === 'Desistiu' ? (motivoDesistencia ?? null) : null,
+          motivo_cancelamento: status === 'Cancelada' ? (motivoCancelamento ?? null) : null,
         })
         .eq('id', biddingId)
         .select()
@@ -264,7 +266,7 @@ export function useBiddings() {
     },
     onSuccess: (updated) => {
       invalidate()
-      logEvent('Registrou Resultado da Licitação', `Licitação "${updated.objeto}" — resultado: ${updated.status}${updated.motivoPerda ? ` (${updated.motivoPerda})` : ''}${updated.motivoDesistencia ? ` (${updated.motivoDesistencia})` : ''}`, { type: 'bidding', id: updated.id })
+      logEvent('Registrou Resultado da Licitação', `Licitação "${updated.objeto}" — resultado: ${updated.status}${updated.motivoPerda ? ` (${updated.motivoPerda})` : ''}${updated.motivoDesistencia ? ` (${updated.motivoDesistencia})` : ''}${updated.motivoCancelamento ? ` (${updated.motivoCancelamento})` : ''}`, { type: 'bidding', id: updated.id })
     },
   })
 

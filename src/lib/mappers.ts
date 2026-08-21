@@ -137,6 +137,7 @@ export const fromBiddingRow = (r: Row<'biddings'>): Bidding => ({
   modeloCustomizadoPath: r.modelo_customizado_path,
   motivoPerda: r.motivo_perda,
   motivoDesistencia: r.motivo_desistencia,
+  motivoCancelamento: r.motivo_cancelamento,
   isActive: r.is_active,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
@@ -176,6 +177,7 @@ export const toBiddingInsert = (b: Partial<Bidding>, userId: string): Database['
   modelo_customizado_path: b.modeloCustomizadoPath ?? null,
   motivo_perda: b.motivoPerda ?? null,
   motivo_desistencia: b.motivoDesistencia ?? null,
+  motivo_cancelamento: b.motivoCancelamento ?? null,
   is_active: b.isActive ?? true,
 })
 
