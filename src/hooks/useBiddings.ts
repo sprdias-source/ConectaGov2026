@@ -99,6 +99,11 @@ export function useBiddings() {
     queryClient.invalidateQueries({ queryKey: ['transactions'] })
     queryClient.invalidateQueries({ queryKey: ['empenhos'] })
     queryClient.invalidateQueries({ queryKey: ['bidding_items'] })
+    // 'bidding_items_por_licitacoes' (usado por RelatorioLicitacoesCliente)
+    // não é prefixo de 'bidding_items', então precisa ser invalidado à
+    // parte — sem isso o relatório por cliente ficava mostrando valores
+    // desatualizados depois de editar itens de uma licitação.
+    queryClient.invalidateQueries({ queryKey: ['bidding_items_por_licitacoes'] })
     if (biddingId) {
       queryClient.invalidateQueries({ queryKey: ['bidding_items_versions', biddingId] })
     }
@@ -271,18 +276,24 @@ export function useBiddings() {
   })
 
   const checkBiddingHasFinancialHistory = async (biddingId: string): Promise<boolean> => {
-    const { count: txCount } = await supabase
+    // Se alguma consulta falhar (rede, RLS, timeout), assume que HÁ
+    // histórico — é o lado seguro do erro: melhor mostrar o aviso forte de
+    // exclusão à toa do que deixar passar batido uma licitação com
+    // dinheiro já recebido ou empenho já faturado.
+    const { count: txCount, error: txError } = await supabase
       .from('transactions')
       .select('id', { count: 'exact', head: true })
       .eq('bidding_id', biddingId)
       .eq('status', 'Pago')
+    if (txError) return true
     if ((txCount ?? 0) > 0) return true
 
-    const { count: empCount } = await supabase
+    const { count: empCount, error: empError } = await supabase
       .from('empenhos')
       .select('id', { count: 'exact', head: true })
       .eq('bidding_id', biddingId)
       .eq('status', 'Faturado')
+    if (empError) return true
     return (empCount ?? 0) > 0
   }
 

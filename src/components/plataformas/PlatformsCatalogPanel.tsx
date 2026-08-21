@@ -38,8 +38,8 @@ function mensagemErroExclusao(err: unknown): string {
 // cliente) é feito à parte, na assinatura por cliente logo abaixo.
 export default function PlatformsCatalogPanel() {
   const { platforms, isLoading, addPlatform, updatePlatform, deletePlatform, alternarAtivo } = usePlatforms()
-  const { nivel } = usePermissaoFerramenta('cadastros')
-  const podeEditar = nivel === 'edicao'
+  const { nivel, carregando: carregandoPermissao } = usePermissaoFerramenta('cadastros')
+  const podeEditar = nivel === 'edicao' && !carregandoPermissao
 
   const [mostrarForm, setMostrarForm] = useState(false)
   const [editandoId, setEditandoId] = useState<string | null>(null)

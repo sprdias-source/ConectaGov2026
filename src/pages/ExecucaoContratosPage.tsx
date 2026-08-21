@@ -117,8 +117,8 @@ export default function ExecucaoContratosPage() {
   // essa tela checava 'cadastros' por engano: um admin que só desse
   // "edição" em Contratos (sem mexer em Cadastros) não conseguia gerenciar
   // marcos de execução, e o inverso também acontecia.
-  const { nivel: nivelCadastros } = usePermissaoFerramenta('contratos')
-  const podeEditar = nivelCadastros === 'edicao'
+  const { nivel: nivelCadastros, carregando: carregandoPermissao } = usePermissaoFerramenta('contratos')
+  const podeEditar = nivelCadastros === 'edicao' && !carregandoPermissao
   const [contratos, setContratos] = useState<Contract[]>([])
   const [isLoading, setIsLoading] = useState(true)
 

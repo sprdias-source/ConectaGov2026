@@ -14,8 +14,8 @@ export default function EmissaoNfsePage() {
   const { config, saveConfig, isLoading: loadingConfig } = useNfseConfig()
   // Salvar a configuração padrão de NFS-e é uma ação financeira — antes não
   // checava permissão nenhuma.
-  const { nivel } = usePermissaoFerramenta('financeiro')
-  const podeEditar = nivel === 'edicao'
+  const { nivel, carregando: carregandoPermissao } = usePermissaoFerramenta('financeiro')
+  const podeEditar = nivel === 'edicao' && !carregandoPermissao
 
   const [configAberta, setConfigAberta] = useState(false)
   const [configEditavel, setConfigEditavel] = useState<NfseConfigPadrao>(config)

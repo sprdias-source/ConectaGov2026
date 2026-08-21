@@ -10,6 +10,7 @@ import ErrorAlert from '../ui/ErrorAlert'
 import { useClients } from '../../hooks/useClients'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import { useToast } from '../../hooks/useToast'
+import { formatBRL } from '../../hooks/useAccountBalances'
 import type { Client } from '../../types/domain'
 
 type FilterMode = 'todos' | 'mensalistas' | 'individuais'
@@ -30,8 +31,8 @@ export default function ClientsTab() {
   // Dono da própria conta sempre tem 'edicao'. Membro de equipe segue o que
   // foi configurado na tela de permissões — se for só 'visualizacao', os
   // botões de criar/editar/apagar/ativar somem desta tela.
-  const { nivel: nivelAcesso } = usePermissaoFerramenta('clientes')
-  const podeEditar = nivelAcesso === 'edicao'
+  const { nivel: nivelAcesso, carregando: carregandoPermissao } = usePermissaoFerramenta('clientes')
+  const podeEditar = nivelAcesso === 'edicao' && !carregandoPermissao
   const { showToast } = useToast()
 
   const [search, setSearch] = useState('')
@@ -57,6 +58,10 @@ export default function ClientsTab() {
           ? `Este cliente possui ${avisos.join(' e ')} — tudo isso será perdido junto, sem chance de recuperar.`
           : undefined
       )
+    }).catch(() => {
+      // Se a checagem falhar de vez (nem chegou a resolver com o fallback
+      // seguro do hook), assume o pior — melhor mostrar o aviso à toa.
+      setFinancialWarning('Não foi possível confirmar se este cliente tem histórico financeiro ou contratos vinculados — considere que sim antes de excluir.')
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deleting?.id])
@@ -198,7 +203,7 @@ export default function ClientsTab() {
                           {c.cnpj && <div className="text-base-500 font-mono text-[11px]">{c.cnpj}</div>}
                           {c.isMensalista && (
                             <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded bg-accent-500/15 text-accent-300 text-[10px] font-bold">
-                              Mensalista (R$ {c.valorMensalidade?.toLocaleString('pt-BR')})
+                              Mensalista ({formatBRL(c.valorMensalidade ?? 0)})
                             </span>
                           )}
                         </div>
@@ -266,7 +271,7 @@ export default function ClientsTab() {
                       {c.cnpj && <div className="text-base-400 font-mono text-[11px] mt-0.5">{c.cnpj}</div>}
                       {c.isMensalista && (
                         <span className="inline-flex items-center gap-1 mt-1.5 px-1.5 py-0.5 rounded bg-accent-500/15 text-accent-300 text-[10px] font-bold">
-                          Mensalista (R$ {c.valorMensalidade?.toLocaleString('pt-BR')})
+                          Mensalista ({formatBRL(c.valorMensalidade ?? 0)})
                         </span>
                       )}
                     </div>

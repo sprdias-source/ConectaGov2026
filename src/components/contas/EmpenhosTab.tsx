@@ -26,8 +26,8 @@ export default function EmpenhosTab() {
   } = useEmpenhos()
   const { clients } = useClients()
   const { biddings } = useBiddings()
-  const { nivel: nivelFinanceiro } = usePermissaoFerramenta('financeiro')
-  const podeEditar = nivelFinanceiro === 'edicao'
+  const { nivel: nivelFinanceiro, carregando: carregandoPermissao } = usePermissaoFerramenta('financeiro')
+  const podeEditar = nivelFinanceiro === 'edicao' && !carregandoPermissao
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Empenho | null>(null)
   const [deleting, setDeleting] = useState<Empenho | null>(null)
@@ -57,6 +57,8 @@ export default function EmpenhosTab() {
           ? 'Este empenho possui parcelas de comissão já pagas — todo esse histórico será perdido junto.'
           : undefined
       )
+    }).catch(() => {
+      setFinancialWarning('Não foi possível confirmar se este empenho tem histórico financeiro vinculado — considere que sim antes de excluir.')
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deleting?.id])

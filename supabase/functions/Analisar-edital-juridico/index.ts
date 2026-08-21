@@ -8,6 +8,16 @@
 // (bidding_id, tipo), já que os 3 tipos de análise coexistem pra uma mesma
 // licitação.
 //
+// Assim como Analisar-edital, marca a linha como "processando" e devolve a
+// resposta IMEDIATAMENTE — o upload pro Gemini e a geração do resultado
+// rodam em SEGUNDO PLANO via EdgeRuntime.waitUntil(), depois que a resposta
+// já foi enviada. Sem isso, edital grande/escaneado podia estourar o limite
+// de execução síncrona da function e a análise ficava travada em
+// "processando" pra sempre, sem erro nenhum (o mesmo bug que a
+// Analisar-edital já corrigiu — só não tinha sido replicado aqui). A tela
+// já consulta bidding_analysis_juridica periodicamente enquanto o status
+// for "processando", então não precisa mudar nada nela.
+//
 // VARIÁVEIS DE AMBIENTE NECESSÁRIAS (Supabase → Edge Functions → Secrets):
 // - GEMINI_API_KEY: a mesma chave já usada pela function Analisar-edital.
 // - SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY já vêm injetadas
@@ -282,11 +292,69 @@ async function apagarArquivoGemini(fileName: string) {
   }
 }
 
+type Supa = ReturnType<typeof createClient>
+type Anexo = { id: string; name: string; storage_path: string; mime_type: string | null; size_bytes: number | null }
+
+// Todo o trabalho pesado — roda depois da resposta HTTP já ter sido
+// devolvida (ver EdgeRuntime.waitUntil lá embaixo), por isso não conta
+// pro limite de tempo de execução síncrona.
+async function processarAnaliseJuridica(supabase: Supa, analysisRowId: string, edital: Anexo, tipo: Tipo) {
+  try {
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+      .from('client-documents')
+      .createSignedUrl(edital.storage_path, 300)
+    if (signedUrlError || !signedUrlData) throw new Error('Não foi possível gerar a URL do edital no Storage')
+
+    const downloadRes = await fetch(signedUrlData.signedUrl)
+    if (!downloadRes.ok || !downloadRes.body) throw new Error('Falha ao baixar o edital do Storage')
+
+    const mimeType = edital.mime_type || 'application/pdf'
+    const sizeBytes = edital.size_bytes ?? Number(downloadRes.headers.get('content-length') ?? 0)
+    if (!sizeBytes) throw new Error('Não foi possível determinar o tamanho do arquivo')
+
+    const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, edital.name)
+
+    const genRes = await fetchComRetry(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { file_data: { mime_type: mimeType, file_uri: geminiFile.uri } },
+              { text: montarPrompt(tipo) },
+            ],
+          }],
+          generationConfig: {
+            response_mime_type: 'application/json',
+            response_schema: RESULTADO_SCHEMA,
+          },
+        }),
+      }
+    )
+
+    apagarArquivoGemini(geminiFile.name) // não precisa esperar terminar
+
+    if (!genRes.ok) throw new Error(`Falha ao analisar com Gemini: ${await genRes.text()}`)
+    const genData = await genRes.json()
+    const textoResposta = genData.candidates?.[0]?.content?.parts?.[0]?.text
+    if (!textoResposta) throw new Error('Gemini não retornou conteúdo na análise')
+
+    const resultado = JSON.parse(textoResposta)
+
+    await supabase.from('bidding_analysis_juridica').update({ status: 'concluido', resultado, erro_mensagem: null }).eq('id', analysisRowId)
+  } catch (err) {
+    const mensagem = err instanceof Error ? err.message : String(err)
+    console.error('Erro ao analisar edital jurídico (segundo plano):', mensagem)
+    await supabase.from('bidding_analysis_juridica').update({ status: 'erro', erro_mensagem: mensagem }).eq('id', analysisRowId)
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
-  let analysisRowId: string | null = null
 
   try {
     const { biddingId, tipo } = await req.json()
@@ -318,6 +386,7 @@ Deno.serve(async (req: Request) => {
       .maybeSingle()
     if (editalError || !edital) return json({ error: 'Nenhum edital enviado para esta licitação' }, 400)
 
+    let analysisRowId: string
     const { data: existente } = await supabase
       .from('bidding_analysis_juridica')
       .select('id')
@@ -326,7 +395,7 @@ Deno.serve(async (req: Request) => {
       .maybeSingle()
     if (existente) {
       await supabase.from('bidding_analysis_juridica').update({ status: 'processando', erro_mensagem: null }).eq('id', existente.id)
-      analysisRowId = existente.id
+      analysisRowId = existente.id as string
     } else {
       const { data: novo, error: insertError } = await supabase
         .from('bidding_analysis_juridica')
@@ -334,61 +403,18 @@ Deno.serve(async (req: Request) => {
         .select('id')
         .single()
       if (insertError) throw insertError
-      analysisRowId = novo.id
+      analysisRowId = novo.id as string
     }
 
-    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-      .from('client-documents')
-      .createSignedUrl(edital.storage_path, 300)
-    if (signedUrlError || !signedUrlData) throw new Error('Não foi possível gerar a URL do edital no Storage')
+    // @ts-expect-error: EdgeRuntime é global no runtime do Supabase, não existe no lib.dom.d.ts do TypeScript
+    EdgeRuntime.waitUntil(processarAnaliseJuridica(supabase, analysisRowId, edital as Anexo, tipo as Tipo))
 
-    const downloadRes = await fetch(signedUrlData.signedUrl)
-    if (!downloadRes.ok || !downloadRes.body) throw new Error('Falha ao baixar o edital do Storage')
-
-    const mimeType = edital.mime_type || 'application/pdf'
-    const sizeBytes = edital.size_bytes ?? Number(downloadRes.headers.get('content-length') ?? 0)
-    if (!sizeBytes) throw new Error('Não foi possível determinar o tamanho do arquivo')
-
-    const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, edital.name)
-
-    const genRes = await fetchComRetry(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { file_data: { mime_type: mimeType, file_uri: geminiFile.uri } },
-              { text: montarPrompt(tipo as Tipo) },
-            ],
-          }],
-          generationConfig: {
-            response_mime_type: 'application/json',
-            response_schema: RESULTADO_SCHEMA,
-          },
-        }),
-      }
-    )
-
-    apagarArquivoGemini(geminiFile.name) // não precisa esperar terminar
-
-    if (!genRes.ok) throw new Error(`Falha ao analisar com Gemini: ${await genRes.text()}`)
-    const genData = await genRes.json()
-    const textoResposta = genData.candidates?.[0]?.content?.parts?.[0]?.text
-    if (!textoResposta) throw new Error('Gemini não retornou conteúdo na análise')
-
-    const resultado = JSON.parse(textoResposta)
-
-    await supabase.from('bidding_analysis_juridica').update({ status: 'concluido', resultado, erro_mensagem: null }).eq('id', analysisRowId)
-
-    return json({ success: true })
+    // Responde já, sem esperar a análise terminar — é isso que evita
+    // estourar o limite de execução da function.
+    return json({ started: true })
   } catch (err) {
     const mensagem = err instanceof Error ? err.message : String(err)
-    console.error('Erro ao analisar edital (jurídico):', mensagem)
-    if (analysisRowId) {
-      await supabase.from('bidding_analysis_juridica').update({ status: 'erro', erro_mensagem: mensagem }).eq('id', analysisRowId)
-    }
+    console.error('Erro ao iniciar análise jurídica:', mensagem)
     return json({ success: false, error: mensagem }, 500)
   }
 })

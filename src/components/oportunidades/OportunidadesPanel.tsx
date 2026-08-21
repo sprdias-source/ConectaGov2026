@@ -21,6 +21,7 @@ import { usePlatforms } from '../../hooks/usePlatforms'
 import { useClients } from '../../hooks/useClients'
 import { useAttachedFiles } from '../../hooks/useAttachedFiles'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
+import { useToast } from '../../hooks/useToast'
 import { mensagemDeErro } from '../../lib/errors'
 import { mapearItensDaAnalise, mensagemAmigavelErroAnalise } from '../../lib/analiseEdital'
 import type { AnaliseEdital, Opportunity, OpportunityStatus } from '../../types/domain'
@@ -411,8 +412,9 @@ export default function OportunidadesPanel() {
   const { opportunities, municipioPorOportunidade, isLoading, addOpportunity } = useOpportunities()
   const { platforms, addPlatform } = usePlatforms()
   const { clients } = useClients()
-  const { nivel } = usePermissaoFerramenta('cadastros')
-  const podeEditar = nivel === 'edicao'
+  const { nivel, carregando: carregandoPermissao } = usePermissaoFerramenta('cadastros')
+  const podeEditar = nivel === 'edicao' && !carregandoPermissao
+  const { showToast } = useToast()
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [mostrarForm, setMostrarForm] = useState(false)
@@ -458,6 +460,7 @@ export default function OportunidadesPanel() {
       const url = await getDownloadUrl(storagePath)
       setVisualizando({ nome, url })
     } catch {
+      showToast('Não foi possível carregar o arquivo pra visualização.', 'error')
       setVisualizando(null)
     }
   }

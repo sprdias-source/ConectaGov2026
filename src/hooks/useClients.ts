@@ -197,11 +197,18 @@ export function useClients() {
   // ON DELETE CASCADE (migration 001): excluir o cliente apaga o texto
   // jurídico completo do contrato sem nenhum aviso, se não checarmos.
   const checkClientHasFinancialHistory = async (clientId: string): Promise<{ hasFinancialHistory: boolean; hasContracts: boolean }> => {
-    const [{ count: txCount }, { count: contractCount }] = await Promise.all([
+    const [{ count: txCount, error: txError }, { count: contractCount, error: contractError }] = await Promise.all([
       supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('client_id', clientId).eq('status', 'Pago'),
       supabase.from('contracts').select('id', { count: 'exact', head: true }).eq('client_id', clientId),
     ])
-    return { hasFinancialHistory: (txCount ?? 0) > 0, hasContracts: (contractCount ?? 0) > 0 }
+    // Se alguma consulta falhar (rede, RLS, timeout), assume que HÁ
+    // histórico/contrato — é o lado seguro do erro: melhor mostrar o aviso
+    // forte de exclusão à toa do que deixar passar batido um cliente com
+    // dinheiro já recebido ou contrato jurídico gerado.
+    return {
+      hasFinancialHistory: txError ? true : (txCount ?? 0) > 0,
+      hasContracts: contractError ? true : (contractCount ?? 0) > 0,
+    }
   }
 
   return {

@@ -13,8 +13,8 @@ import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 export default function RecibosPage() {
   const { clients } = useClients()
   const { addReceipt, isSaving } = useReceipts()
-  const { nivel: nivelAcesso } = usePermissaoFerramenta('recibos')
-  const podeEditar = nivelAcesso === 'edicao'
+  const { nivel: nivelAcesso, carregando: carregandoPermissao } = usePermissaoFerramenta('recibos')
+  const podeEditar = nivelAcesso === 'edicao' && !carregandoPermissao
   const [kind, setKind] = useState<'Recibo' | 'Orcamento'>('Recibo')
   const [clientId, setClientId] = useState('')
   const [value, setValue] = useState(0)

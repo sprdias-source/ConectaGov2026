@@ -196,21 +196,36 @@ export function useEmpenhos() {
       const paidNumbers = new Set((paidTxs ?? []).map((p) => p.projection_month_number))
       let txsToInsert = allTxs.filter((t) => !paidNumbers.has(t.projectionMonthNumber ?? null))
 
-      // No modo "quantidade_fixa" as parcelas dividem o total entre si — se
-      // já existem parcelas pagas (a valores antigos, que nunca são alterados),
-      // o valor já recebido precisa ser descontado do novo valorComissaoTotal
-      // antes de redistribuir o restante entre as parcelas ainda não pagas.
-      // Sem isso, a soma final (pagas + regeradas) não bate com o novo total.
-      if (updated.modoParcelamento === 'quantidade_fixa' && paidNumbers.size > 0 && txsToInsert.length > 0) {
+      // Nos modos "quantidade_fixa" e "integral", valorComissaoTotal é um
+      // total único (dividido em parcelas ou pago de uma vez) — se já
+      // existem parcelas pagas (a valores antigos, que nunca são
+      // alterados, inclusive se foram pagas ANTES de trocar de modo de
+      // parcelamento), o valor já recebido precisa ser descontado do novo
+      // valorComissaoTotal antes de gerar o que falta. Sem isso, o valor já
+      // pago fica somado por cima do novo total inteiro — ex: empenho de
+      // R$9.000 em 3x, 1ª parcela de R$3.000 já paga, usuário muda pra
+      // "integral" mantendo R$9.000: sem este ajuste o sistema geraria uma
+      // nova transação de R$9.000 inteiros, resultando em R$12.000
+      // cobrados/lançados pra um empenho de R$9.000.
+      // "recorrente" fica de fora de propósito: cada parcela ali é um valor
+      // independente que se repete (não uma fatia de um total único), então
+      // o filtro por projectionMonthNumber acima já evita duplicar sozinho.
+      if ((updated.modoParcelamento === 'quantidade_fixa' || updated.modoParcelamento === 'integral') && paidNumbers.size > 0 && txsToInsert.length > 0) {
         const totalJaPago = (paidTxs ?? []).reduce((s, p) => s + (p.value ?? 0), 0)
-        const restante = updated.valorComissaoTotal - totalJaPago
-        const splitValue = Math.round((restante / txsToInsert.length) * 100) / 100
-        txsToInsert = txsToInsert.map((t, idx) => ({
-          ...t,
-          value: idx === txsToInsert.length - 1
-            ? Math.round((restante - splitValue * (txsToInsert.length - 1)) * 100) / 100
-            : splitValue,
-        }))
+        const restante = Math.max(0, updated.valorComissaoTotal - totalJaPago)
+        if (updated.modoParcelamento === 'integral') {
+          // Modo integral nunca divide — só ajusta o valor da transação
+          // única (ou remove ela, se o total já pago cobrir tudo).
+          txsToInsert = restante > 0 ? [{ ...txsToInsert[0], value: Math.round(restante * 100) / 100 }] : []
+        } else {
+          const splitValue = Math.round((restante / txsToInsert.length) * 100) / 100
+          txsToInsert = txsToInsert.map((t, idx) => ({
+            ...t,
+            value: idx === txsToInsert.length - 1
+              ? Math.round((restante - splitValue * (txsToInsert.length - 1)) * 100) / 100
+              : splitValue,
+          }))
+        }
       }
 
       if (txsToInsert.length > 0) {
@@ -286,11 +301,15 @@ export function useEmpenhos() {
   })
 
   const checkEmpenhoHasFinancialHistory = async (empenhoId: string): Promise<boolean> => {
-    const { count } = await supabase
+    const { count, error } = await supabase
       .from('transactions')
       .select('id', { count: 'exact', head: true })
       .eq('empenho_id', empenhoId)
       .eq('status', 'Pago')
+    // Se a consulta falhar (rede, RLS, timeout), assume que HÁ histórico —
+    // é o lado seguro do erro: melhor mostrar o aviso forte de exclusão à
+    // toa do que deixar passar batido um empenho com pagamentos já feitos.
+    if (error) return true
     return (count ?? 0) > 0
   }
 
