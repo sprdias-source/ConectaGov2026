@@ -1,20 +1,20 @@
 // Edge Function: backup-diario
 //
 // Esta function nunca tinha sido versionada neste repositório — foi criada
-// direto no Supabase quando o backup passou de semanal (ver backup-semanal/)
-// para diário, e o cron real ficou apontando pra ela, não pra backup-semanal.
-// Trazida pro repositório e corrigida numa perícia técnica: o código
-// original buscava TODAS as tabelas de TODOS os usuários de uma vez (com a
-// service role key, que ignora RLS) e mandava tudo junto num único e-mail
-// fixo — exatamente o mesmo problema já corrigido em backup-semanal. Agora
-// segue o mesmo padrão: um e-mail por conta, só com os dados daquela conta,
-// pro próprio e-mail de login do dono da conta.
+// direto no Supabase quando o backup passou a ser diário (substituindo uma
+// function mais antiga, "backup-semanal", já descontinuada e removida do
+// Supabase). Trazida pro repositório e corrigida numa perícia técnica: o
+// código original buscava TODAS as tabelas de TODOS os usuários de uma vez
+// (com a service role key, que ignora RLS) e mandava tudo junto num único
+// e-mail fixo. Agora segue um e-mail por conta, só com os dados daquela
+// conta, pro próprio e-mail de login do dono da conta.
 //
 // VARIÁVEIS DE AMBIENTE NECESSÁRIAS (Supabase → Edge Functions → Secrets):
 // - RESEND_API_KEY: sua chave da API do Resend
 // - CRON_SECRET: segredo compartilhado só com o pg_cron (mesmo usado em
-//   backup-semanal) — sem ele, qualquer pessoa de posse da anon key
-//   (pública, embutida no frontend) podia disparar esta função repetidamente.
+//   resumo-diario-vencimentos) — sem ele, qualquer pessoa de posse da anon
+//   key (pública, embutida no frontend) podia disparar esta função
+//   repetidamente.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
