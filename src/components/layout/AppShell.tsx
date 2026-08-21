@@ -33,7 +33,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [patrimonioVisible, setPatrimonioVisible] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('cg_sidebar_collapsed') === 'true')
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('cg_sidebar_collapsed') === 'true'
+    } catch {
+      return false
+    }
+  })
   // Com a sidebar recolhida (só ícones), passar o mouse por cima "espia" o
   // menu completo por cima do conteúdo, sem alterar o estado recolhido
   // salvo — só uma revelação temporária. O timeout no "sair" evita que o
@@ -76,13 +82,23 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const toggleCollapsed = () => {
     const next = !collapsed
     setCollapsed(next)
-    localStorage.setItem('cg_sidebar_collapsed', String(next))
+    try {
+      localStorage.setItem('cg_sidebar_collapsed', String(next))
+    } catch {
+      // Navegação privada, cota estourada, etc. — o estado colapsado
+      // continua valendo na sessão atual, só não persiste pra próxima.
+    }
   }
 
   const toggleGrupo = (label: string) => {
     setGruposAbertos((atual) => {
       const proximo = { ...atual, [label]: !(atual[label] ?? true) }
-      localStorage.setItem('cg_grupos_menu_abertos', JSON.stringify(proximo))
+      try {
+        localStorage.setItem('cg_grupos_menu_abertos', JSON.stringify(proximo))
+      } catch {
+        // Navegação privada, cota estourada, etc. — o grupo continua
+        // abrindo/fechando na sessão atual, só não persiste pra próxima.
+      }
       return proximo
     })
   }

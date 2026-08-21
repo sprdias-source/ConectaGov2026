@@ -5,6 +5,7 @@ import { EmptyState } from '../ui/Primitives'
 import { useFinancialAccounts } from '../../hooks/useFinancialAccounts'
 import { useTransactions } from '../../hooks/useTransactions'
 import { useAccountBalances, formatBRL } from '../../hooks/useAccountBalances'
+import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import AccountFormModal from './AccountFormModal'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import ErrorAlert from '../ui/ErrorAlert'
@@ -24,6 +25,11 @@ export default function AccountsTab() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<FinancialAccount | null>(null)
   const [deleting, setDeleting] = useState<FinancialAccount | null>(null)
+  // Antes não checava nenhuma permissão — um membro com "visualização" (ou
+  // nenhum acesso) em financeiro conseguia criar/editar/excluir contas
+  // bancárias e cartões da empresa mesmo assim.
+  const { nivel } = usePermissaoFerramenta('financeiro')
+  const podeEditar = nivel === 'edicao'
 
   const handleSave = (data: Partial<FinancialAccount>) => {
     if (editing) {
@@ -40,9 +46,11 @@ export default function AccountsTab() {
           <h2 className="font-display font-bold text-lg text-base-100">Contas e Cartões</h2>
           <p className="text-base-400 text-[13px]">Gerencie as contas bancárias, carteira e cartões de crédito da empresa.</p>
         </div>
-        <Button onClick={() => { setEditing(null); setModalOpen(true) }}>
-          <Plus className="w-4 h-4" /> Nova Conta
-        </Button>
+        {podeEditar && (
+          <Button onClick={() => { setEditing(null); setModalOpen(true) }}>
+            <Plus className="w-4 h-4" /> Nova Conta
+          </Button>
+        )}
       </div>
 
       <ErrorAlert error={deleteAccount.error} />
@@ -69,14 +77,16 @@ export default function AccountsTab() {
                       <p className="text-[11px] text-base-500">{TYPE_LABELS[acc.type]}</p>
                     </div>
                   </div>
-                  <div className="flex gap-1">
-                    <button onClick={() => { setEditing(acc); setModalOpen(true) }} className="p-1 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={() => setDeleting(acc)} className="p-1 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  {podeEditar && (
+                    <div className="flex gap-1">
+                      <button onClick={() => { setEditing(acc); setModalOpen(true) }} className="p-1 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => setDeleting(acc)} className="p-1 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">
@@ -95,25 +105,29 @@ export default function AccountsTab() {
         </div>
       )}
 
-      <AccountFormModal
-        open={modalOpen}
-        onClose={() => { setModalOpen(false); setEditing(null) }}
-        onSave={handleSave}
-        initial={editing}
-        isSaving={addAccount.isPending || updateAccount.isPending}
-        error={addAccount.error || updateAccount.error}
-      />
+      {podeEditar && (
+        <>
+          <AccountFormModal
+            open={modalOpen}
+            onClose={() => { setModalOpen(false); setEditing(null) }}
+            onSave={handleSave}
+            initial={editing}
+            isSaving={addAccount.isPending || updateAccount.isPending}
+            error={addAccount.error || updateAccount.error}
+          />
 
-      <ConfirmDialog
-        open={!!deleting}
-        title="Excluir conta?"
-        description={`Tem certeza que deseja excluir "${deleting?.name}"? Lançamentos vinculados a esta conta perderão a referência, mas não serão excluídos.`}
-        confirmLabel="Excluir conta"
-        danger
-        onCancel={() => setDeleting(null)}
-        onConfirm={() => { if (deleting) deleteAccount.mutate(deleting, { onSuccess: () => setDeleting(null) }) }}
-        isLoading={deleteAccount.isPending}
-      />
+          <ConfirmDialog
+            open={!!deleting}
+            title="Excluir conta?"
+            description={`Tem certeza que deseja excluir "${deleting?.name}"? Lançamentos vinculados a esta conta perderão a referência, mas não serão excluídos.`}
+            confirmLabel="Excluir conta"
+            danger
+            onCancel={() => setDeleting(null)}
+            onConfirm={() => { if (deleting) deleteAccount.mutate(deleting, { onSuccess: () => setDeleting(null) }) }}
+            isLoading={deleteAccount.isPending}
+          />
+        </>
+      )}
     </div>
   )
 }

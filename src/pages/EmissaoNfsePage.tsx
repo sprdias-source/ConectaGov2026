@@ -4,6 +4,7 @@ import { PageHeader, Card } from '../components/ui/Primitives'
 import { Input, Select, Button } from '../components/ui/FormControls'
 import { useClients } from '../hooks/useClients'
 import { useNfseConfig, type NfseConfigPadrao } from '../hooks/useNfseConfig'
+import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import { todayLocalISO } from '../lib/dateUtils'
 
 const URL_PORTAL_NFSE = 'https://webapp1-vacaria.cidade360.cloud/NFSe.Portal/Prestador/Nota/Index'
@@ -11,6 +12,10 @@ const URL_PORTAL_NFSE = 'https://webapp1-vacaria.cidade360.cloud/NFSe.Portal/Pre
 export default function EmissaoNfsePage() {
   const { clients } = useClients()
   const { config, saveConfig, isLoading: loadingConfig } = useNfseConfig()
+  // Salvar a configuração padrão de NFS-e é uma ação financeira — antes não
+  // checava permissão nenhuma.
+  const { nivel } = usePermissaoFerramenta('financeiro')
+  const podeEditar = nivel === 'edicao'
 
   const [configAberta, setConfigAberta] = useState(false)
   const [configEditavel, setConfigEditavel] = useState<NfseConfigPadrao>(config)
@@ -125,13 +130,15 @@ export default function EmissaoNfsePage() {
                   className="w-full bg-base-900 border border-base-700 rounded-lg px-3 py-2 text-[13px] text-base-100 focus:outline-none focus:ring-1 focus:ring-accent-500"
                 />
               </div>
-              <Button
-                onClick={() => saveConfig.mutate(configEditavel, { onSuccess: () => setConfigAberta(false) })}
-                disabled={saveConfig.isPending}
-                className="self-start"
-              >
-                <Save className="w-3.5 h-3.5" /> {saveConfig.isPending ? 'Salvando...' : 'Salvar Configuração'}
-              </Button>
+              {podeEditar && (
+                <Button
+                  onClick={() => saveConfig.mutate(configEditavel, { onSuccess: () => setConfigAberta(false) })}
+                  disabled={saveConfig.isPending}
+                  className="self-start"
+                >
+                  <Save className="w-3.5 h-3.5" /> {saveConfig.isPending ? 'Salvando...' : 'Salvar Configuração'}
+                </Button>
+              )}
             </div>
           )}
         </Card>

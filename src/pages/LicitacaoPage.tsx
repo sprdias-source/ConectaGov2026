@@ -222,17 +222,19 @@ function useBiddingItemsDaLicitacao(biddingId?: string) {
         if (error) throw error
       }
 
-      // Só precisa reconsultar quando algo foi inserido — as linhas novas
-      // não tinham "id" ainda no editor, e o próximo diff (próxima edição)
-      // precisa desse id de verdade pra saber que a linha já existe (senão
-      // seria inserida de novo). Atualizações/exclusões não mudam o
-      // conjunto de ids, então o estado local do editor já está correto
-      // sem precisar buscar de novo — evita resetar o que o usuário está
-      // digitando no meio de uma sincronização em segundo plano.
       return { precisaResincronizar: paraInserir.length > 0 }
     },
-    onSuccess: ({ precisaResincronizar }) => {
-      if (precisaResincronizar) queryClient.invalidateQueries({ queryKey: ['bidding_items', biddingId] })
+    // Sempre invalida, mesmo quando só houve UPDATE (precisaResincronizar
+    // false): a otimização antiga de só invalidar em INSERT parecia segura
+    // — updates não mudam o conjunto de ids — mas quando dois componentes
+    // têm cada um sua cópia local dos itens, um componente com uma cópia
+    // desatualizada podia chamar sincronizarItens de novo, o diff comparar
+    // contra o valor já revertido no banco e reescrever por cima da edição
+    // real que tinha acabado de ser salva. Invalidar sempre garante que
+    // toda cópia local seja refeita a partir do banco antes da próxima
+    // sincronização.
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bidding_items', biddingId] })
     },
   })
 
@@ -2287,18 +2289,28 @@ export default function LicitacaoPage() {
   // Enviar/renovar uma das 7 certidões padrão — grava direto no repositório
   // do cliente (client_documents). O item do checklist nem precisa de
   // vínculo próprio: já casa sozinho por clientDocumentTipo, então o mesmo
-  // envio também resolve esse item em qualquer outra licitação do cliente.
+  // envio também resolve esse item em qualquer outra licitação do cliente
+  // (a exibição em tela usa o cruzamento ao vivo de statusItemChecklist).
+  // CORREÇÃO DE BUG: mas usePendenciasChecklist (painel de Pendências/Hoje/
+  // Agenda) filtra atendido/client_document_id direto no SQL, sem passar
+  // por esse cruzamento ao vivo — sem gravar client_document_id/atendido
+  // aqui também, o item ficava "resolvido" só na tela desta licitação e
+  // preso pra sempre naqueles painéis. Atualiza todo item deste checklist
+  // com o mesmo clientDocumentTipo (mesmo padrão de match usado por
+  // statusItemChecklist/arquivoResolvidoDoItem).
   const handleEnviarCertidao = async (item: BiddingChecklistItem, file: File) => {
     if (!item.clientDocumentTipo) return
     setEnviandoItemId(item.id)
     try {
-      await uploadClientDoc.mutateAsync({
+      const { id: novoId } = await uploadClientDoc.mutateAsync({
         file,
         tipo: item.clientDocumentTipo,
         nome: CERT_CONFIG[item.clientDocumentTipo].label.split(' — ')[0],
         dataEmissao: new Date().toISOString().split('T')[0],
         dataValidade: dataValidadeCert || null,
       })
+      const itensParaResolver = items.filter((i) => i.clientDocumentTipo === item.clientDocumentTipo)
+      await Promise.all(itensParaResolver.map((i) => updateItem.mutateAsync({ ...i, clientDocumentId: novoId, atendido: true })))
       setItemAbertoId(null)
       setDataValidadeCert('')
     } catch (err) {

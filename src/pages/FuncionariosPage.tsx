@@ -7,6 +7,9 @@ import { Field, Select, Input, Button } from '../components/ui/FormControls'
 import { useEmployees } from '../hooks/useEmployees'
 import { useTransactions } from '../hooks/useTransactions'
 import { formatBRL } from '../hooks/useAccountBalances'
+import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
+import { supabase } from '../lib/supabase'
+import { fromTransactionRow } from '../lib/mappers'
 import EmployeeFormModal from '../components/funcionarios/EmployeeFormModal'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import ErrorAlert from '../components/ui/ErrorAlert'
@@ -27,6 +30,11 @@ function nextMonthDay20(competencia: string): string {
 export default function FuncionariosPage() {
   const { employees, isLoading, addEmployee, updateEmployee, deleteEmployee } = useEmployees()
   const { transactions, addTransactions, updateTransaction } = useTransactions()
+  // Antes não checava nenhuma permissão — qualquer membro convidado
+  // conseguia contratar, editar, remover colaboradores e fechar folha de
+  // pagamento, independente do nível configurado.
+  const { nivel } = usePermissaoFerramenta('funcionarios')
+  const podeEditar = nivel === 'edicao'
   const [tab, setTab] = useState<Tab>('folha')
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Employee | null>(null)
@@ -115,10 +123,23 @@ export default function FuncionariosPage() {
   // Soma o valor do encargo (INSS/IRRF/FGTS) ao lançamento consolidado já
   // existente daquela competência, ou cria um novo se for o primeiro
   // colaborador fechado no mês. Nunca duplica a guia.
+  //
+  // Busca direto no banco (não usa o array `transactions` do cache do
+  // React Query) — fechar a folha de dois colaboradores em sequência rápida
+  // podia consultar o cache ainda desatualizado antes do primeiro fechamento
+  // terminar de invalidar/recarregar, e cada um criava sua própria guia em
+  // vez de somar na mesma. Uma leitura fresca reduz bastante essa janela de
+  // corrida (não elimina 100%, que exigiria uma constraint/upsert atômico
+  // no banco, fora do alcance de uma correção só no cliente).
   const upsertEncargoConsolidado = async (category: string, competenciaRef: string, valorAdicional: number, dueDate: string) => {
-    const existente = transactions.find(
-      (t) => t.category === category && t.dueDate === dueDate && t.status !== 'Pago'
-    )
+    const { data: existentes } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('category', category)
+      .eq('due_date', dueDate)
+      .neq('status', 'Pago')
+      .limit(1)
+    const existente = existentes?.[0] ? fromTransactionRow(existentes[0]) : undefined
     if (existente) {
       updateTransaction.mutate({
         ...existente,
@@ -145,9 +166,11 @@ export default function FuncionariosPage() {
         subtitle="Controle de folha de pagamento, comissão de assessores, pró-labore operacional de sócios e recolhimento de impostos sociais."
         icon={Users}
         actions={
-          <Button onClick={() => { setEditing(null); setModalOpen(true) }}>
-            <UserPlus className="w-4 h-4" /> Contratar / Novo Staff
-          </Button>
+          podeEditar ? (
+            <Button onClick={() => { setEditing(null); setModalOpen(true) }}>
+              <UserPlus className="w-4 h-4" /> Contratar / Novo Staff
+            </Button>
+          ) : undefined
         }
       />
 
@@ -255,9 +278,11 @@ export default function FuncionariosPage() {
                     </div>
                   )
                 })()}
-                <Button onClick={handleClosePayroll} disabled={!selectedEmployee || addTransactions.isPending}>
-                  {addTransactions.isPending ? 'Lançando...' : 'Lançar no Financeiro'}
-                </Button>
+                {podeEditar && (
+                  <Button onClick={handleClosePayroll} disabled={!selectedEmployee || addTransactions.isPending}>
+                    {addTransactions.isPending ? 'Lançando...' : 'Lançar no Financeiro'}
+                  </Button>
+                )}
                 <ErrorAlert error={addTransactions.error} />
               </div>
             </Card>
@@ -328,7 +353,7 @@ export default function FuncionariosPage() {
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Cargo</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Vínculo</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Salário Base</th>
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Ações</th>
+                      {podeEditar && <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500 text-right">Ações</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -338,14 +363,16 @@ export default function FuncionariosPage() {
                         <td className="px-4 py-3 text-base-300 text-[13px]">{e.role || '—'}</td>
                         <td className="px-4 py-3 text-base-400 text-[12px]">{e.paymentType}</td>
                         <td className="px-4 py-3 text-right font-mono text-base-200 text-[13px]">{formatBRL(e.salaryBase)}</td>
-                        <td className="px-4 py-3 text-right">
-                          <button onClick={() => { setEditing(e); setModalOpen(true) }} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition mr-1">
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => setDeleting(e)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
+                        {podeEditar && (
+                          <td className="px-4 py-3 text-right">
+                            <button onClick={() => { setEditing(e); setModalOpen(true) }} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition mr-1">
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => setDeleting(e)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -357,25 +384,29 @@ export default function FuncionariosPage() {
         )}
       </div>
 
-      <EmployeeFormModal
-        open={modalOpen}
-        onClose={() => { setModalOpen(false); setEditing(null) }}
-        onSave={handleSaveEmployee}
-        initial={editing}
-        isSaving={addEmployee.isPending || updateEmployee.isPending}
-        error={addEmployee.error || updateEmployee.error}
-      />
+      {podeEditar && (
+        <>
+          <EmployeeFormModal
+            open={modalOpen}
+            onClose={() => { setModalOpen(false); setEditing(null) }}
+            onSave={handleSaveEmployee}
+            initial={editing}
+            isSaving={addEmployee.isPending || updateEmployee.isPending}
+            error={addEmployee.error || updateEmployee.error}
+          />
 
-      <ConfirmDialog
-        open={!!deleting}
-        title="Remover colaborador?"
-        description={`Tem certeza que deseja remover "${deleting?.name}" do quadro?`}
-        confirmLabel="Remover"
-        danger
-        onCancel={() => setDeleting(null)}
-        onConfirm={() => { if (deleting) deleteEmployee.mutate(deleting, { onSuccess: () => setDeleting(null) }) }}
-        isLoading={deleteEmployee.isPending}
-      />
+          <ConfirmDialog
+            open={!!deleting}
+            title="Remover colaborador?"
+            description={`Tem certeza que deseja remover "${deleting?.name}" do quadro?`}
+            confirmLabel="Remover"
+            danger
+            onCancel={() => setDeleting(null)}
+            onConfirm={() => { if (deleting) deleteEmployee.mutate(deleting, { onSuccess: () => setDeleting(null) }) }}
+            isLoading={deleteEmployee.isPending}
+          />
+        </>
+      )}
     </div>
   )
 }

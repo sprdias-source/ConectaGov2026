@@ -86,7 +86,7 @@ export default function DashboardPage() {
   // entram na taxa as licitações já decididas).
   const funilDesfecho = useMemo(() => {
     const total = biddings.length
-    const finalizadas = biddings.filter((b) => b.status !== 'Em Andamento').length
+    const finalizadas = biddings.filter((b) => b.status === 'Ganhou' || b.status === 'Perdeu').length
     const ganhou = biddings.filter((b) => b.status === 'Ganhou').length
     return [
       { name: 'Total de Licitações', value: total, color: 'var(--color-accent-400)' },
@@ -114,7 +114,7 @@ export default function DashboardPage() {
   }, [transactions, todayStr])
 
   const winRate = biddings.length > 0
-    ? Math.round((biddings.filter((b) => b.status === 'Ganhou').length / biddings.filter((b) => b.status !== 'Em Andamento').length || 0) * 100)
+    ? Math.round((biddings.filter((b) => b.status === 'Ganhou').length / biddings.filter((b) => b.status === 'Ganhou' || b.status === 'Perdeu').length || 0) * 100)
     : 0
 
   // Dados do "Pulso da Operação": funil real do negócio (editais -> disputa

@@ -27,8 +27,11 @@ export default function ContabilidadePage() {
   const [dreYear, setDreYear] = useState(currentYear)
 
   const dre = useMemo(() => {
-    const receitas = transactions.filter((t) => t.type === 'Receber' && t.status === 'Pago' && t.dueDate.startsWith(String(currentYear))).reduce((s, t) => s + t.value, 0)
-    const despesas = transactions.filter((t) => t.type === 'Pagar' && t.status === 'Pago' && t.dueDate.startsWith(String(currentYear))).reduce((s, t) => s + t.value, 0)
+    // Regime de caixa (data de pagamento), não de competência (vencimento) —
+    // mesmo critério do dreDetalhado logo abaixo, pra os dois "Receita Bruta"
+    // do ano sempre baterem.
+    const receitas = transactions.filter((t) => t.type === 'Receber' && t.status === 'Pago' && t.paymentDate?.startsWith(String(currentYear))).reduce((s, t) => s + t.value, 0)
+    const despesas = transactions.filter((t) => t.type === 'Pagar' && t.status === 'Pago' && t.paymentDate?.startsWith(String(currentYear))).reduce((s, t) => s + t.value, 0)
     const lucro = receitas - despesas
     return { receitas, despesas, lucro }
   }, [transactions, currentYear])

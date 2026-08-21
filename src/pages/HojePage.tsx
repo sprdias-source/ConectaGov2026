@@ -32,7 +32,10 @@ export default function HojePage() {
           (new Date(p.prazo + 'T00:00:00').getTime() - new Date(hojeMemo + 'T00:00:00').getTime())
           / (1000 * 60 * 60 * 24)
         )
-        return dias <= JANELA_PENDENCIAS_SEMANA_DIAS
+        // Só entram pendências que ainda vão vencer (dias >= 0) — sem o
+        // limite inferior, itens já vencidos há muito tempo apareciam
+        // aqui rotulados como "esta semana".
+        return dias >= 0 && dias <= JANELA_PENDENCIAS_SEMANA_DIAS
       })
       .sort((a, b) => (a.prazo ?? '').localeCompare(b.prazo ?? ''))
   }, [pendencias])

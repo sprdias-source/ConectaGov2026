@@ -63,6 +63,7 @@ type LinhaRentabilidade = {
   porFonte: Record<FonteKey, number>
   total: number
   licitacoesGanhas: number
+  licitacoesGanhasPeriodo: number
   licitacoesDisputadas: number
   taxaExito: number
   ticketMedio: number
@@ -100,6 +101,7 @@ export default function RentabilidadePage() {
           porFonte: FONTES_VAZIAS(),
           total: 0,
           licitacoesGanhas: 0,
+          licitacoesGanhasPeriodo: 0,
           licitacoesDisputadas: 0,
           taxaExito: 0,
           ticketMedio: 0,
@@ -126,6 +128,14 @@ export default function RentabilidadePage() {
       const entry = getOrCreate(b.clientId)
       entry.licitacoesDisputadas += 1
       if (b.status === 'Ganhou') entry.licitacoesGanhas += 1
+      // Denominador do Ticket Médio: só conta como "ganha" dentro do mesmo
+      // período usado para somar entry.total — senão o ticket médio mistura
+      // receita filtrada por período com contagem de licitações de sempre.
+      // dataAbertura é o campo de data já usado em todo o app pra licitação
+      // (não existe um campo dedicado de "data em que foi ganha").
+      if (b.status === 'Ganhou' && (!range || (b.dataAbertura >= range.start && b.dataAbertura <= range.end))) {
+        entry.licitacoesGanhasPeriodo += 1
+      }
     }
 
     // No modo "cliente específico" a linha aparece mesmo sem nenhum
@@ -136,7 +146,7 @@ export default function RentabilidadePage() {
       .map((entry) => ({
         ...entry,
         taxaExito: entry.licitacoesDisputadas > 0 ? Math.round((entry.licitacoesGanhas / entry.licitacoesDisputadas) * 100) : 0,
-        ticketMedio: entry.licitacoesGanhas > 0 ? entry.total / entry.licitacoesGanhas : 0,
+        ticketMedio: entry.licitacoesGanhasPeriodo > 0 ? entry.total / entry.licitacoesGanhasPeriodo : 0,
       }))
       .sort((a, b) => b.total - a.total)
   }, [transactions, biddings, clients, range, fontesAtivas, clientId])

@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { fromBiddingChecklistItemRow, toBiddingChecklistItemInsert } from '../lib/mappers'
@@ -339,12 +340,15 @@ export function useHabilitacaoPorLicitacao(biddings: Bidding[]) {
   const { items: todosItens, isLoading: carregandoItens } = useAllBiddingChecklistItems()
   const { documents: todosDocs, isLoading: carregandoDocs } = useAllClientDocuments()
 
-  const habilitacaoPorId = new Map<string, HabilitacaoResumo>()
-  for (const b of biddings) {
-    const itensDaBidding = todosItens.filter((i) => i.biddingId === b.id)
-    const docsDoCliente = todosDocs.filter((d) => d.clientId === b.clientId)
-    habilitacaoPorId.set(b.id, calcularHabilitacao(itensDaBidding, docsDoCliente))
-  }
+  const habilitacaoPorId = useMemo(() => {
+    const mapa = new Map<string, HabilitacaoResumo>()
+    for (const b of biddings) {
+      const itensDaBidding = todosItens.filter((i) => i.biddingId === b.id)
+      const docsDoCliente = todosDocs.filter((d) => d.clientId === b.clientId)
+      mapa.set(b.id, calcularHabilitacao(itensDaBidding, docsDoCliente))
+    }
+    return mapa
+  }, [biddings, todosItens, todosDocs])
 
   return { habilitacaoPorId, isLoading: carregandoItens || carregandoDocs }
 }

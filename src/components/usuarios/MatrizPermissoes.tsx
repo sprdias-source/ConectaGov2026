@@ -83,11 +83,31 @@ export default function MatrizPermissoes({ supabase }: Props) {
           : p
       )
     )
-    await supabase
+    // upsert, não update: um UPDATE simples não cria a linha se essa
+    // combinação (membro, ferramenta) ainda não tinha nenhuma permissão
+    // gravada — o comando "funcionava" (sem erro), mas não gravava nada, e
+    // a tela continuava mostrando a mudança como salva enquanto o nível
+    // real no banco nunca mudava. Também checa o erro agora: se falhar
+    // (RLS, rede etc.), desfaz a atualização otimista e avisa o admin em
+    // vez de deixar a tela mentir que salvou.
+    const { error } = await supabase
       .from('member_permissions')
-      .update({ nivel_acesso: novoNivel, atualizado_em: new Date().toISOString() })
-      .eq('team_member_id', teamMemberId)
-      .eq('tool_key', toolKey)
+      .upsert(
+        { team_member_id: teamMemberId, tool_key: toolKey, nivel_acesso: novoNivel, atualizado_em: new Date().toISOString() },
+        { onConflict: 'team_member_id,tool_key' }
+      )
+
+    if (error) {
+      setPermissoes((atual) =>
+        atual.map((p) =>
+          p.team_member_id === teamMemberId && p.tool_key === toolKey
+            ? { ...p, nivel_acesso: nivelAntigo }
+            : p
+        )
+      )
+      setErro(`Não foi possível salvar a permissão de ${membro?.nome || membro?.email || 'membro'} em ${ferramenta?.nome || toolKey}: ${error.message}`)
+      return
+    }
 
     // Log de auditoria — best effort: se falhar, não interrompe a mudança
     // de permissão em si, só perde o registro do histórico.

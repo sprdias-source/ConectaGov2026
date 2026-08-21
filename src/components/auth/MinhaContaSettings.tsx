@@ -42,6 +42,10 @@ export default function MinhaContaSettings() {
     e.preventDefault()
     setMensagemSenha(null)
 
+    if (!senhaAtual) {
+      setMensagemSenha({ tipo: 'erro', texto: 'Informe a senha atual pra confirmar a troca.' })
+      return
+    }
     if (novaSenha.length < 8) {
       setMensagemSenha({ tipo: 'erro', texto: 'A nova senha precisa ter pelo menos 8 caracteres.' })
       return
@@ -55,10 +59,12 @@ export default function MinhaContaSettings() {
 
     // Reautentica com a senha atual antes de trocar, por segurança — evita
     // que alguém com a sessão aberta num dispositivo esquecido troque a
-    // senha sem saber a atual.
+    // senha sem saber a atual. senhaAtual já é obrigatório (checado acima),
+    // então esse passo sempre roda — antes, campo vazio pulava a checagem
+    // inteira e trocava a senha só com a sessão ativa.
     const { data: userData } = await supabase.auth.getUser()
     const email = userData?.user?.email
-    if (email && senhaAtual) {
+    if (email) {
       const { error: erroLogin } = await supabase.auth.signInWithPassword({
         email,
         password: senhaAtual,

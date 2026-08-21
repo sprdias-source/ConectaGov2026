@@ -19,20 +19,31 @@ export default function RelatoriosPage() {
   const { categoriesReceber } = useCategories()
   const { biddings } = useBiddings()
 
+  const currentYear = new Date().getFullYear()
   const [monthFilter, setMonthFilter] = useState('todos')
+  const [yearFilter, setYearFilter] = useState(String(currentYear))
   const [clientFilter, setClientFilter] = useState('todos')
   const [categoryFilter, setCategoryFilter] = useState('todas')
 
   const clientName = (id: string | null) => clients.find((c) => c.id === id)?.name ?? '—'
 
+  // Anos com lançamentos, pra popular o seletor — sem isso o filtro de Mês
+  // sozinho mistura julho de anos diferentes num único "Consolidado Filtrado".
+  const availableYears = useMemo(() => {
+    const years = new Set(transactions.map((t) => t.dueDate.slice(0, 4)))
+    years.add(String(currentYear))
+    return Array.from(years).sort((a, b) => Number(b) - Number(a))
+  }, [transactions, currentYear])
+
   const filtered = useMemo(() => {
     return transactions
       .filter((t) => t.type === 'Receber')
       .filter((t) => monthFilter === 'todos' || t.dueDate.slice(5, 7) === monthFilter)
+      .filter((t) => yearFilter === 'todos' || t.dueDate.slice(0, 4) === yearFilter)
       .filter((t) => clientFilter === 'todos' || t.clientId === clientFilter)
       .filter((t) => categoryFilter === 'todas' || t.category === categoryFilter)
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
-  }, [transactions, monthFilter, clientFilter, categoryFilter])
+  }, [transactions, monthFilter, yearFilter, clientFilter, categoryFilter])
 
   const total = filtered.reduce((s, t) => s + t.value, 0)
   const totalQuitado = filtered.filter((t) => t.status === 'Pago').reduce((s, t) => s + t.value, 0)
@@ -41,7 +52,7 @@ export default function RelatoriosPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [monthFilter, clientFilter, categoryFilter, setPage])
+  }, [monthFilter, yearFilter, clientFilter, categoryFilter, setPage])
 
   const exportCsv = () => {
     const header = 'Data Venc.,Cliente,Categoria,Descricao,Status,Valor\n'
@@ -104,6 +115,13 @@ export default function RelatoriosPage() {
               <Select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}>
                 <option value="todos">Todos os Meses</option>
                 {MONTHS.map((m, i) => <option key={m} value={String(i + 1).padStart(2, '0')}>{m}</option>)}
+              </Select>
+            </div>
+            <div className="w-32">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-base-500 block mb-1">Ano</label>
+              <Select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}>
+                <option value="todos">Todos os Anos</option>
+                {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
               </Select>
             </div>
             <div className="w-56">

@@ -40,7 +40,11 @@ export default function ModelosPage() {
   const { modelos, isLoading, addModelo, deleteModelo, getDownloadUrl } = useModelosDocumentos()
   const { clients } = useClients()
   const { biddings } = useBiddings()
-  const { nivel: nivelCadastros } = usePermissaoFerramenta('cadastros')
+  // 'modelos' — ferramenta própria (bate com a key do menu lateral). Antes
+  // reaproveitava por engano a permissão de 'cadastros' (dados de
+  // clientes), então liberar edição de clientes liberava edição do Banco
+  // de Modelos junto, mesmo que o admin nunca tenha pretendido isso.
+  const { nivel: nivelCadastros } = usePermissaoFerramenta('modelos')
   const podeEditar = nivelCadastros === 'edicao'
   const { showToast } = useToast()
   const [busca, setBusca] = useState('')
