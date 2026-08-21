@@ -33,8 +33,8 @@ export default function EditaisAnaliseSection({ client, onClose }: { client: Cli
   // antes não checava permissão nenhuma, então qualquer membro com acesso
   // só de visualização (ou nenhum) em "licitações" conseguia fazer tudo
   // isso mesmo assim.
-  const { nivel } = usePermissaoFerramenta('licitacoes')
-  const podeEditar = nivel === 'edicao'
+  const { nivel, carregando: carregandoPermissao } = usePermissaoFerramenta('licitacoes')
+  const podeEditar = nivel === 'edicao' && !carregandoPermissao
 
   const editalInputRef = useRef<HTMLInputElement>(null)
   const trInputRef = useRef<HTMLInputElement>(null)

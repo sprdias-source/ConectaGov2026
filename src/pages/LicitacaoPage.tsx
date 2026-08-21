@@ -305,8 +305,8 @@ function EtapaTrilha({ etapaAtual, onMudar, atualizando, podeEditar }: {
 
 function ResultadoLicitacao({ bidding }: { bidding: Bidding }) {
   const { marcarResultado } = useBiddings()
-  const { nivel } = usePermissaoFerramenta('licitacoes')
-  const podeEditar = nivel === 'edicao'
+  const { nivel, carregando: carregandoPermissao } = usePermissaoFerramenta('licitacoes')
+  const podeEditar = nivel === 'edicao' && !carregandoPermissao
   const [status, setStatus] = useState<BiddingStatus>(bidding.status)
   const [motivo, setMotivo] = useState(bidding.motivoPerda ?? '')
   const [motivoDesistencia, setMotivoDesistencia] = useState(bidding.motivoDesistencia ?? '')
@@ -384,8 +384,8 @@ function ResultadoLicitacao({ bidding }: { bidding: Bidding }) {
 
 function HistoricoVersoes({ biddingId }: { biddingId: string }) {
   const { versoes, isLoading, marcarComoEnviada } = useBiddingItemVersions(biddingId)
-  const { nivel } = usePermissaoFerramenta('licitacoes')
-  const podeEditar = nivel === 'edicao'
+  const { nivel, carregando: carregandoPermissao } = usePermissaoFerramenta('licitacoes')
+  const podeEditar = nivel === 'edicao' && !carregandoPermissao
   const [aberto, setAberto] = useState(true)
   const [versaoExpandida, setVersaoExpandida] = useState<string | null>(null)
 
@@ -508,8 +508,8 @@ function edicaoLinhaPadrao(
 function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
   const { items, isLoading: isLoadingItems } = useBiddingItemsDaLicitacao(bidding.id)
   const { analysis, isLoading: isLoadingAnalysis } = useBiddingAnalysis(bidding.id)
-  const { nivel } = usePermissaoFerramenta('licitacoes')
-  const podeEditar = nivel === 'edicao'
+  const { nivel, carregando: carregandoPermissao } = usePermissaoFerramenta('licitacoes')
+  const podeEditar = nivel === 'edicao' && !carregandoPermissao
   const { showToast } = useToast()
   const { files: anexos, isLoading: isLoadingAnexos, uploadFile, deleteFile } = useAttachedFiles('licitacao', bidding.id)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -838,8 +838,8 @@ function extrairLogradouroPreview(endereco: string, bairro: string | null | unde
 
 function AbaProposta({ bidding }: { bidding: Bidding }) {
   const { items, isLoading, salvarRateio, sincronizarItens } = useBiddingItemsDaLicitacao(bidding.id)
-  const { nivel } = usePermissaoFerramenta('licitacoes')
-  const podeEditar = nivel === 'edicao'
+  const { nivel, carregando: carregandoPermissao } = usePermissaoFerramenta('licitacoes')
+  const podeEditar = nivel === 'edicao' && !carregandoPermissao
   const { updateBidding } = useBiddings()
   const { clients } = useClients()
   const client = clients.find((c) => c.id === bidding.clientId)
@@ -1649,8 +1649,8 @@ type PrecificacaoDraft = { custo: string; margem: string; participa: boolean }
 function AbaPrecificacao({ bidding }: { bidding: Bidding }) {
   const { items, isLoading, aplicarPrecificacao } = useBiddingItems(bidding.id)
   const { profiles, isLoading: carregandoPerfis } = usePricingProfiles()
-  const { nivel } = usePermissaoFerramenta('licitacoes')
-  const podeEditar = nivel === 'edicao'
+  const { nivel, carregando: carregandoPermissao } = usePermissaoFerramenta('licitacoes')
+  const podeEditar = nivel === 'edicao' && !carregandoPermissao
   const { showToast } = useToast()
 
   const [perfilId, setPerfilId] = useState('')
@@ -1823,8 +1823,8 @@ function AbaPrecificacao({ bidding }: { bidding: Bidding }) {
 function AbaSessaoAoVivo({ bidding }: { bidding: Bidding }) {
   const { items, isLoading, sincronizarItens } = useBiddingItemsDaLicitacao(bidding.id)
   const { analysis } = useBiddingAnalysis(bidding.id)
-  const { nivel } = usePermissaoFerramenta('licitacoes')
-  const podeEditar = nivel === 'edicao'
+  const { nivel, carregando: carregandoPermissao } = usePermissaoFerramenta('licitacoes')
+  const podeEditar = nivel === 'edicao' && !carregandoPermissao
   const { showToast } = useToast()
 
   const analise = (analysis?.analise ?? null) as AnaliseEdital | null
@@ -2140,8 +2140,8 @@ export default function LicitacaoPage() {
   const { biddings, updateEtapa, updateBidding } = useBiddings()
   const { showToast } = useToast()
   const { clients } = useClients()
-  const { nivel: nivelLicitacoes } = usePermissaoFerramenta('licitacoes')
-  const podeEditar = nivelLicitacoes === 'edicao'
+  const { nivel: nivelLicitacoes, carregando: carregandoPermissao } = usePermissaoFerramenta('licitacoes')
+  const podeEditar = nivelLicitacoes === 'edicao' && !carregandoPermissao
   const [searchParams] = useSearchParams()
   // Permite chegar direto numa aba específica via link (ex: um alerta de
   // pendência em ?aba=checklist) — só aceita chaves reais de ABAS, senão

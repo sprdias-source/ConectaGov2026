@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { Upload, FileText, Download, Trash2, Loader2 } from 'lucide-react'
-import { useAttachedFiles } from '../../hooks/useAttachedFiles'
+import { useAttachedFiles, validateFileBeforeUpload } from '../../hooks/useAttachedFiles'
 import { useToast } from '../../hooks/useToast'
 import type { FileCategory, FileEntityType } from '../../types/domain'
 function formatSize(bytes: number | null): string {
@@ -24,6 +24,18 @@ export default function DocumentUploader({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    // Validação client-side (tamanho + tipo) ANTES de disparar o upload —
+    // é só uma barreira de UX/robustez, não segurança de verdade (isso só
+    // existe mesmo em RLS/policy do Storage no Supabase, fora do alcance
+    // daqui): evita que o usuário espere o upload todo pra descobrir que o
+    // arquivo é grande/inválido demais, ou que um arquivo fora do que o
+    // `accept` promete suba mesmo assim.
+    const erroValidacao = validateFileBeforeUpload(file)
+    if (erroValidacao) {
+      showToast(erroValidacao, 'error')
+      e.target.value = ''
+      return
+    }
     // entityType/entityId já foram passados na chamada do hook acima —
     // o hook já sabe pra qual entidade este upload pertence, não precisa
     // (nem pode) mandar de novo aqui.
