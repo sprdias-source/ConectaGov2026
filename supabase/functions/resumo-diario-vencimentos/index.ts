@@ -1,6 +1,6 @@
 // Edge Function: resumo-diario-vencimentos
 // Roda automaticamente todo dia de manhã (configurado via pg_cron, veja
-// 007_resumo_diario.sql e 032_cron_secret_e_backup_por_conta.sql) e envia
+// 007_resumo_diario.sql e 039_agendar_resumo_diario.sql) e envia
 // para o e-mail de CADA dono de conta (via Supabase Auth Admin API) um
 // resumo do que vence hoje, do que está atrasado, e do que foi
 // recebido/pago no dia anterior — só com dados daquela conta.
@@ -11,10 +11,10 @@
 // cadastrada, o resumo financeiro de uma vazava pra outra. Corrigido
 // aqui: cada conta recebe só o próprio resumo, no próprio e-mail.
 //
-// VARIÁVEIS DE AMBIENTE (reaproveita as mesmas do backup-semanal):
+// VARIÁVEIS DE AMBIENTE (reaproveita as mesmas do backup-diario):
 // - RESEND_API_KEY
 // - BACKUP_EMAIL_FROM (mesmo remetente)
-// - CRON_SECRET: segredo compartilhado só com o pg_cron (veja backup-semanal)
+// - CRON_SECRET: segredo compartilhado só com o pg_cron (veja backup-diario)
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
