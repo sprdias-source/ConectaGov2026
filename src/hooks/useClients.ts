@@ -191,15 +191,17 @@ export function useClients() {
   })
 
   // Verifica se o cliente tem histórico financeiro real (qualquer
-  // transação já paga, em qualquer momento) — usado para decidir se o
-  // alerta de exclusão precisa do aviso mais forte sobre perda de dados.
-  const checkClientHasFinancialHistory = async (clientId: string): Promise<boolean> => {
-    const { count } = await supabase
-      .from('transactions')
-      .select('id', { count: 'exact', head: true })
-      .eq('client_id', clientId)
-      .eq('status', 'Pago')
-    return (count ?? 0) > 0
+  // transação já paga) e/ou contratos jurídicos gerados — usado pra
+  // decidir se o alerta de exclusão precisa do aviso mais forte sobre
+  // perda de dados. Contratos entram aqui porque contracts.client_id tem
+  // ON DELETE CASCADE (migration 001): excluir o cliente apaga o texto
+  // jurídico completo do contrato sem nenhum aviso, se não checarmos.
+  const checkClientHasFinancialHistory = async (clientId: string): Promise<{ hasFinancialHistory: boolean; hasContracts: boolean }> => {
+    const [{ count: txCount }, { count: contractCount }] = await Promise.all([
+      supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('client_id', clientId).eq('status', 'Pago'),
+      supabase.from('contracts').select('id', { count: 'exact', head: true }).eq('client_id', clientId),
+    ])
+    return { hasFinancialHistory: (txCount ?? 0) > 0, hasContracts: (contractCount ?? 0) > 0 }
   }
 
   return {

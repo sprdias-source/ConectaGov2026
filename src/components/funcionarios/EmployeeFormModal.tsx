@@ -32,8 +32,15 @@ export default function EmployeeFormModal({
   }, [open, initial])
 
   const isProLabore = form.paymentType === 'Sócio/Pró-labore'
-  const inssValor = isProLabore ? (form.salaryBase ?? 0) * ((form.inssPercentual ?? 0) / 100) : 0
-  const irrfValor = isProLabore ? (form.salaryBase ?? 0) * ((form.irrfPercentual ?? 0) / 100) : 0
+  const isCLT = form.paymentType === 'CLT'
+  // INSS e IRRF se aplicam a qualquer vínculo com retenção na fonte
+  // (Sócio/Pró-labore e CLT) — mesma regra usada no fechamento de folha em
+  // FuncionariosPage.tsx. Antes, esses campos só apareciam pra Pró-labore,
+  // então todo colaborador CLT nascia travado em INSS 11%/IRRF 0% sem
+  // nenhum jeito de corrigir pela tela.
+  const temRetencao = isProLabore || isCLT
+  const inssValor = temRetencao ? (form.salaryBase ?? 0) * ((form.inssPercentual ?? 0) / 100) : 0
+  const irrfValor = temRetencao ? (form.salaryBase ?? 0) * ((form.irrfPercentual ?? 0) / 100) : 0
   const liquido = (form.salaryBase ?? 0) - inssValor - irrfValor - (form.outrosEncargos ?? 0)
 
   const handleSubmit = (e: FormEvent) => {
@@ -61,9 +68,11 @@ export default function EmployeeFormModal({
           </Field>
         </div>
 
-        {isProLabore && (
+        {temRetencao && (
           <div className="bg-base-850/60 border border-base-700/50 rounded-lg p-4 flex flex-col gap-3">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-base-400">Encargos sobre Pró-Labore</p>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-base-400">
+              {isProLabore ? 'Encargos sobre Pró-Labore' : 'Encargos sobre Salário (CLT)'}
+            </p>
             <div className="grid grid-cols-2 gap-4">
               <Field label="INSS (%)">
                 <Input type="number" step="0.01" value={form.inssPercentual ?? 11} onChange={(e) => setForm({ ...form, inssPercentual: parseFloat(e.target.value) || 0 })} />
@@ -88,6 +97,12 @@ export default function EmployeeFormModal({
                 <span>Valor Líquido a Pagar</span>
                 <span className="font-mono">{formatBRL(liquido)}</span>
               </div>
+              {isCLT && (
+                <div className="flex justify-between text-base-500 pt-1">
+                  <span>FGTS (encargo patronal, 8% — não desconta do líquido)</span>
+                  <span className="font-mono">{formatBRL((form.salaryBase ?? 0) * 0.08)}</span>
+                </div>
+              )}
             </div>
           </div>
         )}

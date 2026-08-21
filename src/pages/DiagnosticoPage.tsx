@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { ShieldCheck, ShieldAlert, Loader2, RefreshCw } from 'lucide-react'
-import { PageHeader, Card } from '../components/ui/Primitives'
+import { PageHeader, Card, EmptyState } from '../components/ui/Primitives'
 import { useSchemaHealthCheck } from '../hooks/useSchemaHealthCheck'
 import { useAuditLog } from '../hooks/useAuditLog'
+import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import { useQueryClient } from '@tanstack/react-query'
 
 // Log de auditoria geral da conta — os eventos (logEvent, useAuditLog.ts)
@@ -60,8 +61,32 @@ function LogAuditoria() {
 export default function DiagnosticoPage() {
   const { data, isLoading, isFetching } = useSchemaHealthCheck()
   const queryClient = useQueryClient()
+  // Mesma ferramenta 'usuarios' usada em /usuarios — essa tela expõe o log
+  // de auditoria da conta inteira (quem fez o quê), então trata como área
+  // de governança, não algo que qualquer membro convidado deva ver.
+  const { nivel, carregando } = usePermissaoFerramenta('usuarios')
+  const podeAcessar = nivel === 'edicao'
 
   const recheck = () => queryClient.invalidateQueries({ queryKey: ['schema_health_check'] })
+
+  if (carregando) return null
+
+  if (!podeAcessar) {
+    return (
+      <div className="pb-10">
+        <PageHeader title="Diagnóstico do Sistema" icon={ShieldCheck} />
+        <div className="px-6 mt-3">
+          <Card className="p-5">
+            <EmptyState
+              icon={ShieldAlert}
+              title="Acesso restrito"
+              description="Você não tem permissão pra ver o diagnóstico e o log de auditoria desta conta. Peça ao dono da conta pra liberar acesso à ferramenta 'Usuários' se precisar entrar aqui."
+            />
+          </Card>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="pb-10">

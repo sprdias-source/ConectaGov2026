@@ -190,11 +190,28 @@ export function useEmpenhos() {
       const allTxs = buildCommissionTransactions(updated)
       const { data: paidTxs } = await supabase
         .from('transactions')
-        .select('projection_month_number')
+        .select('projection_month_number, value')
         .eq('empenho_id', updated.id)
         .eq('status', 'Pago')
       const paidNumbers = new Set((paidTxs ?? []).map((p) => p.projection_month_number))
-      const txsToInsert = allTxs.filter((t) => !paidNumbers.has(t.projectionMonthNumber ?? null))
+      let txsToInsert = allTxs.filter((t) => !paidNumbers.has(t.projectionMonthNumber ?? null))
+
+      // No modo "quantidade_fixa" as parcelas dividem o total entre si — se
+      // já existem parcelas pagas (a valores antigos, que nunca são alterados),
+      // o valor já recebido precisa ser descontado do novo valorComissaoTotal
+      // antes de redistribuir o restante entre as parcelas ainda não pagas.
+      // Sem isso, a soma final (pagas + regeradas) não bate com o novo total.
+      if (updated.modoParcelamento === 'quantidade_fixa' && paidNumbers.size > 0 && txsToInsert.length > 0) {
+        const totalJaPago = (paidTxs ?? []).reduce((s, p) => s + (p.value ?? 0), 0)
+        const restante = updated.valorComissaoTotal - totalJaPago
+        const splitValue = Math.round((restante / txsToInsert.length) * 100) / 100
+        txsToInsert = txsToInsert.map((t, idx) => ({
+          ...t,
+          value: idx === txsToInsert.length - 1
+            ? Math.round((restante - splitValue * (txsToInsert.length - 1)) * 100) / 100
+            : splitValue,
+        }))
+      }
 
       if (txsToInsert.length > 0) {
         const { error: txError } = await supabase

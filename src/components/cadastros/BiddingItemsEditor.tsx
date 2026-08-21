@@ -248,7 +248,15 @@ export default function BiddingItemsEditor({
         )}
       </td>
       <td className="px-2 py-1.5">
-        <Input type="number" step="0.01" value={d.valorUnitarioOfertado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioOfertado: parseFloat(e.target.value) || undefined })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
+        <Input type="number" step="0.01" value={d.valorUnitarioOfertado ?? ''} onChange={(e) => {
+          // CORREÇÃO DE BUG: `parseFloat(v) || undefined` trata 0 como
+          // falsy — impedia registrar R$0,00 e apagava o "0" inicial
+          // enquanto o usuário ainda digitava um decimal. Decide pelo
+          // texto digitado, não pelo número já convertido.
+          const raw = e.target.value
+          const parsed = parseFloat(raw)
+          updateRow(d._key, { valorUnitarioOfertado: raw.trim() && !isNaN(parsed) ? parsed : undefined })
+        }} className="!py-1 !px-2 text-[12px]" placeholder="—" />
       </td>
       <td className="px-2 py-1.5 text-right font-mono text-[12px] text-base-300">
         {formatBRL((d.quantidade ?? 0) * (d.valorUnitarioOfertado ?? d.valorUnitarioLicitado ?? 0))}
@@ -332,7 +340,11 @@ export default function BiddingItemsEditor({
         </div>
         <div>
           <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Vl. Unit. Ofertado</p>
-          <Input type="number" step="0.01" value={d.valorUnitarioOfertado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioOfertado: parseFloat(e.target.value) || undefined })} className="!py-1.5 !px-2 text-[13px]" placeholder="—" />
+          <Input type="number" step="0.01" value={d.valorUnitarioOfertado ?? ''} onChange={(e) => {
+            const raw = e.target.value
+            const parsed = parseFloat(raw)
+            updateRow(d._key, { valorUnitarioOfertado: raw.trim() && !isNaN(parsed) ? parsed : undefined })
+          }} className="!py-1.5 !px-2 text-[13px]" placeholder="—" />
         </div>
         <div>
           <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Vl. Total</p>

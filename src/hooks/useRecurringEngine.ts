@@ -21,13 +21,18 @@ const HORIZON = 3
 // CORREÇÃO DE BUG: mesmo problema de overflow do setMonth (ver
 // useEmpenhos.ts) — somamos o mês primeiro fixando o dia em 1 (que
 // sempre existe em qualquer mês), e só depois aplicamos o dia de
-// vencimento desejado, já limitado a 28 para nunca cair em dia
-// inexistente em fevereiro.
+// vencimento desejado, limitado ao ÚLTIMO DIA REAL do mês de destino
+// (obtido via `new Date(ano, mês+1, 0).getDate()`) — não mais fixo em
+// 28, que cortava indevidamente o dia de vencimento em qualquer mês
+// com 29, 30 ou 31 dias.
 function addMonthsKeepingDay(dateStr: string, months: number, targetDay?: number): string {
   const d = new Date(dateStr + 'T12:00:00')
   d.setDate(1)
   d.setMonth(d.getMonth() + months)
-  if (targetDay) d.setDate(Math.min(targetDay, 28))
+  if (targetDay) {
+    const lastDayOfMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+    d.setDate(Math.min(targetDay, lastDayOfMonth))
+  }
   return dateToLocalISO(d)
 }
 

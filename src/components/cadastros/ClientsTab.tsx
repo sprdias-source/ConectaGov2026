@@ -48,10 +48,13 @@ export default function ClientsTab() {
       setFinancialWarning(undefined)
       return
     }
-    checkClientHasFinancialHistory(deleting.id).then((hasHistory) => {
+    checkClientHasFinancialHistory(deleting.id).then(({ hasFinancialHistory, hasContracts }) => {
+      const avisos: string[] = []
+      if (hasFinancialHistory) avisos.push('transações financeiras já pagas')
+      if (hasContracts) avisos.push('contrato(s) jurídico(s) gerado(s)')
       setFinancialWarning(
-        hasHistory
-          ? 'Este cliente possui transações financeiras já pagas — todo esse histórico será perdido junto.'
+        avisos.length > 0
+          ? `Este cliente possui ${avisos.join(' e ')} — tudo isso será perdido junto, sem chance de recuperar.`
           : undefined
       )
     })

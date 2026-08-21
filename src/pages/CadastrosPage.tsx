@@ -71,7 +71,12 @@ export default function CadastrosPage() {
   const inicioArrasteRef = useRef({ x: 0, y: 0 })
 
   useEffect(() => {
-    localStorage.setItem(ORDEM_ABAS_STORAGE_KEY, JSON.stringify(ordemAbas))
+    try {
+      localStorage.setItem(ORDEM_ABAS_STORAGE_KEY, JSON.stringify(ordemAbas))
+    } catch {
+      // Navegação privada, cota estourada, etc. — a ordem continua valendo
+      // na sessão atual, só não persiste pra próxima.
+    }
   }, [ordemAbas])
 
   const contagens: Partial<Record<Tab, number>> = {

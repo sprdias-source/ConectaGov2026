@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { useAttachedFiles } from '../../hooks/useAttachedFiles'
 import { useBiddings } from '../../hooks/useBiddings'
 import { useToast } from '../../hooks/useToast'
+import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import BiddingFormModal from './BiddingFormModal'
 import type { Client, Bidding, BiddingItem } from '../../types/domain'
 
@@ -28,6 +29,12 @@ export default function EditaisAnaliseSection({ client, onClose }: { client: Cli
   const { showToast } = useToast()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  // Esta seção envia/apaga arquivos de edital e cria licitações completas —
+  // antes não checava permissão nenhuma, então qualquer membro com acesso
+  // só de visualização (ou nenhum) em "licitações" conseguia fazer tudo
+  // isso mesmo assim.
+  const { nivel } = usePermissaoFerramenta('licitacoes')
+  const podeEditar = nivel === 'edicao'
 
   const editalInputRef = useRef<HTMLInputElement>(null)
   const trInputRef = useRef<HTMLInputElement>(null)
@@ -81,28 +88,30 @@ export default function EditaisAnaliseSection({ client, onClose }: { client: Cli
     <div className="border-t border-base-800 pt-4 mt-4">
       <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
         <span className="text-[11px] font-bold uppercase tracking-wider text-base-400">Editais em Análise</span>
-        <div className="flex gap-1.5">
-          <button
-            type="button"
-            onClick={() => editalInputRef.current?.click()}
-            disabled={uploadFile.isPending}
-            className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-accent-300 bg-base-850 border border-base-700 rounded-lg px-2.5 py-1.5 transition disabled:opacity-50"
-          >
-            {uploadFile.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-            Edital
-          </button>
-          <input ref={editalInputRef} type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={(e) => handleUpload(e, 'Edital')} />
-          <button
-            type="button"
-            onClick={() => trInputRef.current?.click()}
-            disabled={uploadFile.isPending}
-            className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-accent-300 bg-base-850 border border-base-700 rounded-lg px-2.5 py-1.5 transition disabled:opacity-50"
-          >
-            {uploadFile.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-            Termo de Referência
-          </button>
-          <input ref={trInputRef} type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={(e) => handleUpload(e, 'Termo de Referência')} />
-        </div>
+        {podeEditar && (
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={() => editalInputRef.current?.click()}
+              disabled={uploadFile.isPending}
+              className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-accent-300 bg-base-850 border border-base-700 rounded-lg px-2.5 py-1.5 transition disabled:opacity-50"
+            >
+              {uploadFile.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+              Edital
+            </button>
+            <input ref={editalInputRef} type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={(e) => handleUpload(e, 'Edital')} />
+            <button
+              type="button"
+              onClick={() => trInputRef.current?.click()}
+              disabled={uploadFile.isPending}
+              className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-accent-300 bg-base-850 border border-base-700 rounded-lg px-2.5 py-1.5 transition disabled:opacity-50"
+            >
+              {uploadFile.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+              Termo de Referência
+            </button>
+            <input ref={trInputRef} type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={(e) => handleUpload(e, 'Termo de Referência')} />
+          </div>
+        )}
       </div>
 
       {files.length === 0 ? (
@@ -123,32 +132,38 @@ export default function EditaisAnaliseSection({ client, onClose }: { client: Cli
                   <button onClick={() => handleDownload(f)} disabled={downloadingId === f.id} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
                     {downloadingId === f.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                   </button>
-                  <button onClick={() => deleteFile.mutate(f)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  {podeEditar && (
+                    <button onClick={() => deleteFile.mutate(f)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
           </div>
 
-          <button
-            type="button"
-            onClick={() => setModalCriarAberto(true)}
-            className="flex items-center gap-1.5 text-[12px] font-semibold text-base-950 bg-accent-500 hover:bg-accent-400 rounded-lg px-3 py-1.5 transition"
-          >
-            <Gavel className="w-3.5 h-3.5" /> Criar Licitação a partir destes Arquivos
-          </button>
+          {podeEditar && (
+            <button
+              type="button"
+              onClick={() => setModalCriarAberto(true)}
+              className="flex items-center gap-1.5 text-[12px] font-semibold text-base-950 bg-accent-500 hover:bg-accent-400 rounded-lg px-3 py-1.5 transition"
+            >
+              <Gavel className="w-3.5 h-3.5" /> Criar Licitação a partir destes Arquivos
+            </button>
+          )}
         </>
       )}
 
-      <BiddingFormModal
-        open={modalCriarAberto}
-        onClose={() => setModalCriarAberto(false)}
-        onSave={handleCriarLicitacao}
-        clients={[client]}
-        isSaving={addBidding.isPending}
-        error={addBidding.error}
-      />
+      {podeEditar && (
+        <BiddingFormModal
+          open={modalCriarAberto}
+          onClose={() => setModalCriarAberto(false)}
+          onSave={handleCriarLicitacao}
+          clients={[client]}
+          isSaving={addBidding.isPending}
+          error={addBidding.error}
+        />
+      )}
     </div>
   )
 }

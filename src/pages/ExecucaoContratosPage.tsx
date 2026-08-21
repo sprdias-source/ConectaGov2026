@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { ClipboardCheck, Plus, CheckCircle2, Circle, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import { PageHeader, Card, EmptyState } from '../components/ui/Primitives'
 import { SkeletonList } from '../components/ui/Skeleton'
 import { Button, Input } from '../components/ui/FormControls'
-import { useContractMarcos } from '../hooks/useContractMarcos'
+import { useContractMarcos, useContractMarcosPorContratos } from '../hooks/useContractMarcos'
 import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import { supabase } from '../lib/supabase'
@@ -11,8 +11,11 @@ import { fromContractRow } from '../lib/mappers'
 import { todayLocalISO } from '../lib/dateUtils'
 import type { Contract, ContractMarco } from '../types/domain'
 
-function ContratoCard({ contrato, clientName, podeEditar }: { contrato: Contract; clientName: string; podeEditar: boolean }) {
-  const { marcos, addMarco, concluirMarco, deleteMarco } = useContractMarcos(contrato.id)
+function ContratoCard({ contrato, clientName, podeEditar, marcos }: { contrato: Contract; clientName: string; podeEditar: boolean; marcos: ContractMarco[] }) {
+  // Só usa este hook pelas mutations — a leitura vem pronta via prop
+  // (useContractMarcosPorContratos, uma query só pra todos os contratos da
+  // página, em vez de cada card buscar os próprios marcos sozinho).
+  const { addMarco, concluirMarco, deleteMarco } = useContractMarcos(contrato.id, { habilitarLeitura: false })
   const [aberto, setAberto] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ descricao: '', dataPrevista: '', valor: '' })
@@ -110,7 +113,11 @@ function ContratoCard({ contrato, clientName, podeEditar }: { contrato: Contract
 
 export default function ExecucaoContratosPage() {
   const { clients } = useClients()
-  const { nivel: nivelCadastros } = usePermissaoFerramenta('cadastros')
+  // 'contratos' — igual ContratosPage.tsx (mesmo domínio funcional). Antes
+  // essa tela checava 'cadastros' por engano: um admin que só desse
+  // "edição" em Contratos (sem mexer em Cadastros) não conseguia gerenciar
+  // marcos de execução, e o inverso também acontecia.
+  const { nivel: nivelCadastros } = usePermissaoFerramenta('contratos')
   const podeEditar = nivelCadastros === 'edicao'
   const [contratos, setContratos] = useState<Contract[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -130,6 +137,9 @@ export default function ExecucaoContratosPage() {
 
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? 'Cliente removido'
 
+  const contratoIds = useMemo(() => contratos.map((c) => c.id), [contratos])
+  const { marcosPorContrato } = useContractMarcosPorContratos(contratoIds)
+
   return (
     <div className="pb-10">
       <PageHeader
@@ -148,7 +158,7 @@ export default function ExecucaoContratosPage() {
         ) : (
           <div className="flex flex-col gap-2">
             {contratos.map((c) => (
-              <ContratoCard key={c.id} contrato={c} clientName={clientName(c.clientId)} podeEditar={podeEditar} />
+              <ContratoCard key={c.id} contrato={c} clientName={clientName(c.clientId)} podeEditar={podeEditar} marcos={marcosPorContrato.get(c.id) ?? []} />
             ))}
           </div>
         )}

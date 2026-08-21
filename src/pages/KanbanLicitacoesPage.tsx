@@ -258,9 +258,13 @@ export default function KanbanLicitacoesPage() {
   const podeEditar = nivelLicitacoes === 'edicao' && !carregandoPermissao
   const { showToast } = useToast()
 
-  const [visualizacao, setVisualizacao] = useState<Visualizacao>(
-    () => (localStorage.getItem('cg_kanban_visualizacao') as Visualizacao) || 'quadro'
-  )
+  const [visualizacao, setVisualizacao] = useState<Visualizacao>(() => {
+    try {
+      return (localStorage.getItem('cg_kanban_visualizacao') as Visualizacao) || 'quadro'
+    } catch {
+      return 'quadro'
+    }
+  })
   const [editando, setEditando] = useState<Bidding | null>(null)
   const [encerrando, setEncerrando] = useState<Bidding | null>(null)
   const [arrastando, setArrastando] = useState<Bidding | null>(null)
@@ -286,7 +290,12 @@ export default function KanbanLicitacoesPage() {
 
   const mudarVisualizacao = (v: Visualizacao) => {
     setVisualizacao(v)
-    localStorage.setItem('cg_kanban_visualizacao', v)
+    try {
+      localStorage.setItem('cg_kanban_visualizacao', v)
+    } catch {
+      // Navegação privada, cota estourada, etc. — a troca de visualização
+      // continua funcionando na sessão atual, só não persiste pra próxima.
+    }
   }
 
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? 'Cliente removido'

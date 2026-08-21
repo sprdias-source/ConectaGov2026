@@ -9,8 +9,12 @@ const STORAGE_KEY = 'conectagov-theme'
 // Sem escolha salva ainda, mantém o padrão de sempre: modo escuro.
 function getStoredTheme(): Theme {
   if (typeof window === 'undefined') return 'dark'
-  const stored = window.localStorage.getItem(STORAGE_KEY)
-  return stored === 'light' ? 'light' : 'dark'
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY)
+    return stored === 'light' ? 'light' : 'dark'
+  } catch {
+    return 'dark'
+  }
 }
 
 export function useTheme() {
@@ -18,7 +22,12 @@ export function useTheme() {
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
-    window.localStorage.setItem(STORAGE_KEY, theme)
+    try {
+      window.localStorage.setItem(STORAGE_KEY, theme)
+    } catch {
+      // Navegação privada, cota estourada, etc. — o tema continua valendo
+      // na sessão atual, só não persiste pra próxima.
+    }
   }, [theme])
 
   const toggleTheme = () => {

@@ -5,6 +5,7 @@ import { formatBRL } from '../hooks/useAccountBalances'
 import { useTransactions } from '../hooks/useTransactions'
 import { useFinancialAccounts } from '../hooks/useFinancialAccounts'
 import { useBankReconciliations } from '../hooks/useBankReconciliations'
+import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import { todayLocalISO } from '../lib/dateUtils'
 
 interface OFXEntry {
@@ -102,6 +103,11 @@ export default function ExtratoOFXPage() {
   const { transactions } = useTransactions()
   const { accounts } = useFinancialAccounts()
   const { reconciliations, salvar, remover } = useBankReconciliations()
+  // Antes não checava permissão nenhuma — qualquer membro conseguia salvar
+  // e apagar conciliações bancárias mesmo com acesso só de visualização
+  // (ou nenhum) em financeiro.
+  const { nivel } = usePermissaoFerramenta('financeiro')
+  const podeEditar = nivel === 'edicao'
   const [entries, setEntries] = useState<OFXEntry[]>([])
   const [saldoFinal, setSaldoFinal] = useState<SaldoFinalOFX | null>(null)
   const [accountId, setAccountId] = useState<string>('')
@@ -329,14 +335,16 @@ export default function ExtratoOFXPage() {
                         {Math.abs(conciliacao.diferenca) < 0.01 ? 'Bateu' : formatBRL(conciliacao.diferenca)}
                       </p>
                     </div>
-                    <button
-                      onClick={handleSalvar}
-                      disabled={salvar.isPending}
-                      className="ml-auto inline-flex items-center gap-1.5 bg-accent-500 hover:bg-accent-400 text-base-950 font-bold text-[12px] px-3.5 py-2 rounded-lg transition disabled:opacity-50 shrink-0"
-                    >
-                      <Save className="w-3.5 h-3.5" />
-                      {salvar.isPending ? 'Salvando...' : salvo ? 'Salvo' : 'Salvar conciliacao deste mes'}
-                    </button>
+                    {podeEditar && (
+                      <button
+                        onClick={handleSalvar}
+                        disabled={salvar.isPending}
+                        className="ml-auto inline-flex items-center gap-1.5 bg-accent-500 hover:bg-accent-400 text-base-950 font-bold text-[12px] px-3.5 py-2 rounded-lg transition disabled:opacity-50 shrink-0"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        {salvar.isPending ? 'Salvando...' : salvo ? 'Salvo' : 'Salvar conciliacao deste mes'}
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -477,13 +485,15 @@ export default function ExtratoOFXPage() {
                         </td>
                         <td className="px-4 py-2.5 text-base-500 text-[11px]">{rec.lancamentosEncontrados} / {rec.totalLancamentos}</td>
                         <td className="px-4 py-2.5 text-right">
-                          <button
-                            onClick={() => remover.mutate(rec.id)}
-                            title="Excluir registro"
-                            className="text-base-600 hover:text-negative-400 transition"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {podeEditar && (
+                            <button
+                              onClick={() => remover.mutate(rec.id)}
+                              title="Excluir registro"
+                              className="text-base-600 hover:text-negative-400 transition"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     )
