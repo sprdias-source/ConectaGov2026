@@ -118,6 +118,7 @@ export interface Bidding {
   modeloCustomizadoPath: string | null
   motivoPerda: string | null
   motivoDesistencia: string | null
+  motivoCancelamento: string | null
   isActive: boolean
   createdAt: string
   updatedAt: string

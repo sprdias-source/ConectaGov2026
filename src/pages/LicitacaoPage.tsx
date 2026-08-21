@@ -308,10 +308,12 @@ function ResultadoLicitacao({ bidding }: { bidding: Bidding }) {
   const [status, setStatus] = useState<BiddingStatus>(bidding.status)
   const [motivo, setMotivo] = useState(bidding.motivoPerda ?? '')
   const [motivoDesistencia, setMotivoDesistencia] = useState(bidding.motivoDesistencia ?? '')
+  const [motivoCancelamento, setMotivoCancelamento] = useState(bidding.motivoCancelamento ?? '')
 
   const mudou = status !== bidding.status
     || (status === 'Perdeu' && motivo !== (bidding.motivoPerda ?? ''))
     || (status === 'Desistiu' && motivoDesistencia !== (bidding.motivoDesistencia ?? ''))
+    || (status === 'Cancelada' && motivoCancelamento !== (bidding.motivoCancelamento ?? ''))
 
   if (!podeEditar) {
     return (
@@ -319,6 +321,7 @@ function ResultadoLicitacao({ bidding }: { bidding: Bidding }) {
         Resultado: <span className="font-semibold text-base-300">{bidding.status}</span>
         {bidding.motivoPerda && <span> — {bidding.motivoPerda}</span>}
         {bidding.motivoDesistencia && <span> — {bidding.motivoDesistencia}</span>}
+        {bidding.motivoCancelamento && <span> — {bidding.motivoCancelamento}</span>}
       </div>
     )
   }
@@ -354,8 +357,17 @@ function ResultadoLicitacao({ bidding }: { bidding: Bidding }) {
             />
           </div>
         )}
+        {status === 'Cancelada' && (
+          <div className="flex-1 min-w-[220px]">
+            <Input
+              placeholder="Motivo do cancelamento (órgão cancelou o edital)"
+              value={motivoCancelamento}
+              onChange={(e) => setMotivoCancelamento(e.target.value)}
+            />
+          </div>
+        )}
         <Button
-          onClick={() => marcarResultado.mutate({ biddingId: bidding.id, status, motivoPerda: motivo, motivoDesistencia })}
+          onClick={() => marcarResultado.mutate({ biddingId: bidding.id, status, motivoPerda: motivo, motivoDesistencia, motivoCancelamento })}
           disabled={!mudou || marcarResultado.isPending}
         >
           {marcarResultado.isPending ? 'Salvando...' : 'Salvar Resultado'}

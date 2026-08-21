@@ -614,6 +614,7 @@ export type Database = {
           modelo_customizado_path: string | null
           motivo_perda: string | null
           motivo_desistencia: string | null
+          motivo_cancelamento: string | null
           municipio: string | null
           numero_edital: string | null
           objeto: string
@@ -653,6 +654,7 @@ export type Database = {
           modelo_customizado_path?: string | null
           motivo_perda?: string | null
           motivo_desistencia?: string | null
+          motivo_cancelamento?: string | null
           municipio?: string | null
           numero_edital?: string | null
           objeto: string
@@ -692,6 +694,7 @@ export type Database = {
           modelo_customizado_path?: string | null
           motivo_perda?: string | null
           motivo_desistencia?: string | null
+          motivo_cancelamento?: string | null
           municipio?: string | null
           numero_edital?: string | null
           objeto?: string
