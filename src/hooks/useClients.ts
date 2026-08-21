@@ -158,13 +158,18 @@ export function useClients() {
       return client
     },
     onSuccess: (deleted) => {
-      // Cascata de licitações/transações/empenhos é feita pelo próprio banco
-      // (ON DELETE CASCADE), então só precisamos invalidar tudo que depende disso.
+      // Licitações e empenhos são apagados em cascata pelo próprio banco
+      // (ON DELETE CASCADE). Transações NÃO são mais apagadas junto (migration
+      // 035 trocou pra ON DELETE SET NULL) — sobrevivem como histórico
+      // financeiro, só perdem o vínculo (client_id/bidding_id/empenho_id
+      // viram null). Por isso ainda invalidamos a query de transactions (o
+      // valor de client_id delas mudou), mas o texto do log não pode mais
+      // dizer que elas foram removidas.
       queryClient.invalidateQueries({ queryKey: ['clients'] })
       queryClient.invalidateQueries({ queryKey: ['biddings'] })
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
       queryClient.invalidateQueries({ queryKey: ['empenhos'] })
-      logEvent('Excluiu Cliente', `Removeu o cadastro do cliente/órgão "${deleted.name}". Licitações, empenhos e lançamentos vinculados foram removidos automaticamente.`)
+      logEvent('Excluiu Cliente', `Removeu o cadastro do cliente/órgão "${deleted.name}". Licitações e empenhos vinculados foram removidos automaticamente; transações já lançadas foram preservadas, só perdendo o vínculo com o cliente.`)
     },
   })
 
