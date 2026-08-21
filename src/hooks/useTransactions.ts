@@ -50,7 +50,13 @@ export function useTransactions() {
             const next = new Date(parentDueDate + 'T12:00:00')
             next.setDate(1)
             next.setMonth(next.getMonth() + 1)
-            next.setDate(Math.min(day, 28))
+            // Usa o último dia real do mês de destino (não um "28" fixo) —
+            // mesma lógica de addMonthsKeepingDay em useRecurringEngine.ts,
+            // que corrigiu esse mesmo truncamento ali; faltava replicar
+            // aqui na pré-geração das parcelas seguintes de um lançamento
+            // recorrente novo.
+            const ultimoDiaDoMes = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate()
+            next.setDate(Math.min(day, ultimoDiaDoMes))
             const nextDueDate = dateToLocalISO(next)
             expanded.push({
               ...t,

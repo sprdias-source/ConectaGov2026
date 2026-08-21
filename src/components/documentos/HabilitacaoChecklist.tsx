@@ -193,8 +193,8 @@ type Cartao =
 
 export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Props) {
   const { documents, uploadAndSave, deleteDocument, getDownloadUrl } = useClientDocuments(clientId)
-  const { nivel: nivelCadastros } = usePermissaoFerramenta('cadastros')
-  const podeEditar = nivelCadastros === 'edicao'
+  const { nivel: nivelCadastros, carregando: carregandoPermissao } = usePermissaoFerramenta('cadastros')
+  const podeEditar = nivelCadastros === 'edicao' && !carregandoPermissao
   const { showToast } = useToast()
 
   const { buscando, errosBusca, avisosBusca, buscarAutomatico, limparAviso, limparErro } = useBuscaCertidaoAutomatica(clientId, cnpj, podeEditar)
@@ -220,7 +220,9 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
     try {
       const url = await getDownloadUrl(doc.storagePath)
       window.open(url, '_blank')
-    } catch { }
+    } catch {
+      showToast('Não foi possível baixar o documento.', 'error')
+    }
   }
 
   const handleUploadSubmit = async (tipo: DocumentTipo, nome: string) => {
@@ -248,7 +250,9 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
           a.download = `${doc.tipo}_${doc.dataValidade ?? 'sem-data'}.pdf`
           a.click()
           await new Promise((r) => setTimeout(r, 500))
-        } catch { }
+        } catch {
+          showToast(`Não foi possível baixar o documento "${doc.nome}".`, 'error')
+        }
       }
     }
   }

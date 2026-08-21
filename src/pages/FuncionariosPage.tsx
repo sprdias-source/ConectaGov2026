@@ -27,14 +27,50 @@ function nextMonthDay20(competencia: string): string {
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-20`
 }
 
+interface FechamentoFolha {
+  isProLabore: boolean
+  isCLT: boolean
+  inssValor: number
+  irrfValor: number
+  fgtsValor: number
+  liquido: number
+}
+
+// Única fonte de verdade pro cálculo de fechamento de folha — usado tanto
+// no preview (o que a tela mostra antes de confirmar) quanto no lançamento
+// real (handleClosePayroll). Antes essa fórmula estava duplicada nos dois
+// lugares: se uma regra mudasse (teto do FGTS, nova categoria de vínculo,
+// ajuste no INSS/IRRF) e só uma cópia fosse atualizada, o valor mostrado no
+// preview divergia do valor realmente lançado no financeiro.
+function calcularFechamentoFolha(employee: Employee, bonus: number): FechamentoFolha {
+  const isProLabore = employee.paymentType === 'Sócio/Pró-labore'
+  const isCLT = employee.paymentType === 'CLT'
+
+  // INSS e IRRF se aplicam a qualquer vínculo com retenção na fonte
+  // (Sócio/Pró-labore e CLT) — antes, só calculava para Sócio/Pró-labore,
+  // deixando o CLT sem nenhuma retenção, o que não reflete a realidade.
+  const temRetencao = isProLabore || isCLT
+  const inssValor = temRetencao ? employee.salaryBase * (employee.inssPercentual / 100) : 0
+  const irrfValor = temRetencao ? employee.salaryBase * (employee.irrfPercentual / 100) : 0
+  // FGTS é encargo PATRONAL (a empresa deposita, não desconta do
+  // colaborador) — só existe para CLT, nunca para Sócio/Pró-labore,
+  // Autônomo ou Estágio (que tem regras próprias, geralmente sem FGTS
+  // obrigatório salvo contrato de aprendizagem).
+  const fgtsValor = isCLT ? employee.salaryBase * 0.08 : 0
+
+  const liquido = employee.salaryBase + bonus - inssValor - irrfValor - employee.outrosEncargos
+
+  return { isProLabore, isCLT, inssValor, irrfValor, fgtsValor, liquido }
+}
+
 export default function FuncionariosPage() {
   const { employees, isLoading, addEmployee, updateEmployee, deleteEmployee } = useEmployees()
   const { transactions, addTransactions, updateTransaction } = useTransactions()
   // Antes não checava nenhuma permissão — qualquer membro convidado
   // conseguia contratar, editar, remover colaboradores e fechar folha de
   // pagamento, independente do nível configurado.
-  const { nivel } = usePermissaoFerramenta('funcionarios')
-  const podeEditar = nivel === 'edicao'
+  const { nivel, carregando: carregandoPermissao } = usePermissaoFerramenta('funcionarios')
+  const podeEditar = nivel === 'edicao' && !carregandoPermissao
   const [tab, setTab] = useState<Tab>('folha')
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Employee | null>(null)
@@ -77,22 +113,7 @@ export default function FuncionariosPage() {
 
   const handleClosePayroll = () => {
     if (!selectedEmployee) return
-    const isProLabore = selectedEmployee.paymentType === 'Sócio/Pró-labore'
-    const isCLT = selectedEmployee.paymentType === 'CLT'
-
-    // INSS e IRRF se aplicam a qualquer vínculo com retenção na fonte
-    // (Sócio/Pró-labore e CLT) — antes, só calculava para Sócio/Pró-labore,
-    // deixando o CLT sem nenhuma retenção, o que não reflete a realidade.
-    const temRetencao = isProLabore || isCLT
-    const inssValor = temRetencao ? selectedEmployee.salaryBase * (selectedEmployee.inssPercentual / 100) : 0
-    const irrfValor = temRetencao ? selectedEmployee.salaryBase * (selectedEmployee.irrfPercentual / 100) : 0
-    // FGTS é encargo PATRONAL (a empresa deposita, não desconta do
-    // colaborador) — só existe para CLT, nunca para Sócio/Pró-labore,
-    // Autônomo ou Estágio (que tem regras próprias, geralmente sem FGTS
-    // obrigatório salvo contrato de aprendizagem).
-    const fgtsValor = isCLT ? selectedEmployee.salaryBase * 0.08 : 0
-
-    const liquido = selectedEmployee.salaryBase + bonus - inssValor - irrfValor - selectedEmployee.outrosEncargos
+    const { isProLabore, inssValor, irrfValor, fgtsValor, liquido } = calcularFechamentoFolha(selectedEmployee, bonus)
     const dueDate = `${competencia}-05`
     const guiasDueDate = nextMonthDay20(competencia)
 
@@ -232,13 +253,7 @@ export default function FuncionariosPage() {
                   <Input value={descricao} onChange={(e) => setDescricao(e.target.value)} />
                 </Field>
                 {selectedEmployee && (() => {
-                  const isProLabore = selectedEmployee.paymentType === 'Sócio/Pró-labore'
-                  const isCLT = selectedEmployee.paymentType === 'CLT'
-                  const temRetencao = isProLabore || isCLT
-                  const inssValor = temRetencao ? selectedEmployee.salaryBase * (selectedEmployee.inssPercentual / 100) : 0
-                  const irrfValor = temRetencao ? selectedEmployee.salaryBase * (selectedEmployee.irrfPercentual / 100) : 0
-                  const fgtsValor = isCLT ? selectedEmployee.salaryBase * 0.08 : 0
-                  const liquido = selectedEmployee.salaryBase + bonus - inssValor - irrfValor - selectedEmployee.outrosEncargos
+                  const { inssValor, irrfValor, fgtsValor, liquido } = calcularFechamentoFolha(selectedEmployee, bonus)
                   const guiasDueDate = nextMonthDay20(competencia)
 
                   return (

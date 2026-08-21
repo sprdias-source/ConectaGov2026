@@ -44,8 +44,8 @@ export default function ModelosPage() {
   // reaproveitava por engano a permissão de 'cadastros' (dados de
   // clientes), então liberar edição de clientes liberava edição do Banco
   // de Modelos junto, mesmo que o admin nunca tenha pretendido isso.
-  const { nivel: nivelCadastros } = usePermissaoFerramenta('modelos')
-  const podeEditar = nivelCadastros === 'edicao'
+  const { nivel: nivelCadastros, carregando: carregandoPermissao } = usePermissaoFerramenta('modelos')
+  const podeEditar = nivelCadastros === 'edicao' && !carregandoPermissao
   const { showToast } = useToast()
   const [busca, setBusca] = useState('')
   const [filtroCategoria, setFiltroCategoria] = useState<string>('todas')

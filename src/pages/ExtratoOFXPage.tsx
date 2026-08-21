@@ -106,8 +106,8 @@ export default function ExtratoOFXPage() {
   // Antes não checava permissão nenhuma — qualquer membro conseguia salvar
   // e apagar conciliações bancárias mesmo com acesso só de visualização
   // (ou nenhum) em financeiro.
-  const { nivel } = usePermissaoFerramenta('financeiro')
-  const podeEditar = nivel === 'edicao'
+  const { nivel, carregando: carregandoPermissao } = usePermissaoFerramenta('financeiro')
+  const podeEditar = nivel === 'edicao' && !carregandoPermissao
   const [entries, setEntries] = useState<OFXEntry[]>([])
   const [saldoFinal, setSaldoFinal] = useState<SaldoFinalOFX | null>(null)
   const [accountId, setAccountId] = useState<string>('')

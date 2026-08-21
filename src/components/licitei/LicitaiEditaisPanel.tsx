@@ -13,6 +13,7 @@ import { useDispararRoboLicitei } from '../../hooks/useDispararRoboLicitei'
 import LicitaiBuscasPanel from './LicitaiBuscasPanel'
 import { useClients } from '../../hooks/useClients'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
+import { useToast } from '../../hooks/useToast'
 import { supabase } from '../../lib/supabase'
 import { mensagemDeErro } from '../../lib/errors'
 import type { LicitaiEdital, LicitaiEditalStatus } from '../../types/domain'
@@ -198,8 +199,9 @@ const FILTROS: { value: LicitaiEditalStatus | 'todos'; label: string }[] = [
 
 export default function LicitaiEditaisPanel() {
   const { licitaiEditais, isLoading, addLicitaiEdital } = useLicitaiEditais()
-  const { nivel } = usePermissaoFerramenta('cadastros')
-  const podeEditar = nivel === 'edicao'
+  const { nivel, carregando: carregandoPermissao } = usePermissaoFerramenta('cadastros')
+  const podeEditar = nivel === 'edicao' && !carregandoPermissao
+  const { showToast } = useToast()
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [filtro, setFiltro] = useState<LicitaiEditalStatus | 'todos'>('todos')
@@ -217,6 +219,7 @@ export default function LicitaiEditaisPanel() {
       if (error) throw error
       setVisualizando({ nome, url: data.signedUrl })
     } catch {
+      showToast('Não foi possível carregar o arquivo pra visualização.', 'error')
       setVisualizando(null)
     }
   }

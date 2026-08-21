@@ -9,6 +9,33 @@ import type { AttachedFile, FileCategory, FileEntityType } from '../types/domain
 
 const QUERY_KEY = ['attached_files']
 
+// Limite de tamanho e tipos aceitos pra anexos — reflete o que o `accept`
+// dos inputs de arquivo já promete na tela (.pdf, .doc, .docx). Isso é só
+// defesa de robustez/UX no cliente (fácil de contornar por quem quiser);
+// a barreira de verdade tem que estar em RLS/policy do Storage no
+// Supabase, que fica fora do alcance de uma validação em JS no navegador.
+export const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024 // 20MB
+const ALLOWED_EXTENSIONS = ['pdf', 'doc', 'docx']
+const ALLOWED_MIME_TYPES = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]
+
+// Confere tamanho e tipo do arquivo antes de subir. Retorna uma mensagem
+// de erro pronta pra mostrar ao usuário, ou `null` se o arquivo passou.
+export function validateFileBeforeUpload(file: File): string | null {
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    return `Arquivo muito grande (máximo de ${MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB).`
+  }
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+  const tipoValido = ALLOWED_EXTENSIONS.includes(ext) || (file.type && ALLOWED_MIME_TYPES.includes(file.type))
+  if (!tipoValido) {
+    return 'Tipo de arquivo não permitido. Envie apenas PDF, DOC ou DOCX.'
+  }
+  return null
+}
+
 // Anexos genéricos ligados a qualquer entidade do sistema (por enquanto,
 // usado pra documentos de uma licitação específica — o edital, atestados
 // específicos daquele certame, etc.). Reaproveita a tabela `attached_files`
@@ -40,9 +67,15 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
   const uploadFile = useMutation({
     mutationFn: async ({ file, category }: { file: File; category: FileCategory }) => {
       if (!user || !entityId) throw new Error('Não autenticado')
+      // Mesma validação já feita no componente (DocumentUploader,
+      // EditaisAnaliseSection etc.) antes de chamar `.mutate` — repetida
+      // aqui pra garantir que exista pelo menos uma barreira mesmo se
+      // algum chamador futuro esquecer de validar antes de disparar o
+      // upload.
+      const erroValidacao = validateFileBeforeUpload(file)
+      if (erroValidacao) throw new Error(erroValidacao)
       const ext = file.name.split('.').pop() ?? 'pdf'
       const path = `${user.id}/${entityType}/${entityId}/${Date.now()}.${ext}`
-      console.log('Tentando upload:', { path, tamanhoBytes: file.size, tipo: file.type })
 
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) throw new Error('Não autenticado')

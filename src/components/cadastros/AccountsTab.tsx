@@ -28,8 +28,8 @@ export default function AccountsTab() {
   // Antes não checava nenhuma permissão — um membro com "visualização" (ou
   // nenhum acesso) em financeiro conseguia criar/editar/excluir contas
   // bancárias e cartões da empresa mesmo assim.
-  const { nivel } = usePermissaoFerramenta('financeiro')
-  const podeEditar = nivel === 'edicao'
+  const { nivel, carregando: carregandoPermissao } = usePermissaoFerramenta('financeiro')
+  const podeEditar = nivel === 'edicao' && !carregandoPermissao
 
   const handleSave = (data: Partial<FinancialAccount>) => {
     if (editing) {

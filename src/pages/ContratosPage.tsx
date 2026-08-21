@@ -8,6 +8,7 @@ import { useClients } from '../hooks/useClients'
 import { useBiddings } from '../hooks/useBiddings'
 import { useContracts } from '../hooks/useContracts'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
+import { formatBRL } from '../hooks/useAccountBalances'
 
 function buildContractText(opts: {
   clientName: string
@@ -51,8 +52,8 @@ export default function ContratosPage() {
   const { clients } = useClients()
   const { biddings } = useBiddings()
   const { contracts, addContract } = useContracts()
-  const { nivel: nivelAcesso } = usePermissaoFerramenta('contratos')
-  const podeEditar = nivelAcesso === 'edicao'
+  const { nivel: nivelAcesso, carregando: carregandoPermissao } = usePermissaoFerramenta('contratos')
+  const podeEditar = nivelAcesso === 'edicao' && !carregandoPermissao
 
   const [clientId, setClientId] = useState('')
   const [biddingId, setBiddingId] = useState('')
@@ -191,7 +192,7 @@ export default function ContratosPage() {
                       <div>
                         <p className="font-semibold text-base-100 text-sm">{contractClient?.name ?? 'Cliente removido'}</p>
                         <p className="text-[11px] text-base-500">
-                          Retentor: {c.retentorFixoMensal ? `R$ ${c.retentorFixoMensal.toLocaleString('pt-BR')}` : '—'} · Comissão: {c.comissaoExito}% · {new Date(c.createdAt).toLocaleDateString('pt-BR')}
+                          Retentor: {c.retentorFixoMensal ? formatBRL(c.retentorFixoMensal) : '—'} · Comissão: {c.comissaoExito}% · {new Date(c.createdAt).toLocaleDateString('pt-BR')}
                         </p>
                       </div>
                     </div>

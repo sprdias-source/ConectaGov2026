@@ -186,8 +186,8 @@ function PerfilDetalhe({ perfil, podeEditar }: { perfil: PricingProfile; podeEdi
 }
 
 export default function PricingProfilesPanel() {
-  const { nivel } = usePermissaoFerramenta('cadastros')
-  const podeEditar = nivel === 'edicao'
+  const { nivel, carregando: carregandoPermissao } = usePermissaoFerramenta('cadastros')
+  const podeEditar = nivel === 'edicao' && !carregandoPermissao
   const { profiles, isLoading, salvarPerfil } = usePricingProfiles()
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [mostrarForm, setMostrarForm] = useState(false)

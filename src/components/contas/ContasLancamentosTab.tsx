@@ -26,8 +26,8 @@ export default function ContasLancamentosTab() {
   const { accounts } = useFinancialAccounts()
   const { categoriesPagar, categoriesReceber } = useCategories()
   const { paymentMethods } = usePaymentMethods()
-  const { nivel: nivelFinanceiro } = usePermissaoFerramenta('financeiro')
-  const podeEditar = nivelFinanceiro === 'edicao'
+  const { nivel: nivelFinanceiro, carregando: carregandoPermissao } = usePermissaoFerramenta('financeiro')
+  const podeEditar = nivelFinanceiro === 'edicao' && !carregandoPermissao
 
   // Chegando de um alerta (ex: Central de Prazos), a URL pode trazer o mês
   // do vencimento e o id do lançamento a destacar — sem isso, um lançamento

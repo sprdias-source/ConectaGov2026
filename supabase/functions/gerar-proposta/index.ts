@@ -129,7 +129,12 @@ Deno.serve(async (req) => {
     // "PROPOSTA READEQUADA" — mesmo modelo .docx, só muda esse título.
     const tituloDocumento = tipo === 'readequada' ? 'PROPOSTA READEQUADA' : 'PROPOSTA DE PREÇOS'
 
-    const authHeader = req.headers.get('Authorization')!
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Não autenticado' }), {
+        status: 401, headers: { ...CORS, 'Content-Type': 'application/json' },
+      })
+    }
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_ANON_KEY')!,
@@ -156,6 +161,7 @@ Deno.serve(async (req) => {
     const { data: bidding, error: biddingError } = await supabase
       .from('biddings').select('*').eq('id', biddingId).single()
     if (biddingError || !bidding) throw new Error('Licitação não encontrada')
+    if (bidding.client_id !== clientId) throw new Error('Cliente não corresponde a esta licitação')
 
     const { data: items, error: itemsError } = await supabase
       .from('bidding_items').select('*').eq('bidding_id', biddingId).order('numero_item')

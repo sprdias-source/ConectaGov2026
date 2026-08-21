@@ -36,8 +36,8 @@ export default function BiddingsTab() {
   const { clients } = useClients()
   const { habilitacaoPorId } = useHabilitacaoPorLicitacao(biddings)
   const { showToast } = useToast()
-  const { nivel: nivelAcesso } = usePermissaoFerramenta('licitacoes')
-  const podeEditar = nivelAcesso === 'edicao'
+  const { nivel: nivelAcesso, carregando: carregandoPermissao } = usePermissaoFerramenta('licitacoes')
+  const podeEditar = nivelAcesso === 'edicao' && !carregandoPermissao
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Bidding | null>(null)
@@ -63,6 +63,8 @@ export default function BiddingsTab() {
           ? 'Esta licitação possui empenhos faturados ou comissões já recebidas — todo esse histórico será perdido junto.'
           : undefined
       )
+    }).catch(() => {
+      setFinancialWarning('Não foi possível confirmar se esta licitação tem histórico financeiro vinculado — considere que sim antes de excluir.')
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deleting?.id])

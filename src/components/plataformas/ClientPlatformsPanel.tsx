@@ -46,8 +46,8 @@ interface Props {
 export default function ClientPlatformsPanel({ clientId, clientName }: Props) {
   const { platforms } = usePlatforms()
   const { clientPlatforms, addClientPlatform, updateClientPlatform, deleteClientPlatform } = useClientPlatforms(clientId)
-  const { nivel: nivelCadastros } = usePermissaoFerramenta('cadastros')
-  const podeEditar = nivelCadastros === 'edicao'
+  const { nivel: nivelCadastros, carregando: carregandoPermissao } = usePermissaoFerramenta('cadastros')
+  const podeEditar = nivelCadastros === 'edicao' && !carregandoPermissao
 
   const [mostrarForm, setMostrarForm] = useState(false)
   const [editandoId, setEditandoId] = useState<string | null>(null)

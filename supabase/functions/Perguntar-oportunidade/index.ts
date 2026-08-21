@@ -143,6 +143,7 @@ Deno.serve(async (req: Request) => {
     const { opportunityId, pergunta } = await req.json()
     if (!opportunityId) return json({ error: 'opportunityId é obrigatório' }, 400)
     if (!pergunta || !String(pergunta).trim()) return json({ error: 'pergunta é obrigatória' }, 400)
+    if (String(pergunta).length > 2000) return json({ error: 'Pergunta muito longa (máximo 2000 caracteres)' }, 400)
 
     const authHeader = req.headers.get('Authorization')
     const jwt = authHeader?.replace('Bearer ', '')

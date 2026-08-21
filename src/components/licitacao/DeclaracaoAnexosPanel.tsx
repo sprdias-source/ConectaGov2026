@@ -261,8 +261,8 @@ function AnexoCard({ anexo, checklistItems, podeEditar, bidding }: {
 
 export default function DeclaracaoAnexosPanel({ bidding, checklistItems }: { bidding: Bidding; checklistItems: BiddingChecklistItem[] }) {
   const { anexos, isLoading, analisar } = useDeclaracaoAnexos(bidding.id)
-  const { nivel } = usePermissaoFerramenta('licitacoes')
-  const podeEditar = nivel === 'edicao'
+  const { nivel, carregando: carregandoPermissao } = usePermissaoFerramenta('licitacoes')
+  const podeEditar = nivel === 'edicao' && !carregandoPermissao
 
   return (
     <div className="flex flex-col gap-3">
