@@ -154,7 +154,7 @@ export default function CadastrosPage() {
                 onPointerUp={handlePointerUpAba}
                 onPointerCancel={handlePointerUpAba}
                 title="Arraste pra reordenar as abas (no computador)"
-                className={`flex items-center gap-2 px-4 py-2.5 text-[13px] font-semibold whitespace-nowrap transition border-b-2 -mb-px select-none cursor-grab active:cursor-grabbing ${
+                className={`flex items-center gap-2 px-4 py-2.5 text-[13px] font-semibold whitespace-nowrap transition border-b-2 -mb-px select-none cursor-grab active:cursor-grabbing shrink-0 touch-pan-x ${
                   abaArrastando === key ? 'opacity-60' : ''
                 } ${
                   tab === key
