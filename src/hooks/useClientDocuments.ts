@@ -47,7 +47,16 @@ export function useClientDocuments(clientId?: string) {
     },
   })
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: QUERY_KEY })
+  // Subir/atualizar uma certidão dispara um trigger no banco
+  // (trg_compliance_apos_documento, migration 036) que atualiza direto
+  // bidding_checklist_items (marca item como atendido, sincroniza prazo)
+  // — sem invalidar essa query aqui, a aba Checklist de uma licitação podia
+  // ficar mostrando um item como pendente por até 60s (staleTime) mesmo já
+  // resolvido no banco, até um refresh manual.
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: QUERY_KEY })
+    queryClient.invalidateQueries({ queryKey: ['bidding_checklist_items'] })
+  }
 
   const upsertDocument = useMutation({
     mutationFn: async (doc: {

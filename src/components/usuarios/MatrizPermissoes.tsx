@@ -11,6 +11,18 @@ type Permissao = { team_member_id: string; tool_key: string; nivel_acesso: strin
 type Props = { supabase: SupabaseClient }
 
 const NIVEIS = ['sem_acesso', 'visualizacao', 'edicao'] as const
+
+// Ferramentas adicionadas pela migration 030 (usuarios/funcionarios/modelos)
+// — se essa migration ainda não rodou no banco, essas chaves simplesmente
+// não existem em system_tools e a coluna correspondente não aparece na
+// tabela abaixo, sem nenhum aviso. Isso já causou confusão: o dono da
+// conta tenta conceder acesso a "Funcionários" pra um membro e nem
+// consegue, sem entender por quê.
+const FERRAMENTAS_ESPERADAS: Record<string, string> = {
+  usuarios: 'Usuários e Permissões',
+  funcionarios: 'Funcionários',
+  modelos: 'Banco de Modelos',
+}
 const LABEL_NIVEL: Record<string, string> = {
   sem_acesso: 'Sem acesso',
   visualizacao: 'Visualização',
@@ -130,6 +142,11 @@ export default function MatrizPermissoes({ supabase }: Props) {
       ?? 'sem_acesso'
   }
 
+  const chavesExistentes = new Set(ferramentas.map((f) => f.key))
+  const ferramentasFaltando = Object.entries(FERRAMENTAS_ESPERADAS)
+    .filter(([key]) => !chavesExistentes.has(key))
+    .map(([, nome]) => nome)
+
   return (
     <div>
       <div className="flex flex-wrap items-end gap-2 mb-5">
@@ -166,6 +183,12 @@ export default function MatrizPermissoes({ supabase }: Props) {
       {erro && (
         <div className="bg-negative-500/10 border border-negative-500/25 rounded-lg p-3 mb-4 text-[13px] text-negative-300">
           {erro}
+        </div>
+      )}
+
+      {!carregando && ferramentasFaltando.length > 0 && (
+        <div className="bg-warning-500/10 border border-warning-500/25 rounded-lg p-3 mb-4 text-[13px] text-warning-300">
+          Faltam colunas nesta tabela: <strong>{ferramentasFaltando.join(', ')}</strong>. Isso acontece quando uma migration do banco ainda não foi rodada — peça pra rodar a migration <code>030_system_tools_faltantes.sql</code> no SQL Editor do Supabase pra essas ferramentas aparecerem aqui.
         </div>
       )}
 
