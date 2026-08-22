@@ -14,7 +14,6 @@ import { Button, Input, Select, Textarea, IconButton } from '../components/ui/Fo
 import { Drawer } from '../components/ui/Drawer'
 import { UndoToast } from '../components/ui/UndoToast'
 import { PageHeader, Card, StatusBadge } from '../components/ui/Primitives'
-import { useCompactOnScroll } from '../hooks/useCompactOnScroll'
 import { useUndoableDelete } from '../hooks/useUndoableAction'
 import { SkeletonTableRows, SkeletonList } from '../components/ui/Skeleton'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
@@ -2163,11 +2162,6 @@ export default function LicitacaoPage() {
   // cai no padrão de sempre.
   const abaInicial = ABAS.find((a) => a.key === searchParams.get('aba'))?.key ?? 'visao'
   const [aba, setAba] = useState<AbaKey>(abaInicial)
-  // Cabeçalho encolhe assim que a página rola — nome/etapa somem, mas as
-  // abas continuam fixas no topo, sempre alcançáveis sem voltar pro início
-  // da tela (pedido direto do usuário, numa licitação com conteúdo longo).
-  const cabecalhoCompacto = useCompactOnScroll(72)
-
   const bidding = biddings.find((b) => b.id === id)
   const clientName = bidding ? (clients.find((c) => c.id === bidding.clientId)?.name ?? 'Cliente removido') : ''
 
@@ -2554,43 +2548,35 @@ export default function LicitacaoPage() {
 
   return (
     <div className="pb-10">
-      {/* Cabeçalho fixo: fica grudado no topo da rolagem e encolhe assim que
-          sai do início da página — nome/etapa dão lugar a um resumo de uma
-          linha, mas as abas nunca saem da tela. `top-[56px] lg:top-0`
-          empilha certinho embaixo da barra mobile do AppShell (que também é
-          sticky), sem sobrepor. Mesmo hook (useCompactOnScroll) dá pra
-          reaproveitar depois no Kanban ou em qualquer outra tela longa. */}
-      <div className={`sticky top-[56px] lg:top-0 z-20 bg-base-950 px-6 pt-3 ${cabecalhoCompacto ? 'shadow-lg shadow-black/30 border-b border-base-800' : ''}`}>
-        {/* Troca direta (sem animar altura) entre o cabeçalho cheio e o
-            resumo compacto — animar a altura de um elemento sticky enquanto
-            ele já está grudado é o que causava a rolagem "pulando"/travando
-            no celular (o WebKit do iOS recalcula o sticky a cada frame da
-            transição, no meio do próprio gesto de arrastar o dedo). */}
-        {cabecalhoCompacto ? (
-          <div className="flex items-center gap-2 min-w-0 pb-2.5">
-            <StatusBadge status={bidding.status} />
-            <p className="text-[12.5px] font-semibold text-base-200 truncate">{bidding.objeto}</p>
-          </div>
-        ) : (
-          <div className="pb-2">
-            <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-[12px] text-base-500 hover:text-base-300 transition mb-3">
-              <ArrowLeft className="w-3.5 h-3.5" /> Voltar
-            </button>
-            <h1 className="font-display font-bold text-xl text-base-100">{bidding.objeto}</h1>
-            <p className="text-base-400 text-[13px] mt-0.5">{clientName} — {bidding.orgao} {bidding.municipio ? `(${bidding.municipio}${bidding.uf ? '/' + bidding.uf : ''})` : ''}</p>
+      <div className="px-6 pt-3 pb-2">
+        <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-[12px] text-base-500 hover:text-base-300 transition mb-3">
+          <ArrowLeft className="w-3.5 h-3.5" /> Voltar
+        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <StatusBadge status={bidding.status} />
+          <h1 className="font-display font-bold text-xl text-base-100">{bidding.objeto}</h1>
+        </div>
+        <p className="text-base-400 text-[13px] mt-0.5">{clientName} — {bidding.orgao} {bidding.municipio ? `(${bidding.municipio}${bidding.uf ? '/' + bidding.uf : ''})` : ''}</p>
 
-            <div className="mt-4">
-              <EtapaTrilha
-                etapaAtual={bidding.etapa}
-                atualizando={updateEtapa.isPending}
-                onMudar={(etapa) => updateEtapa.mutate({ biddingId: bidding.id, etapa })}
-                podeEditar={podeEditar}
-              />
-            </div>
-          </div>
-        )}
+        <div className="mt-4">
+          <EtapaTrilha
+            etapaAtual={bidding.etapa}
+            atualizando={updateEtapa.isPending}
+            onMudar={(etapa) => updateEtapa.mutate({ biddingId: bidding.id, etapa })}
+            podeEditar={podeEditar}
+          />
+        </div>
+      </div>
 
-        <div className={`flex items-center gap-1 border-b border-base-800 overflow-x-auto ${cabecalhoCompacto ? '' : 'mt-4'}`}>
+      {/* Barra de abas fixa: sempre com a mesma altura, nunca muda de
+          tamanho conforme a rolagem — diferente da versão anterior (que
+          encolhia o cabeçalho inteiro num resumo compacto), essa não tem
+          nenhum gatilho de reflow ligado ao scroll, então não tem como
+          voltar a "travar"/tremer no celular. `top-[56px] lg:top-0` empilha
+          certinho embaixo da barra mobile do AppShell (que também é
+          sticky), sem sobrepor. */}
+      <div className="sticky top-[56px] lg:top-0 z-20 bg-base-950 px-6 border-b border-base-800 shadow-lg shadow-black/20">
+        <div className="flex items-center gap-1 overflow-x-auto">
           {ABAS.map((a) => (
             <button
               key={a.key}
