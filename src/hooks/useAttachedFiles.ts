@@ -75,7 +75,13 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
       const erroValidacao = validateFileBeforeUpload(file)
       if (erroValidacao) throw new Error(erroValidacao)
       const ext = file.name.split('.').pop() ?? 'pdf'
-      const path = `${user.id}/${entityType}/${entityId}/${Date.now()}.${ext}`
+      // Mesmo motivo do fix em useClientDocuments.ts: a policy de Storage
+      // exige que o primeiro segmento do caminho seja owner_efetivo(uid),
+      // não o uid de quem está logado — sem isso, upload de um membro de
+      // equipe sempre falhava com 403.
+      const { data: ownerId, error: ownerError } = await supabase.rpc('owner_efetivo', { usuario_id: user.id })
+      if (ownerError) throw ownerError
+      const path = `${ownerId}/${entityType}/${entityId}/${Date.now()}.${ext}`
 
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) throw new Error('Não autenticado')

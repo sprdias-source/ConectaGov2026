@@ -120,6 +120,14 @@ export function useClientDocuments(clientId?: string) {
     }) => {
       if (!user || !clientId) throw new Error('Não autenticado')
       const ext = file.name.split('.').pop() ?? 'pdf'
+      // A policy de Storage do bucket 'client-documents' exige que o
+      // primeiro segmento do caminho seja owner_efetivo(auth.uid()), não
+      // o uid de quem está logado — pra um membro de equipe (não-dono)
+      // essas duas coisas são diferentes. Sem resolver isso aqui, o upload
+      // de um membro convidado sempre falhava com 403 no Storage, mesmo já
+      // tendo acesso de edição liberado em Cadastros.
+      const { data: ownerId, error: ownerError } = await supabase.rpc('owner_efetivo', { usuario_id: user.id })
+      if (ownerError) throw ownerError
       // Tipos de certidão automática (cndt, cnd_federal, etc.) só têm UM
       // documento por cliente — nome estável, sobrescreve o antigo
       // automaticamente ao renovar. Documentos 'manual' podem ter vários
@@ -127,8 +135,8 @@ export function useClientDocuments(clientId?: string) {
       // nome único cada, senão um novo envio apagaria um documento
       // diferente sem querer.
       const path = tipo === 'manual'
-        ? `${user.id}/${clientId}/${tipo}/${Date.now()}.${ext}`
-        : `${user.id}/${clientId}/${tipo}.${ext}`
+        ? `${ownerId}/${clientId}/${tipo}/${Date.now()}.${ext}`
+        : `${ownerId}/${clientId}/${tipo}.${ext}`
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) throw new Error('Não autenticado')
       // Cada etapa tem sua própria rede (upload no Storage, depois insert/
