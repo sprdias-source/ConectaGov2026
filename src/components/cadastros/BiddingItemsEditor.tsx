@@ -464,6 +464,20 @@ export default function BiddingItemsEditor({
             </table>
           </div>
 
+          {/* Resumo fixo no rodapé da viewport, só nas telas largas — fica
+              fora do contêiner com overflow-x-auto de propósito: um elemento
+              com overflow (mesmo só no eixo X) vira a referência de
+              `position: sticky` dos filhos, e como aquele contêiner nunca
+              tem altura própria limitada, o sticky não gruda em lugar
+              nenhum de verdade lá dentro. Fora dele, gruda direito na base
+              da janela (a página inteira rola pela window, sem contêiner
+              próprio de overflow-y). Numa licitação com muitos itens, assim
+              não precisa rolar até o fim da lista só pra conferir o total. */}
+          <div className="hidden md:flex sticky bottom-0 z-10 items-center justify-end gap-6 bg-base-900 border-t border-positive-500/40 rounded-b-lg px-4 py-2 -mt-px">
+            <span className="text-[11px] text-base-400">Totais: <span className="font-mono font-bold text-base-200">{formatBRL(totalLicitado)}</span> → <span className="font-mono font-bold text-accent-300">{formatBRL(totalOfertado)}</span></span>
+            <span className="text-[11px] font-extrabold text-positive-400">Total Geral (itens ganhos): <span className="font-mono">{formatBRL(totalGeralGanhos)}</span></span>
+          </div>
+
           {/* Celular: cada item vira um card com campos empilhados em largura
               total — nenhum valor fica espremido numa caixinha estreita. */}
           <div className="flex flex-col gap-3 md:hidden">
@@ -474,16 +488,20 @@ export default function BiddingItemsEditor({
                 ])
               : drafts.map(renderCardMobile)}
 
-            <div className="border border-base-700/50 rounded-lg p-3 bg-base-850/60 flex items-center justify-between text-[12px]">
-              <span className="font-bold text-base-400">Totais:</span>
-              <div className="flex flex-col items-end gap-0.5">
-                <span className="font-mono font-bold text-base-200">{formatBRL(totalLicitado)}</span>
-                <span className="font-mono font-bold text-accent-300">{formatBRL(totalOfertado)}</span>
+            {/* Mesma ideia do rodapé sticky da tabela desktop: gruda no fim
+                da tela em vez de exigir rolar até o fim da lista de cards. */}
+            <div className="sticky bottom-0 flex flex-col gap-2 pt-2 bg-base-900">
+              <div className="border border-base-700/50 rounded-lg p-3 bg-base-850 flex items-center justify-between text-[12px]">
+                <span className="font-bold text-base-400">Totais:</span>
+                <div className="flex flex-col items-end gap-0.5">
+                  <span className="font-mono font-bold text-base-200">{formatBRL(totalLicitado)}</span>
+                  <span className="font-mono font-bold text-accent-300">{formatBRL(totalOfertado)}</span>
+                </div>
               </div>
-            </div>
-            <div className="border border-positive-500/40 rounded-lg p-3 bg-positive-500/10 flex items-center justify-between text-[12px]">
-              <span className="font-extrabold text-positive-400">Total Geral (itens ganhos):</span>
-              <span className="font-mono font-extrabold text-positive-400">{formatBRL(totalGeralGanhos)}</span>
+              <div className="border border-positive-500/40 rounded-lg p-3 bg-positive-500/15 flex items-center justify-between text-[12px]">
+                <span className="font-extrabold text-positive-400">Total Geral (itens ganhos):</span>
+                <span className="font-mono font-extrabold text-positive-400">{formatBRL(totalGeralGanhos)}</span>
+              </div>
             </div>
           </div>
         </>

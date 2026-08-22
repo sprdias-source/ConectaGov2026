@@ -12,8 +12,10 @@ import { fromBiddingItemRow, toBiddingItemInsert } from '../lib/mappers'
 import { useAuth } from '../hooks/useAuth'
 import { Button, Input, Select, Textarea, IconButton } from '../components/ui/FormControls'
 import { Drawer } from '../components/ui/Drawer'
+import { UndoToast } from '../components/ui/UndoToast'
 import { PageHeader, Card, StatusBadge } from '../components/ui/Primitives'
 import { useCompactOnScroll } from '../hooks/useCompactOnScroll'
+import { useUndoableDelete } from '../hooks/useUndoableAction'
 import { SkeletonTableRows, SkeletonList } from '../components/ui/Skeleton'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import PdfViewerModal from '../components/ui/PdfViewerModal'
@@ -1030,7 +1032,10 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   // gravação na hora em vez de deixar perder.
   const pendenteRef = useRef<Partial<BiddingItem>[] | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [statusSalvamento, setStatusSalvamento] = useState<'idle' | 'pendente' | 'salvando'>('idle')
+  // "salvo" é só um resumo visual de ~2s depois de terminar — sem ele, o
+  // aviso ia direto de "Salvando..." pra sumir, sem confirmar que gravou de
+  // verdade (a mesma dúvida que gera "será que salvou mesmo?").
+  const [statusSalvamento, setStatusSalvamento] = useState<'idle' | 'pendente' | 'salvando' | 'salvo'>('idle')
 
   const dispararSincronizacao = () => {
     if (sincronizarItens.isPending) {
@@ -1041,7 +1046,13 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
     if (!dados) { setStatusSalvamento('idle'); return }
     pendenteRef.current = null
     setStatusSalvamento('salvando')
-    sincronizarItens.mutate(dados, { onSettled: () => setStatusSalvamento((s) => (s === 'salvando' ? 'idle' : s)) })
+    sincronizarItens.mutate(dados, {
+      onSuccess: () => {
+        setStatusSalvamento((s) => (s === 'salvando' ? 'salvo' : s))
+        setTimeout(() => setStatusSalvamento((s) => (s === 'salvo' ? 'idle' : s)), 2000)
+      },
+      onError: () => setStatusSalvamento((s) => (s === 'salvando' ? 'idle' : s)),
+    })
   }
 
   const handleItemsChange = (novosItems: Partial<BiddingItem>[]) => {
@@ -1354,8 +1365,10 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
         <div className="flex items-center justify-between mb-2">
           <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Itens da Licitação</p>
           {podeEditar && statusSalvamento !== 'idle' && (
-            <span className="text-[10px] text-base-500 flex items-center gap-1">
-              {statusSalvamento === 'salvando' ? (<><Loader2 className="w-3 h-3 animate-spin" /> Salvando...</>) : 'Alteração pendente...'}
+            <span className={`text-[10px] flex items-center gap-1 ${statusSalvamento === 'salvo' ? 'text-positive-400 font-semibold' : 'text-base-500'}`}>
+              {statusSalvamento === 'salvando' && (<><Loader2 className="w-3 h-3 animate-spin" /> Salvando...</>)}
+              {statusSalvamento === 'pendente' && 'Alteração pendente...'}
+              {statusSalvamento === 'salvo' && (<><Check className="w-3 h-3" /> Salvo</>)}
             </span>
           )}
         </div>
@@ -2160,6 +2173,10 @@ export default function LicitacaoPage() {
 
   const { files: anexos, uploadFile: uploadAnexo, uploadProgress, deleteFile: deleteAnexo, getDownloadUrl: getAnexoUrl } = useAttachedFiles('licitacao', bidding?.id)
   const { items, isLoading: carregandoChecklist, addItem, updateItem, deleteItem, limparItensIA, addItensEmLote, marcarNaoAplicavel, reverterNaoAplicavel } = useBiddingChecklist(bidding?.id)
+  // Excluir um item do checklist some da tela na hora, com uma saída de
+  // "Desfazer" por alguns segundos, em vez de travar com um "tem certeza?"
+  // antes — é reversível e não arrasta nenhum outro dado junto.
+  const { estaPendente: itemPendenteDeExclusao, iniciarExclusao: iniciarExclusaoItem, toast: toastExclusaoItem } = useUndoableDelete<BiddingChecklistItem>()
   const { analisar: analisarAnexosDeclaracao } = useDeclaracaoAnexos(bidding?.id)
   const { documents: clientDocs, uploadAndSave: uploadClientDoc } = useClientDocuments(bidding?.clientId)
   const { atestados, addAtestado } = useAtestados(bidding?.clientId)
@@ -2791,7 +2808,7 @@ export default function LicitacaoPage() {
                 <p className="text-[12px] text-base-500 italic py-2">Nenhum item no checklist ainda.</p>
               ) : (
                 <div className="flex flex-col gap-1.5">
-                  {items.map((item) => {
+                  {items.filter((item) => !itemPendenteDeExclusao(item.id)).map((item) => {
                     const status = statusItem(item)
                     const arquivo = arquivoResolvidoDoItem(item, clientDocs, atestados, anexos)
                     const temVinculoProprio = !!(item.clientDocumentId || item.atestadoId || item.attachedFileId)
@@ -2884,7 +2901,15 @@ export default function LicitacaoPage() {
                               )
                             )}
                             {podeEditar && (
-                              <IconButton icon={Trash2} label="Excluir item" tone="negative" onClick={() => deleteItem.mutate(item)} />
+                              <IconButton
+                                icon={Trash2}
+                                label="Excluir item"
+                                tone="negative"
+                                onClick={() => iniciarExclusaoItem(item, {
+                                  mensagem: `Item "${item.descricao}" excluído.`,
+                                  excluir: (i) => deleteItem.mutate(i),
+                                })}
+                              />
                             )}
                           </div>
                         </div>
@@ -3225,6 +3250,8 @@ export default function LicitacaoPage() {
           </div>
         </div>
       </Modal>
+
+      <UndoToast toast={toastExclusaoItem} />
     </div>
   )
 }
