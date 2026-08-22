@@ -2186,10 +2186,12 @@ export default function LicitacaoPage() {
   // com os itens de checklist já existentes (mesma transformação de número
   // usada em addItensEmLote) pra saber quais já foram adicionados e quais
   // ainda faltam, em vez de sempre oferecer "adicionar" tudo de novo.
+  // BUG CORRIGIDO: antes só comparava com itens de origem='ia' — um item
+  // adicionado manualmente com a mesma numeração/descrição do edital (ex:
+  // "12.1 a)") não contava como "já existe", então uma nova análise (ou a
+  // mesma análise recarregando) reinseria o mesmo item de novo, duplicado.
   const checklistDocumentacao = ((analysis?.analise as AnaliseEdital | null)?.checklistDocumentacao ?? [])
-  const descricoesJaNoChecklist = new Set(
-    items.filter((i) => i.origem === 'ia').map((i) => i.descricao)
-  )
+  const descricoesJaNoChecklist = new Set(items.map((i) => i.descricao))
   const checklistSugeridoPendente = checklistDocumentacao.filter(
     (doc) => !descricoesJaNoChecklist.has(extrairNumeroEdital(doc.descricao).descricao)
   )
