@@ -85,11 +85,15 @@ export default function CadastrosPage() {
     contas: accounts.length,
   }
 
-  // Reordenação por arraste (mouse e toque, via Pointer Events) — ao
-  // arrastar uma aba por cima de outra, troca as duas de posição na hora
-  // (mesma sensação de reordenar apps na tela inicial do celular), sem
-  // depender de nenhuma lib extra pra isso.
+  // Reordenação por arraste, só com mouse — no toque, o mesmo gesto
+  // (arrastar o dedo pra o lado) já é usado pra ROLAR a lista de abas quando
+  // ela não cabe na tela toda, e captura de ponteiro nesse elemento
+  // (necessária pro arraste) desativa a rolagem nativa do navegador nele,
+  // deixando as abas extras inalcançáveis no celular. Sem `touch-none` fixo
+  // e sem capturar ponteiro de toque, o navegador cuida da rolagem sozinho
+  // e o arraste continua funcionando normalmente com mouse no desktop.
   const handlePointerDownAba = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.pointerType === 'touch') return
     houveArrasteRef.current = false
     inicioArrasteRef.current = { x: e.clientX, y: e.clientY }
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -136,7 +140,7 @@ export default function CadastrosPage() {
       <PageHeader title="Cadastros" subtitle="Clientes, licitações e contas financeiras" icon={FolderKanban} />
 
       <div className="px-6 mt-3">
-        <div className="flex gap-1.5 border-b border-base-800 mb-5 overflow-x-auto">
+        <div className="flex gap-1.5 border-b border-base-800 mb-5 overflow-x-auto no-scrollbar">
           {ordemAbas.map((key) => {
             const info = TABS_INFO[key]
             const contagem = contagens[key]
@@ -149,8 +153,8 @@ export default function CadastrosPage() {
                 onPointerMove={handlePointerMoveAba(key)}
                 onPointerUp={handlePointerUpAba}
                 onPointerCancel={handlePointerUpAba}
-                title="Arraste pra reordenar as abas"
-                className={`flex items-center gap-2 px-4 py-2.5 text-[13px] font-semibold whitespace-nowrap transition border-b-2 -mb-px touch-none select-none cursor-grab active:cursor-grabbing ${
+                title="Arraste pra reordenar as abas (no computador)"
+                className={`flex items-center gap-2 px-4 py-2.5 text-[13px] font-semibold whitespace-nowrap transition border-b-2 -mb-px select-none cursor-grab active:cursor-grabbing shrink-0 touch-pan-x ${
                   abaArrastando === key ? 'opacity-60' : ''
                 } ${
                   tab === key
