@@ -10,8 +10,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { fromBiddingItemRow, toBiddingItemInsert } from '../lib/mappers'
 import { useAuth } from '../hooks/useAuth'
-import { Button, Input, Select, Textarea } from '../components/ui/FormControls'
-import { PageHeader, Card } from '../components/ui/Primitives'
+import { Button, Input, Select, Textarea, IconButton } from '../components/ui/FormControls'
+import { Drawer } from '../components/ui/Drawer'
+import { PageHeader, Card, StatusBadge } from '../components/ui/Primitives'
+import { useCompactOnScroll } from '../hooks/useCompactOnScroll'
 import { SkeletonTableRows, SkeletonList } from '../components/ui/Skeleton'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import PdfViewerModal from '../components/ui/PdfViewerModal'
@@ -2148,6 +2150,10 @@ export default function LicitacaoPage() {
   // cai no padrão de sempre.
   const abaInicial = ABAS.find((a) => a.key === searchParams.get('aba'))?.key ?? 'visao'
   const [aba, setAba] = useState<AbaKey>(abaInicial)
+  // Cabeçalho encolhe assim que a página rola — nome/etapa somem, mas as
+  // abas continuam fixas no topo, sempre alcançáveis sem voltar pro início
+  // da tela (pedido direto do usuário, numa licitação com conteúdo longo).
+  const cabecalhoCompacto = useCompactOnScroll(72)
 
   const bidding = biddings.find((b) => b.id === id)
   const clientName = bidding ? (clients.find((c) => c.id === bidding.clientId)?.name ?? 'Cliente removido') : ''
@@ -2528,23 +2534,44 @@ export default function LicitacaoPage() {
 
   return (
     <div className="pb-10">
-      <div className="px-6 pt-5">
-        <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-[12px] text-base-500 hover:text-base-300 transition mb-3">
-          <ArrowLeft className="w-3.5 h-3.5" /> Voltar
-        </button>
-        <h1 className="font-display font-bold text-xl text-base-100">{bidding.objeto}</h1>
-        <p className="text-base-400 text-[13px] mt-0.5">{clientName} — {bidding.orgao} {bidding.municipio ? `(${bidding.municipio}${bidding.uf ? '/' + bidding.uf : ''})` : ''}</p>
+      {/* Cabeçalho fixo: fica grudado no topo da rolagem e encolhe assim que
+          sai do início da página — nome/etapa dão lugar a um resumo de uma
+          linha, mas as abas nunca saem da tela. `top-[56px] lg:top-0`
+          empilha certinho embaixo da barra mobile do AppShell (que também é
+          sticky), sem sobrepor. Mesmo hook (useCompactOnScroll) dá pra
+          reaproveitar depois no Kanban ou em qualquer outra tela longa. */}
+      <div
+        className={`sticky top-[56px] lg:top-0 z-20 bg-base-950 px-6 transition-[padding-top,padding-bottom] duration-200 ${
+          cabecalhoCompacto ? 'pt-3 shadow-lg shadow-black/30 border-b border-base-800' : 'pt-5'
+        }`}
+      >
+        <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${cabecalhoCompacto ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'}`}>
+          <div className="overflow-hidden">
+            <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-[12px] text-base-500 hover:text-base-300 transition mb-3">
+              <ArrowLeft className="w-3.5 h-3.5" /> Voltar
+            </button>
+            <h1 className="font-display font-bold text-xl text-base-100">{bidding.objeto}</h1>
+            <p className="text-base-400 text-[13px] mt-0.5">{clientName} — {bidding.orgao} {bidding.municipio ? `(${bidding.municipio}${bidding.uf ? '/' + bidding.uf : ''})` : ''}</p>
 
-        <div className="mt-4">
-          <EtapaTrilha
-            etapaAtual={bidding.etapa}
-            atualizando={updateEtapa.isPending}
-            onMudar={(etapa) => updateEtapa.mutate({ biddingId: bidding.id, etapa })}
-            podeEditar={podeEditar}
-          />
+            <div className="mt-4">
+              <EtapaTrilha
+                etapaAtual={bidding.etapa}
+                atualizando={updateEtapa.isPending}
+                onMudar={(etapa) => updateEtapa.mutate({ biddingId: bidding.id, etapa })}
+                podeEditar={podeEditar}
+              />
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-1 mt-4 border-b border-base-800 overflow-x-auto">
+        {cabecalhoCompacto && (
+          <div className="flex items-center gap-2 min-w-0 pb-2.5">
+            <StatusBadge status={bidding.status} />
+            <p className="text-[12.5px] font-semibold text-base-200 truncate">{bidding.objeto}</p>
+          </div>
+        )}
+
+        <div className={`flex items-center gap-1 border-b border-base-800 overflow-x-auto ${cabecalhoCompacto ? '' : 'mt-4'}`}>
           {ABAS.map((a) => (
             <button
               key={a.key}
@@ -2833,49 +2860,31 @@ export default function LicitacaoPage() {
                               )}
                             </p>
                           </div>
-                          <div className="flex items-center gap-1 shrink-0">
+                          <div className="flex items-center gap-0.5 shrink-0">
                             {arquivo && (
-                              <button onClick={() => handleVerArquivoDoItem(item)} title="Ver PDF" className="p-1.5 text-accent-300 hover:text-accent-200 hover:bg-base-800 rounded transition">
-                                <Eye className="w-3.5 h-3.5" />
-                              </button>
+                              <IconButton icon={Eye} label="Ver PDF" tone="accent" onClick={() => handleVerArquivoDoItem(item)} />
                             )}
                             {podeEditar && !item.naoAplicavel && (
-                              <button
+                              <IconButton
+                                icon={arquivo ? RefreshCw : Paperclip}
+                                label={arquivo ? 'Reenviar / substituir documento' : tipoConhecido ? 'Buscar / enviar certidão' : ehAtestado ? 'Salvar atestado' : 'Enviar documento'}
+                                tone="accent"
                                 onClick={() => handleAbrirItem(item)}
-                                title={arquivo ? 'Reenviar / substituir documento' : tipoConhecido ? 'Buscar / enviar certidão' : ehAtestado ? 'Salvar atestado' : 'Enviar documento'}
-                                className={`p-1.5 rounded transition ${aberto ? 'text-accent-300 bg-accent-500/10' : arquivo ? 'text-base-400 hover:text-warning-300 hover:bg-base-800' : 'text-base-400 hover:text-accent-300 hover:bg-base-800'}`}
-                              >
-                                {arquivo ? <RefreshCw className="w-3.5 h-3.5" /> : <Paperclip className="w-3.5 h-3.5" />}
-                              </button>
+                                className={aberto ? 'text-accent-300 bg-accent-500/10' : ''}
+                              />
                             )}
                             {podeEditar && temVinculoProprio && (
-                              <button onClick={() => handleDesvincularItem(item)} title="Desvincular (o arquivo continua no repositório do cliente)" className="p-1.5 text-base-500 hover:text-negative-400 hover:bg-base-800 rounded transition">
-                                <X className="w-3.5 h-3.5" />
-                              </button>
+                              <IconButton icon={X} label="Desvincular (o arquivo continua no repositório do cliente)" onClick={() => handleDesvincularItem(item)} />
                             )}
                             {podeEditar && (
                               item.naoAplicavel ? (
-                                <button
-                                  onClick={() => reverterNaoAplicavel.mutate(item)}
-                                  title="Reverter — voltar a exigir este item"
-                                  className="p-1.5 text-accent-300 hover:text-accent-200 hover:bg-base-800 rounded transition"
-                                >
-                                  <RotateCcw className="w-3.5 h-3.5" />
-                                </button>
+                                <IconButton icon={RotateCcw} label="Reverter — voltar a exigir este item" tone="accent" onClick={() => reverterNaoAplicavel.mutate(item)} />
                               ) : (
-                                <button
-                                  onClick={() => handleAbrirNaoAplicavel(item)}
-                                  title="Marcar como não aplicável"
-                                  className="p-1.5 text-base-500 hover:text-base-300 hover:bg-base-800 rounded transition"
-                                >
-                                  <Ban className="w-3.5 h-3.5" />
-                                </button>
+                                <IconButton icon={Ban} label="Marcar como não aplicável" onClick={() => handleAbrirNaoAplicavel(item)} />
                               )
                             )}
                             {podeEditar && (
-                              <button onClick={() => deleteItem.mutate(item)} title="Excluir item" className="p-1.5 text-base-500 hover:text-negative-400 hover:bg-base-800 rounded transition">
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              <IconButton icon={Trash2} label="Excluir item" tone="negative" onClick={() => deleteItem.mutate(item)} />
                             )}
                           </div>
                         </div>
@@ -2901,117 +2910,120 @@ export default function LicitacaoPage() {
                           </p>
                         )}
 
-                        {aberto && podeEditar && (
-                          <div className="mt-2.5 pt-2.5 border-t border-dashed border-base-700/60 flex flex-col gap-2.5">
-                            {arquivo && (
-                              <div className="bg-warning-500/10 border border-warning-500/25 rounded-lg p-2.5 flex items-start gap-2">
-                                <AlertCircle className="w-3.5 h-3.5 text-warning-400 shrink-0 mt-0.5" />
-                                <p className="text-[11px] text-warning-300 flex-1">
-                                  Este item já está enviado ({arquivo.nome}). Enviar um novo arquivo abaixo substitui o atual.
-                                </p>
+                        <Drawer
+                          open={aberto && podeEditar}
+                          onClose={() => setItemAbertoId(null)}
+                          title={<>{item.numeroEdital && <span className="font-mono text-accent-300">{item.numeroEdital} </span>}{item.descricao}</>}
+                          subtitle={item.categoria || undefined}
+                        >
+                          {arquivo && (
+                            <div className="bg-warning-500/10 border border-warning-500/25 rounded-lg p-2.5 flex items-start gap-2">
+                              <AlertCircle className="w-3.5 h-3.5 text-warning-400 shrink-0 mt-0.5" />
+                              <p className="text-[11px] text-warning-300 flex-1">
+                                Este item já está enviado ({arquivo.nome}). Enviar um novo arquivo abaixo substitui o atual.
+                              </p>
+                            </div>
+                          )}
+                          {tipoConhecido && (
+                            <>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Button
+                                  variant="secondary"
+                                  onClick={() => buscarAutomatico(tipoConhecido)}
+                                  disabled={!clienteDaLicitacao?.cnpj || buscando === tipoConhecido}
+                                >
+                                  {buscando === tipoConhecido ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                                  {buscando === tipoConhecido ? 'Disparando...' : 'Buscar auto'}
+                                </Button>
+                                {!clienteDaLicitacao?.cnpj && <span className="text-[11px] text-base-500 italic">CNPJ do cliente necessário pra busca automática</span>}
                               </div>
-                            )}
-                            {tipoConhecido && (
-                              <>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <Button
-                                    variant="secondary"
-                                    onClick={() => buscarAutomatico(tipoConhecido)}
-                                    disabled={!clienteDaLicitacao?.cnpj || buscando === tipoConhecido}
-                                  >
-                                    {buscando === tipoConhecido ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                                    {buscando === tipoConhecido ? 'Disparando...' : 'Buscar auto'}
-                                  </Button>
-                                  {!clienteDaLicitacao?.cnpj && <span className="text-[11px] text-base-500 italic">CNPJ do cliente necessário pra busca automática</span>}
+
+                              {avisosBusca[tipoConhecido] && (
+                                <div className="bg-accent-500/10 border border-accent-500/25 rounded-lg p-2.5 flex items-start gap-2">
+                                  <Info className="w-3.5 h-3.5 text-accent-400 shrink-0 mt-0.5" />
+                                  <p className="text-[11px] text-accent-300 flex-1">{avisosBusca[tipoConhecido]}</p>
+                                  <button onClick={() => limparAviso(tipoConhecido)} className="text-base-500 hover:text-base-300"><X className="w-3 h-3" /></button>
                                 </div>
-
-                                {avisosBusca[tipoConhecido] && (
-                                  <div className="bg-accent-500/10 border border-accent-500/25 rounded-lg p-2.5 flex items-start gap-2">
-                                    <Info className="w-3.5 h-3.5 text-accent-400 shrink-0 mt-0.5" />
-                                    <p className="text-[11px] text-accent-300 flex-1">{avisosBusca[tipoConhecido]}</p>
-                                    <button onClick={() => limparAviso(tipoConhecido)} className="text-base-500 hover:text-base-300"><X className="w-3 h-3" /></button>
-                                  </div>
-                                )}
-                                {errosBusca[tipoConhecido] && (
-                                  <div className="bg-negative-500/10 border border-negative-500/25 rounded-lg p-2.5 flex items-start gap-2">
-                                    <AlertCircle className="w-3.5 h-3.5 text-negative-400 shrink-0 mt-0.5" />
-                                    <p className="text-[11px] text-negative-400 flex-1">{errosBusca[tipoConhecido]}</p>
-                                    <button onClick={() => limparErro(tipoConhecido)} className="text-base-500 hover:text-base-300"><X className="w-3 h-3" /></button>
-                                  </div>
-                                )}
-
-                                <AcoesDocumentoManual
-                                  clientId={bidding.clientId}
-                                  tipo={tipoConhecido}
-                                  nomeDocumento={CERT_CONFIG[tipoConhecido].label}
-                                  uploadAndSave={uploadClientDoc.mutateAsync}
-                                />
-
-                                <div className="flex items-center gap-2 flex-wrap bg-base-900/40 border border-base-800 rounded-lg p-2.5">
-                                  <span className="text-[11px] text-base-400 shrink-0">Enviar PDF já em mãos:</span>
-                                  <input
-                                    type="date" value={dataValidadeCert} onChange={(e) => setDataValidadeCert(e.target.value)}
-                                    className="bg-base-850 border border-base-700 rounded-lg px-2 py-1 text-[12px] text-base-100 focus:border-accent-400 outline-none"
-                                  />
-                                  <input
-                                    type="file" accept=".pdf,.png,.jpg" onChange={(e) => setCertFileSelecionado(e.target.files?.[0] ?? null)}
-                                    className="text-[11px] text-base-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:bg-accent-500 file:text-base-950 file:font-semibold file:text-[11px] hover:file:bg-accent-400 file:cursor-pointer"
-                                  />
-                                  <Button
-                                    onClick={() => certFileSelecionado && handleClicarSalvarCertidao(item, certFileSelecionado)}
-                                    disabled={!certFileSelecionado || enviandoEste}
-                                  >
-                                    {enviandoEste ? 'Salvando...' : 'Salvar'}
-                                  </Button>
+                              )}
+                              {errosBusca[tipoConhecido] && (
+                                <div className="bg-negative-500/10 border border-negative-500/25 rounded-lg p-2.5 flex items-start gap-2">
+                                  <AlertCircle className="w-3.5 h-3.5 text-negative-400 shrink-0 mt-0.5" />
+                                  <p className="text-[11px] text-negative-400 flex-1">{errosBusca[tipoConhecido]}</p>
+                                  <button onClick={() => limparErro(tipoConhecido)} className="text-base-500 hover:text-base-300"><X className="w-3 h-3" /></button>
                                 </div>
-                              </>
-                            )}
+                              )}
 
-                            {ehAtestado && (
-                              <div className="bg-base-900/40 border border-base-800 rounded-lg p-2.5 flex flex-col gap-2">
-                                <p className="text-[11px] text-accent-300 font-semibold">Salvar como Atestado de Capacidade Técnica (fica no repositório do cliente, reaproveitável em outras licitações)</p>
-                                <Input placeholder="Nome / identificação do atestado" value={atestadoForm.nome} onChange={(e) => setAtestadoForm({ ...atestadoForm, nome: e.target.value })} />
-                                <textarea
-                                  value={atestadoForm.objeto}
-                                  onChange={(e) => setAtestadoForm({ ...atestadoForm, objeto: e.target.value })}
-                                  rows={2}
-                                  placeholder="Objeto do atestado (usado pra comparar com outros editais)"
-                                  className="w-full bg-base-850 border border-base-700 rounded-lg px-3 py-2 text-[13px] text-base-100 placeholder:text-base-500 focus:border-accent-400 outline-none"
-                                />
-                                <div className="grid grid-cols-3 gap-2">
-                                  <Input placeholder="Órgão emissor" value={atestadoForm.orgaoEmissor} onChange={(e) => setAtestadoForm({ ...atestadoForm, orgaoEmissor: e.target.value })} />
-                                  <Input type="number" step="0.01" placeholder="Valor (R$)" value={atestadoForm.valor} onChange={(e) => setAtestadoForm({ ...atestadoForm, valor: e.target.value })} />
-                                  <Input type="date" value={atestadoForm.dataEmissao} onChange={(e) => setAtestadoForm({ ...atestadoForm, dataEmissao: e.target.value })} />
-                                </div>
+                              <AcoesDocumentoManual
+                                clientId={bidding.clientId}
+                                tipo={tipoConhecido}
+                                nomeDocumento={CERT_CONFIG[tipoConhecido].label}
+                                uploadAndSave={uploadClientDoc.mutateAsync}
+                              />
+
+                              <div className="flex flex-col gap-2 bg-base-900/40 border border-base-800 rounded-lg p-2.5">
+                                <span className="text-[11px] text-base-400">Enviar PDF já em mãos:</span>
                                 <input
-                                  type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={(e) => setAtestadoFileSelecionado(e.target.files?.[0] ?? null)}
+                                  type="date" value={dataValidadeCert} onChange={(e) => setDataValidadeCert(e.target.value)}
+                                  className="bg-base-850 border border-base-700 rounded-lg px-2 py-1.5 text-[12px] text-base-100 focus:border-accent-400 outline-none"
+                                />
+                                <input
+                                  type="file" accept=".pdf,.png,.jpg" onChange={(e) => setCertFileSelecionado(e.target.files?.[0] ?? null)}
                                   className="text-[11px] text-base-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:bg-accent-500 file:text-base-950 file:font-semibold file:text-[11px] hover:file:bg-accent-400 file:cursor-pointer"
                                 />
-                                <div className="flex justify-end">
-                                  <Button
-                                    onClick={() => handleSalvarAtestadoDoItem(item, atestadoFileSelecionado)}
-                                    disabled={!atestadoFileSelecionado || enviandoEste}
-                                  >
-                                    {enviandoEste ? 'Salvando...' : 'Salvar Atestado'}
-                                  </Button>
-                                </div>
+                                <Button
+                                  onClick={() => certFileSelecionado && handleClicarSalvarCertidao(item, certFileSelecionado)}
+                                  disabled={!certFileSelecionado || enviandoEste}
+                                >
+                                  {enviandoEste ? 'Salvando...' : 'Salvar'}
+                                </Button>
                               </div>
-                            )}
+                            </>
+                          )}
 
-                            {!tipoConhecido && !ehAtestado && (
-                              <div className="flex items-center gap-2 flex-wrap bg-base-900/40 border border-base-800 rounded-lg p-2.5">
-                                <span className="text-[11px] text-base-400">Enviar documento (fica salvo no repositório do cliente, pasta "{item.categoria || 'Documentos Gerais'}"):</span>
-                                <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-base-950 bg-accent-500 hover:bg-accent-400 rounded-lg px-3 py-1.5 cursor-pointer transition">
-                                  {enviandoEste ? 'Enviando...' : 'Escolher arquivo'}
-                                  <input
-                                    type="file" accept=".pdf,.png,.jpg,.jpeg" className="hidden" disabled={enviandoEste}
-                                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleEnviarDocumentoGenerico(item, f); e.target.value = '' }}
-                                  />
-                                </label>
+                          {ehAtestado && (
+                            <div className="bg-base-900/40 border border-base-800 rounded-lg p-2.5 flex flex-col gap-2">
+                              <p className="text-[11px] text-accent-300 font-semibold">Salvar como Atestado de Capacidade Técnica (fica no repositório do cliente, reaproveitável em outras licitações)</p>
+                              <Input placeholder="Nome / identificação do atestado" value={atestadoForm.nome} onChange={(e) => setAtestadoForm({ ...atestadoForm, nome: e.target.value })} />
+                              <textarea
+                                value={atestadoForm.objeto}
+                                onChange={(e) => setAtestadoForm({ ...atestadoForm, objeto: e.target.value })}
+                                rows={2}
+                                placeholder="Objeto do atestado (usado pra comparar com outros editais)"
+                                className="w-full bg-base-850 border border-base-700 rounded-lg px-3 py-2 text-[13px] text-base-100 placeholder:text-base-500 focus:border-accent-400 outline-none"
+                              />
+                              <div className="grid grid-cols-1 gap-2">
+                                <Input placeholder="Órgão emissor" value={atestadoForm.orgaoEmissor} onChange={(e) => setAtestadoForm({ ...atestadoForm, orgaoEmissor: e.target.value })} />
+                                <Input type="number" step="0.01" placeholder="Valor (R$)" value={atestadoForm.valor} onChange={(e) => setAtestadoForm({ ...atestadoForm, valor: e.target.value })} />
+                                <Input type="date" value={atestadoForm.dataEmissao} onChange={(e) => setAtestadoForm({ ...atestadoForm, dataEmissao: e.target.value })} />
                               </div>
-                            )}
-                          </div>
-                        )}
+                              <input
+                                type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={(e) => setAtestadoFileSelecionado(e.target.files?.[0] ?? null)}
+                                className="text-[11px] text-base-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:bg-accent-500 file:text-base-950 file:font-semibold file:text-[11px] hover:file:bg-accent-400 file:cursor-pointer"
+                              />
+                              <div className="flex justify-end">
+                                <Button
+                                  onClick={() => handleSalvarAtestadoDoItem(item, atestadoFileSelecionado)}
+                                  disabled={!atestadoFileSelecionado || enviandoEste}
+                                >
+                                  {enviandoEste ? 'Salvando...' : 'Salvar Atestado'}
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+
+                          {!tipoConhecido && !ehAtestado && (
+                            <div className="flex flex-col items-start gap-2 bg-base-900/40 border border-base-800 rounded-lg p-2.5">
+                              <span className="text-[11px] text-base-400">Enviar documento (fica salvo no repositório do cliente, pasta "{item.categoria || 'Documentos Gerais'}"):</span>
+                              <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-base-950 bg-accent-500 hover:bg-accent-400 rounded-lg px-3 py-1.5 cursor-pointer transition">
+                                {enviandoEste ? 'Enviando...' : 'Escolher arquivo'}
+                                <input
+                                  type="file" accept=".pdf,.png,.jpg,.jpeg" className="hidden" disabled={enviandoEste}
+                                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleEnviarDocumentoGenerico(item, f); e.target.value = '' }}
+                                />
+                              </label>
+                            </div>
+                          )}
+                        </Drawer>
                       </div>
                     )
                   })}
