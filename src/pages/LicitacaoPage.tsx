@@ -2485,7 +2485,10 @@ export default function LicitacaoPage() {
   const statusItem = (item: BiddingChecklistItem) => statusItemChecklist(item, clientDocs)
 
   const handleAbrirNaoAplicavel = (item: BiddingChecklistItem) => {
-    setJustificativaNaoAplicavel('')
+    // Pré-preenche com um texto padrão editável — a maioria dos casos é
+    // "não se aplica a esta empresa" mesmo, então dá pra confirmar direto;
+    // quem precisar de um motivo mais específico só troca o texto.
+    setJustificativaNaoAplicavel('Não aplicável — exigência alternativa que não se enquadra para esta empresa.')
     setItemMarcandoNaoAplicavel(item)
   }
 
