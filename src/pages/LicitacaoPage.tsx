@@ -2750,18 +2750,23 @@ export default function LicitacaoPage() {
 
               {showNovoItem && (
                 <div className="bg-base-850/60 border border-accent-500/20 rounded-xl p-3 flex flex-col gap-2 mb-2">
-                  <div className="flex gap-2">
+                  <div>
+                    <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Nº edital (opcional)</label>
                     <Input
-                      placeholder="Nº edital (ex: 5.2 a)"
+                      placeholder="Ex: 5.2 a)"
                       value={novoItem.numeroEdital}
                       onChange={(e) => setNovoItem({ ...novoItem, numeroEdital: e.target.value })}
-                      className="w-32 shrink-0 font-mono"
+                      className="font-mono"
                     />
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">
+                      Descrição <span className="text-negative-400">*</span>
+                    </label>
                     <Input
                       placeholder="Ex: Balanço Patrimonial 2025, Atestado de Capacidade Técnica..."
                       value={novoItem.descricao}
                       onChange={(e) => setNovoItem({ ...novoItem, descricao: e.target.value })}
-                      className="flex-1"
                     />
                   </div>
                   <div className="flex gap-2">
@@ -2775,11 +2780,11 @@ export default function LicitacaoPage() {
                   </div>
                   <div className="flex gap-2">
                     <div className="flex-1">
-                      <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Prazo</label>
+                      <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Prazo (opcional)</label>
                       <Input type="date" value={novoItem.prazo} onChange={(e) => setNovoItem({ ...novoItem, prazo: e.target.value })} />
                     </div>
                     <div className="flex-1">
-                      <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Responsável</label>
+                      <label className="text-[10px] uppercase tracking-wider text-base-500 font-bold block mb-1">Responsável (opcional)</label>
                       <Input placeholder="Nome de quem vai resolver" value={novoItem.responsavelNome} onChange={(e) => setNovoItem({ ...novoItem, responsavelNome: e.target.value })} />
                     </div>
                   </div>
