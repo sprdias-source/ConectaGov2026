@@ -2153,7 +2153,7 @@ export default function LicitacaoPage() {
   const clientName = bidding ? (clients.find((c) => c.id === bidding.clientId)?.name ?? 'Cliente removido') : ''
 
   const { files: anexos, uploadFile: uploadAnexo, uploadProgress, deleteFile: deleteAnexo, getDownloadUrl: getAnexoUrl } = useAttachedFiles('licitacao', bidding?.id)
-  const { items, addItem, updateItem, deleteItem, limparItensIA, addItensEmLote, marcarNaoAplicavel, reverterNaoAplicavel } = useBiddingChecklist(bidding?.id)
+  const { items, isLoading: carregandoChecklist, addItem, updateItem, deleteItem, limparItensIA, addItensEmLote, marcarNaoAplicavel, reverterNaoAplicavel } = useBiddingChecklist(bidding?.id)
   const { analisar: analisarAnexosDeclaracao } = useDeclaracaoAnexos(bidding?.id)
   const { documents: clientDocs, uploadAndSave: uploadClientDoc } = useClientDocuments(bidding?.clientId)
   const { atestados, addAtestado } = useAtestados(bidding?.clientId)
@@ -2186,15 +2186,23 @@ export default function LicitacaoPage() {
   // com os itens de checklist já existentes (mesma transformação de número
   // usada em addItensEmLote) pra saber quais já foram adicionados e quais
   // ainda faltam, em vez de sempre oferecer "adicionar" tudo de novo.
-  // BUG CORRIGIDO: antes só comparava com itens de origem='ia' — um item
+  // BUG CORRIGIDO (1): antes só comparava com itens de origem='ia' — um item
   // adicionado manualmente com a mesma numeração/descrição do edital (ex:
   // "12.1 a)") não contava como "já existe", então uma nova análise (ou a
   // mesma análise recarregando) reinseria o mesmo item de novo, duplicado.
+  // BUG CORRIGIDO (2): a comparação era só por texto exato da descrição —
+  // como a Análise de Edital é feita por IA (não determinística), reanalisar
+  // o mesmo edital podia devolver a mesma cláusula com redação levemente
+  // diferente, o texto não batia no Set, e o item entrava de novo com a
+  // mesma numeração de um já existente. Agora compara pelo número do edital
+  // (numeroEdital) quando ele existe — muito mais estável entre reanálises
+  // — e só cai pra descrição exata quando não há número.
   const checklistDocumentacao = ((analysis?.analise as AnaliseEdital | null)?.checklistDocumentacao ?? [])
-  const descricoesJaNoChecklist = new Set(items.map((i) => i.descricao))
-  const checklistSugeridoPendente = checklistDocumentacao.filter(
-    (doc) => !descricoesJaNoChecklist.has(extrairNumeroEdital(doc.descricao).descricao)
-  )
+  const chavesJaNoChecklist = new Set(items.map((i) => i.numeroEdital?.trim() || i.descricao))
+  const checklistSugeridoPendente = checklistDocumentacao.filter((doc) => {
+    const { numero, descricao } = extrairNumeroEdital(doc.descricao)
+    return !chavesJaNoChecklist.has(numero?.trim() || descricao)
+  })
 
   // Assim que uma análise de edital termina (a primeira ou uma refeita), o
   // checklist e os anexos de declaração se preenchem sozinhos — sem os
@@ -2206,12 +2214,18 @@ export default function LicitacaoPage() {
 
   const checklistAutoPreenchidoRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!podeEditar || !chaveAnaliseConcluida) return
+    // BUG CORRIGIDO (3): sem esperar o checklist terminar de carregar
+    // (carregandoChecklist), `items` começava vazio (query.data ?? []) —
+    // se a query de checklist demorasse mais que a da análise, o dedup via
+    // chavesJaNoChecklist rodava vazio e reinseria o checklist inteiro
+    // duplicado. Acontecia de forma intermitente a cada F5 numa licitação
+    // já analisada, dependendo só de qual query respondia primeiro.
+    if (!podeEditar || !chaveAnaliseConcluida || carregandoChecklist) return
     if (checklistAutoPreenchidoRef.current === chaveAnaliseConcluida) return
     if (checklistSugeridoPendente.length === 0) return
     checklistAutoPreenchidoRef.current = chaveAnaliseConcluida
     addItensEmLote.mutate(checklistSugeridoPendente)
-  }, [podeEditar, chaveAnaliseConcluida, checklistSugeridoPendente, addItensEmLote])
+  }, [podeEditar, chaveAnaliseConcluida, carregandoChecklist, checklistSugeridoPendente, addItensEmLote])
 
   const anexosAutoAnalisadosRef = useRef<string | null>(null)
   useEffect(() => {

@@ -82,10 +82,14 @@ export function useLicitaiEditais() {
       if (!edital.clientId) throw new Error('Vincule um cliente antes de enviar pra Oportunidades')
       if (!edital.editalStoragePath) throw new Error('Aguarde o edital ser baixado antes de enviar pra Oportunidades')
 
+      // Sem filtro por user_id aqui: a RLS de `platforms` já restringe às
+      // linhas da conta certa (owner_efetivo) — filtrar também por
+      // `user.id` quebrava pra um membro de equipe (o dono da linha é o
+      // dono da conta, não o uid do membro logado), fazendo esta busca
+      // nunca achar a plataforma existente e criar uma nova a cada envio.
       const { data: plataforma } = await supabase
         .from('platforms')
         .select('id')
-        .eq('user_id', user.id)
         .ilike('nome', NOME_PLATAFORMA_LICITEI)
         .maybeSingle()
       let platformId = plataforma?.id as string | undefined
