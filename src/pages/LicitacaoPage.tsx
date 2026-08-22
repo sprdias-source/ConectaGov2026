@@ -2557,13 +2557,19 @@ export default function LicitacaoPage() {
           empilha certinho embaixo da barra mobile do AppShell (que também é
           sticky), sem sobrepor. Mesmo hook (useCompactOnScroll) dá pra
           reaproveitar depois no Kanban ou em qualquer outra tela longa. */}
-      <div
-        className={`sticky top-[56px] lg:top-0 z-20 bg-base-950 px-6 transition-[padding-top,padding-bottom] duration-200 ${
-          cabecalhoCompacto ? 'pt-3 shadow-lg shadow-black/30 border-b border-base-800' : 'pt-5'
-        }`}
-      >
-        <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${cabecalhoCompacto ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'}`}>
-          <div className="overflow-hidden">
+      <div className={`sticky top-[56px] lg:top-0 z-20 bg-base-950 px-6 pt-3 ${cabecalhoCompacto ? 'shadow-lg shadow-black/30 border-b border-base-800' : ''}`}>
+        {/* Troca direta (sem animar altura) entre o cabeçalho cheio e o
+            resumo compacto — animar a altura de um elemento sticky enquanto
+            ele já está grudado é o que causava a rolagem "pulando"/travando
+            no celular (o WebKit do iOS recalcula o sticky a cada frame da
+            transição, no meio do próprio gesto de arrastar o dedo). */}
+        {cabecalhoCompacto ? (
+          <div className="flex items-center gap-2 min-w-0 pb-2.5">
+            <StatusBadge status={bidding.status} />
+            <p className="text-[12.5px] font-semibold text-base-200 truncate">{bidding.objeto}</p>
+          </div>
+        ) : (
+          <div className="pb-2">
             <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-[12px] text-base-500 hover:text-base-300 transition mb-3">
               <ArrowLeft className="w-3.5 h-3.5" /> Voltar
             </button>
@@ -2578,13 +2584,6 @@ export default function LicitacaoPage() {
                 podeEditar={podeEditar}
               />
             </div>
-          </div>
-        </div>
-
-        {cabecalhoCompacto && (
-          <div className="flex items-center gap-2 min-w-0 pb-2.5">
-            <StatusBadge status={bidding.status} />
-            <p className="text-[12.5px] font-semibold text-base-200 truncate">{bidding.objeto}</p>
           </div>
         )}
 
