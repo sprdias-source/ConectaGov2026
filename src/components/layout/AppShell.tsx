@@ -224,9 +224,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
                   to={item.path}
                   onClick={() => { setMobileOpen(false); setPeeking(false) }}
                   className={({ isActive }) =>
-                    `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium transition ${
+                    `relative flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium transition ${
                       isActive
-                        ? 'bg-[var(--nav-active-bg)] text-accent-300 border border-[var(--nav-active-border)]'
+                        ? 'bg-[var(--nav-active-bg)] text-accent-300 border border-[var(--nav-active-border)] before:content-[""] before:absolute before:left-0 before:top-1/4 before:bottom-1/4 before:w-[3px] before:rounded-full before:bg-accent-400'
                         : 'text-base-400 hover:text-base-100 hover:bg-base-850 border border-transparent'
                     }`
                   }
@@ -338,7 +338,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                   className={({ isActive }) =>
                     `relative w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition ${
                       isActive
-                        ? 'bg-[var(--nav-active-bg)] text-accent-300 border border-[var(--nav-active-border)]'
+                        ? 'bg-[var(--nav-active-bg)] text-accent-300 border border-[var(--nav-active-border)] before:content-[""] before:absolute before:left-0 before:top-1/4 before:bottom-1/4 before:w-[3px] before:rounded-full before:bg-accent-400'
                         : 'text-base-400 hover:text-base-100 hover:bg-base-850 border border-transparent'
                     }`
                   }

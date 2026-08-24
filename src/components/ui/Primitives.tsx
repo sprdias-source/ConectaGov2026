@@ -48,10 +48,10 @@ export function KpiCard({
   const deltaColor = deltaIsGood === null ? '' : deltaIsGood ? 'text-positive-400' : 'text-negative-300'
 
   return (
-    <div className={`rounded-xl p-4 flex flex-col gap-1.5 transition ${
+    <div className={`rounded-xl p-4 flex flex-col gap-1.5 transition-all duration-200 hover:-translate-y-0.5 ${
       elevated
-        ? 'bg-base-850/80 border border-base-600/60 shadow-[0_0_0_1px_rgba(45,190,203,0.08)]'
-        : 'bg-base-900/60 border border-base-700/50'
+        ? 'bg-base-850/80 border border-base-600/60 shadow-[0_0_0_1px_rgba(45,190,203,0.08)] hover:border-base-600'
+        : 'bg-base-900/60 border border-base-700/50 hover:border-base-600/70'
     }`}>
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-bold uppercase tracking-widest text-base-500">{label}</span>
@@ -80,28 +80,44 @@ export function Card({ children, className = '' }: { children: ReactNode; classN
   )
 }
 
+// Pill com pontinho em vez de caixa-alta com borda: lê-se mais rápido nas
+// tabelas e deixa o status "vivo" (o pulso só nos que pedem atenção agora —
+// atrasado/perdeu).
+const STATUS_TONES: Record<string, 'positive' | 'negative' | 'warning' | 'accent' | 'neutral'> = {
+  'Pago': 'positive',
+  'Pendente': 'warning',
+  'Atrasado': 'negative',
+  'Vence Hoje': 'warning',
+  'Ganhou': 'positive',
+  'Perdeu': 'negative',
+  'Em Andamento': 'accent',
+  'Cancelada': 'neutral',
+  'Cancelado': 'neutral',
+  'Desistiu': 'warning',
+  'Faturado': 'positive',
+}
+const PILL_TONES: Record<string, string> = {
+  positive: 'bg-positive-500/12 text-positive-400',
+  negative: 'bg-negative-500/12 text-negative-400',
+  warning: 'bg-warning-500/13 text-warning-400',
+  accent: 'bg-accent-500/13 text-accent-400',
+  neutral: 'bg-base-700/40 text-base-300',
+}
+
 export function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    'Pago': 'bg-positive-500/15 text-positive-400 border-positive-500/30',
-    'Pendente': 'bg-warning-500/15 text-warning-400 border-warning-500/30',
-    'Atrasado': 'bg-negative-500/15 text-negative-400 border-negative-500/30',
-    'Vence Hoje': 'bg-warning-500/15 text-warning-400 border-warning-500/30',
-    'Ganhou': 'bg-positive-500/15 text-positive-400 border-positive-500/30',
-    'Perdeu': 'bg-negative-500/15 text-negative-400 border-negative-500/30',
-    'Em Andamento': 'bg-accent-500/15 text-accent-400 border-accent-500/30',
-    'Cancelada': 'bg-base-600/30 text-base-400 border-base-600/40',
-    'Cancelado': 'bg-base-600/30 text-base-400 border-base-600/40',
-    'Desistiu': 'bg-warning-500/15 text-warning-400 border-warning-500/30',
-    'Faturado': 'bg-positive-500/15 text-positive-400 border-positive-500/30',
-  }
+  const tone = STATUS_TONES[status] ?? 'neutral'
+  const pulsar = tone === 'negative'
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide border ${styles[status] ?? 'bg-base-700/30 text-base-300 border-base-600/40'}`}>
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${PILL_TONES[tone]}`}>
+      <span className={`w-1.5 h-1.5 rounded-full bg-current shrink-0 ${pulsar ? 'animate-pulse' : ''}`} />
       {status}
     </span>
   )
 }
 
-export function EmptyState({ icon: Icon, title, description }: { icon: LucideIcon; title: string; description: string }) {
+export function EmptyState({
+  icon: Icon, title, description, action,
+}: { icon: LucideIcon; title: string; description: string; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center text-center py-16 px-6">
       <div className="w-12 h-12 rounded-full bg-base-850 border border-base-700 flex items-center justify-center mb-4">
@@ -109,6 +125,7 @@ export function EmptyState({ icon: Icon, title, description }: { icon: LucideIco
       </div>
       <h3 className="text-base-200 font-semibold text-sm mb-1">{title}</h3>
       <p className="text-base-500 text-[13px] max-w-sm">{description}</p>
+      {action && <div className="mt-5">{action}</div>}
     </div>
   )
 }
