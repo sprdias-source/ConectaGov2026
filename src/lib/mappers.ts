@@ -150,6 +150,7 @@ export const fromBiddingRow = (r: Row<'biddings'>): Bidding => ({
   isActive: r.is_active,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
+  camposPreenchidosPorIa: r.campos_preenchidos_por_ia ?? [],
 })
 
 export const toBiddingInsert = (b: Partial<Bidding>, userId: string): Database['public']['Tables']['biddings']['Insert'] => ({
@@ -168,6 +169,7 @@ export const toBiddingInsert = (b: Partial<Bidding>, userId: string): Database['
   data_cadastro: b.dataCadastro ?? todayLocalISO(),
   valor_ofertado_real: b.valorOfertadoReal ?? null,
   valor_participacao: b.valorParticipacao ?? null,
+  campos_preenchidos_por_ia: b.camposPreenchidosPorIa ?? [],
   tipo_disputa: b.tipoDisputa ?? 'Item',
   taxa_participacao: b.taxaParticipacao ?? null,
   taxa_participacao_lancada: b.taxaParticipacaoLancada ?? false,

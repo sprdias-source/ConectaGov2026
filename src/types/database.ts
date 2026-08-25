@@ -598,6 +598,7 @@ export type Database = {
       }
       biddings: {
         Row: {
+          campos_preenchidos_por_ia: string[]
           client_id: string
           created_at: string
           data_abertura: string
@@ -638,6 +639,7 @@ export type Database = {
           valor_participacao: number | null
         }
         Insert: {
+          campos_preenchidos_por_ia?: string[]
           client_id: string
           created_at?: string
           data_abertura: string
@@ -678,6 +680,7 @@ export type Database = {
           valor_participacao?: number | null
         }
         Update: {
+          campos_preenchidos_por_ia?: string[]
           client_id?: string
           created_at?: string
           data_abertura?: string

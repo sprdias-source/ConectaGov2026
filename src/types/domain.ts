@@ -122,6 +122,11 @@ export interface Bidding {
   isActive: boolean
   createdAt: string
   updatedAt: string
+  // Quais campos (chaves deste tipo, ex: "objeto", "orgao") foram preenchidos
+  // pela última vez via "Preencher Licitação com estes Dados" e ainda não
+  // foram sobrescritos manualmente — ver mapearCamposDaAnalise. Usado só pra
+  // mostrar o selo "IA" ao lado do campo; nunca é lido pra decidir nada.
+  camposPreenchidosPorIa: string[]
 }
 
 export interface BiddingItem {
@@ -293,7 +298,7 @@ export interface Receipt {
   createdAt: string
 }
 
-export type FileCategory = 'Edital' | 'Termo de Referência' | 'Contrato' | 'Recibo' | 'Certidão' | 'Outro' | 'Checklist' | 'Proposta' | 'Proposta Readequada' | 'Declaração' | 'Modelo Portal Compras'
+export type FileCategory = 'Edital' | 'Termo de Referência' | 'Contrato' | 'Recibo' | 'Certidão' | 'Outro' | 'Checklist' | 'Proposta' | 'Proposta Readequada' | 'Declaração' | 'Modelo Portal Compras' | 'Empenho' | 'Ata de Sessão'
 export type FileEntityType = 'licitacao' | 'contrato' | 'recibo' | 'cliente' | 'funcionario' | 'empenho' | 'oportunidade'
 
 export interface AttachedFile {

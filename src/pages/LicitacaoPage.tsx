@@ -4,7 +4,7 @@ import {
   ArrowLeft, FileText, Upload, Plus, Trash2, CheckCircle2, Circle, Download, Eye,
   AlertCircle, Loader2, Sparkles, Award, Check, History, ChevronDown, ChevronUp,
   ClipboardList, Gavel, Wallet, Send, CircleDot, FileSignature, Info, Activity, RefreshCw, Wand2,
-  Paperclip, FolderDown, X, FileSpreadsheet, ScrollText, Copy, Printer, Calculator, Ban, RotateCcw,
+  Paperclip, FolderDown, X, FileSpreadsheet, ScrollText, Copy, Printer, Calculator, Ban, RotateCcw, Archive,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
@@ -53,7 +53,7 @@ import { parseFlexibleNumber, compararNumeroItem, normalizarNumeroItem } from '.
 import { mapearCamposDaAnalise, mapearItensDaAnalise, somarValorLicitado, mensagemAmigavelErroAnalise } from '../lib/analiseEdital'
 import { useToast } from '../hooks/useToast'
 import { CERT_CONFIG } from '../types/domain'
-import type { AnaliseEdital, Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingStatus, Client } from '../types/domain'
+import type { AnaliseEdital, AttachedFile, Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingStatus, Client } from '../types/domain'
 
 const ETAPAS_TRILHA: BiddingEtapa[] = [
   'Análise de Edital',
@@ -80,7 +80,8 @@ const ABAS = [
   { key: 'proposta-inicial', label: 'Cadastrar Proposta', icon: FileSpreadsheet },
   { key: 'precificacao', label: 'Precificação', icon: Calculator },
   { key: 'proposta', label: 'Proposta Readequada', icon: Wallet },
-  { key: 'documentos', label: 'Documentos Finais', icon: FileSignature },
+  { key: 'documentos', label: 'Documentos de Habilitação', icon: FileSignature },
+  { key: 'documentos-processo', label: 'Documentos do Processo', icon: Archive },
   { key: 'sessao', label: 'Sessão Ao Vivo', icon: Activity },
   { key: 'historico', label: 'Histórico', icon: ScrollText },
 ] as const
@@ -1607,6 +1608,89 @@ function DeclaracoesPadrao({ bidding, client }: { bidding: Bidding; client: Clie
   )
 }
 
+type CategoriaProcesso = 'Contrato' | 'Empenho' | 'Ata de Sessão' | 'Outro'
+const CATEGORIAS_PROCESSO: { key: CategoriaProcesso; label: string }[] = [
+  { key: 'Contrato', label: 'Contrato Final' },
+  { key: 'Empenho', label: 'Empenho' },
+  { key: 'Ata de Sessão', label: 'Ata de Sessão' },
+  { key: 'Outro', label: 'Outro' },
+]
+
+// Documentos administrativos que só existem depois da disputa terminar —
+// diferente do Checklist (documentos de habilitação, exigidos ANTES/durante
+// a disputa) e da Proposta Readequada (a proposta em si), aqui entram papéis
+// que o próprio órgão devolve depois de homologar (às vezes com dias de
+// atraso): o contrato assinado pelas duas partes, os empenhos emitidos, atas
+// de sessão etc. Cada categoria aceita vários arquivos (ao contrário do
+// antigo slot único de "Contrato Final"), porque na prática chegam aos
+// poucos — o empenho de uma parcela, depois de outra, mais de uma ata.
+function AbaDocumentosDoProcesso({
+  anexos, enviando, uploadProgress, abrindo, podeEditar, onUpload, onVisualizar, onAbrir, onExcluir,
+}: {
+  anexos: AttachedFile[]
+  enviando: string | null
+  uploadProgress: number | null
+  abrindo: string | null
+  podeEditar: boolean
+  onUpload: (file: File, category: CategoriaProcesso) => void
+  onVisualizar: (anexo: AttachedFile) => void
+  onAbrir: (anexo: AttachedFile) => void
+  onExcluir: (anexo: AttachedFile) => void
+}) {
+  const documentosDoProcesso = anexos.filter((a) => CATEGORIAS_PROCESSO.some((c) => c.key === a.category))
+
+  return (
+    <div className="flex flex-col gap-5">
+      <p className="text-[12px] text-base-500">
+        Contrato final assinado, empenhos, atas de sessão e outros documentos administrativos que chegam depois da disputa
+        — geralmente com alguns dias de atraso do órgão. Aceita vários arquivos por categoria.
+      </p>
+
+      {CATEGORIAS_PROCESSO.map(({ key, label }) => {
+        const desteTipo = documentosDoProcesso.filter((a) => a.category === key)
+        return (
+          <div key={key}>
+            <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">{label}</p>
+            {desteTipo.length === 0 && (
+              <p className="text-[12px] text-base-500 italic py-1">Nenhum documento enviado ainda.</p>
+            )}
+            {desteTipo.length > 0 && (
+              <div className="flex flex-col gap-1.5 mb-2">
+                {desteTipo.map((a) => (
+                  <div key={a.id} className="flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-xl px-4 py-2.5">
+                    <FileSignature className="w-4 h-4 text-accent-400 shrink-0" />
+                    <span className="flex-1 text-[13px] text-base-200 truncate">{a.name}</span>
+                    <button onClick={() => onVisualizar(a)} title="Visualizar" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => onAbrir(a)} disabled={abrindo === a.id} title="Abrir em nova aba" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                    {podeEditar && (
+                      <button onClick={() => onExcluir(a)} title="Excluir" className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {podeEditar && (
+              <label className="flex items-center gap-2 justify-center border border-dashed border-base-700 rounded-xl px-4 py-3 cursor-pointer hover:border-accent-500/40 hover:bg-base-850/40 transition text-base-400">
+                {enviando === key ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                <span className="text-[12px] font-medium">
+                  {enviando === key ? `Enviando...${uploadProgress !== null ? ` ${uploadProgress}%` : ''}` : `Enviar ${label.toLowerCase()}`}
+                </span>
+                <input type="file" accept=".pdf,.png,.jpg,.jpeg" className="hidden" disabled={!!enviando} onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(f, key); e.target.value = '' }} />
+              </label>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // Linha do tempo de tudo que já aconteceu com esta licitação — os eventos
 // já eram gravados em audit_logs (logEvent, useAuditLog.ts) desde sempre,
 // só não existia nenhuma tela que os mostrasse. Filtra por entity_type/
@@ -2030,7 +2114,15 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
 
   const confirmarPreenchimento = () => {
     if (!preenchimento) return
-    updateBidding.mutate({ bidding: { ...bidding, ...preenchimento.campos }, items: preenchimento.itens }, {
+    // Une com o que já estava marcado (em vez de substituir) — se uma
+    // reanálise não trouxer de novo um campo que uma vez já veio da IA
+    // (ex: o edital não tinha "processo" desta vez), o selo daquele campo
+    // não desaparece à toa; só some quando alguém edita manualmente.
+    const camposPreenchidosPorIa = Array.from(new Set([
+      ...(bidding.camposPreenchidosPorIa ?? []),
+      ...Object.keys(preenchimento.campos),
+    ]))
+    updateBidding.mutate({ bidding: { ...bidding, ...preenchimento.campos, camposPreenchidosPorIa }, items: preenchimento.itens }, {
       onSuccess: () => { setConfirmandoPreenchimento(false); showToast('Licitação atualizada com os dados da análise.') },
       onError: () => setConfirmandoPreenchimento(false),
     })
@@ -2284,7 +2376,7 @@ export default function LicitacaoPage() {
   const propostaEnviada = anexos.find((f) => f.category === 'Proposta')
   const propostaReadequada = anexos.find((f) => f.category === 'Proposta Readequada')
 
-  const handleUploadAnexo = async (file: File, category: 'Edital' | 'Termo de Referência' | 'Contrato' | 'Proposta') => {
+  const handleUploadAnexo = async (file: File, category: 'Edital' | 'Termo de Referência' | 'Contrato' | 'Proposta' | 'Empenho' | 'Ata de Sessão' | 'Outro') => {
     setEnviando(category)
     try {
       await uploadAnexo.mutateAsync({ file, category })
@@ -2725,7 +2817,6 @@ export default function LicitacaoPage() {
         {aba === 'checklist' && (
           <>
             {painelStatus}
-            <DeclaracaoAnexosPanel bidding={bidding} checklistItems={items} />
             <div>
               <div className="flex items-center justify-between mb-2">
                 <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">
@@ -3062,6 +3153,8 @@ export default function LicitacaoPage() {
                 </div>
               )}
             </div>
+
+            <DeclaracaoAnexosPanel bidding={bidding} checklistItems={items} />
           </>
         )}
 
@@ -3088,7 +3181,7 @@ export default function LicitacaoPage() {
                 </p>
               ) : (
                 <div className="bg-base-850/60 border border-base-800 rounded-xl p-3 flex flex-col gap-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2" title={`${itensComAnexo.length} de ${items.length} itens do checklist já têm documento anexado`}>
                     <div className="flex-1 h-1.5 bg-base-800 rounded-full overflow-hidden">
                       <div className="h-full bg-positive-500 rounded-full" style={{ width: `${Math.round((itensComAnexo.length / items.length) * 100)}%` }} />
                     </div>
@@ -3109,46 +3202,33 @@ export default function LicitacaoPage() {
               )}
             </div>
 
-            <div>
-              <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">Contrato Final</p>
-              {contrato ? (
-                <div className="flex items-center gap-3 bg-base-850/60 border border-base-800 rounded-xl px-4 py-3">
-                  <FileSignature className="w-5 h-5 text-accent-400 shrink-0" />
-                  <span className="flex-1 text-[13px] text-base-200 truncate">{contrato.name}</span>
-                  <button onClick={() => handleVisualizarAnexo(contrato)} title="Visualizar" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
-                    <Eye className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => handleAbrirAnexo(contrato)} disabled={abrindo === contrato.id} title="Abrir em nova aba" className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
-                    <Download className="w-3.5 h-3.5" />
-                  </button>
-                  {podeEditar && (
-                    <button onClick={() => deleteAnexo.mutate(contrato)} className="p-1.5 text-base-400 hover:text-negative-400 hover:bg-base-800 rounded transition">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              ) : podeEditar ? (
-                <label className="flex items-center gap-2 justify-center border border-dashed border-base-700 rounded-xl px-4 py-4 cursor-pointer hover:border-accent-500/40 hover:bg-base-850/40 transition text-base-400">
-                  {enviando === 'Contrato' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                  <span className="text-[12px] font-medium">{enviando === 'Contrato' ? `Enviando...${uploadProgress !== null ? ` ${uploadProgress}%` : ''}` : 'Enviar PDF do contrato assinado'}</span>
-                  <input type="file" accept=".pdf" className="hidden" disabled={!!enviando} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadAnexo(f, 'Contrato'); e.target.value = '' }} />
-                </label>
-              ) : (
-                <p className="text-[12px] text-base-500 italic py-2">Nenhum contrato enviado ainda.</p>
-              )}
-            </div>
-
             <div className="bg-base-850/60 border border-base-800 rounded-lg p-3 text-[12px] text-base-400 flex items-start gap-2">
               <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-base-500" />
               <span>
                 Documentos institucionais do cliente (contrato social, atestados, certidões) não ficam aqui — eles vivem na
-                pasta do próprio cliente, em <strong className="text-base-300">Cadastros → Documentos de Habilitação</strong>. O envio pra
-                plataforma do órgão continua manual — cada portal de compras é diferente.
+                pasta do próprio cliente, em <strong className="text-base-300">Cadastros → Documentos de Habilitação</strong> (a
+                habilitação da empresa, não desta licitação específica). O contrato final assinado, empenhos e atas
+                ficam na aba <strong className="text-base-300">Documentos do Processo</strong>. O envio pra plataforma do
+                órgão continua manual — cada portal de compras é diferente.
               </span>
             </div>
 
             <DeclaracoesPadrao bidding={bidding} client={clienteDaLicitacao} />
           </>
+        )}
+
+        {aba === 'documentos-processo' && (
+          <AbaDocumentosDoProcesso
+            anexos={anexos}
+            enviando={enviando}
+            uploadProgress={uploadProgress}
+            abrindo={abrindo}
+            podeEditar={podeEditar}
+            onUpload={handleUploadAnexo}
+            onVisualizar={handleVisualizarAnexo}
+            onAbrir={handleAbrirAnexo}
+            onExcluir={(a) => deleteAnexo.mutate(a)}
+          />
         )}
 
         {aba === 'sessao' && <AbaSessaoAoVivo bidding={bidding} />}

@@ -1,11 +1,12 @@
 import type { InputHTMLAttributes, SelectHTMLAttributes, ReactNode, TextareaHTMLAttributes, ButtonHTMLAttributes } from 'react'
 import type { LucideIcon } from 'lucide-react'
 
-export function Field({ label, children, required }: { label: string; children: ReactNode; required?: boolean }) {
+export function Field({ label, children, required, badge }: { label: string; children: ReactNode; required?: boolean; badge?: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-[11px] font-bold uppercase tracking-wider text-base-400">
+      <label className="text-[11px] font-bold uppercase tracking-wider text-base-400 flex items-center gap-1.5">
         {label} {required && <span className="text-negative-400">*</span>}
+        {badge}
       </label>
       {children}
     </div>

@@ -16,6 +16,7 @@ import { useClients } from '../../hooks/useClients'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import { useToast } from '../../hooks/useToast'
 import { useHabilitacaoPorLicitacao } from '../../hooks/useBiddingChecklist'
+import { CAMPOS_RASTREAVEIS_IA } from '../../lib/analiseEdital'
 import type { Bidding, BiddingItem } from '../../types/domain'
 
 function fileParaBase64(file: File): Promise<string> {
@@ -82,7 +83,17 @@ export default function BiddingsTab() {
 
   const handleSave = (data: Partial<Bidding>, items: Partial<BiddingItem>[]) => {
     if (editing) {
-      updateBidding.mutate({ bidding: { ...editing, ...data } as Bidding, items }, {
+      // Editar aqui é a "porta lateral" que passa por fora do fluxo de IA —
+      // qualquer campo rastreável que a pessoa de fato mudou (valor
+      // diferente do que já estava) perde o selo "IA", porque a partir de
+      // agora o valor é digitado, não mais o que a análise trouxe. Campo
+      // que ficou igual ao que já estava mantém o selo.
+      const camposPreenchidosPorIa = (editing.camposPreenchidosPorIa ?? []).filter((campo) => {
+        const chave = campo as keyof Bidding
+        if (!CAMPOS_RASTREAVEIS_IA.includes(chave)) return true
+        return data[chave] === undefined || data[chave] === editing[chave]
+      })
+      updateBidding.mutate({ bidding: { ...editing, ...data, camposPreenchidosPorIa } as Bidding, items }, {
         onSuccess: () => { setModalOpen(false); setEditing(null); showToast('Licitação atualizada com sucesso.') },
         onError: (err) => showToast(`Erro ao atualizar a licitação: ${err instanceof Error ? err.message : String(err)}`, 'error'),
       })

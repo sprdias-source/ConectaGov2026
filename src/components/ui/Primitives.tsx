@@ -1,5 +1,20 @@
 import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
+
+// Selo pra distinguir campos que vieram de "Preencher Licitação com estes
+// Dados" (extração de IA a partir do edital) dos digitados manualmente —
+// ver Bidding.camposPreenchidosPorIa. Só decora, nunca decide nada.
+export function IaBadge() {
+  return (
+    <span
+      title="Preenchido automaticamente pela análise de IA do edital"
+      className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase tracking-wide text-accent-300 bg-accent-500/12 border border-accent-500/30 rounded-full px-1.5 py-px normal-case"
+    >
+      <Sparkles className="w-2.5 h-2.5" /> IA
+    </span>
+  )
+}
 
 export function PageHeader({
   title, subtitle, icon: Icon, actions,
