@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { todayLocalISO } from '../../lib/dateUtils'
 import Modal from '../ui/Modal'
 import { Field, Input, Select, Textarea, Button } from '../ui/FormControls'
+import { IaBadge } from '../ui/Primitives'
 import CurrencyInput from '../ui/CurrencyInput'
 import ErrorAlert from '../ui/ErrorAlert'
 import BiddingItemsEditor from './BiddingItemsEditor'
@@ -83,6 +84,12 @@ export default function BiddingFormModal({
   const somaItens = somarValorLicitado(draftItems)
   const divergeDaSomaItens = form.valorParticipacao != null && somaItens > 0 && Math.abs(form.valorParticipacao - somaItens) > 0.01
 
+  // Selo "IA" nos campos que ainda estão com o valor trazido por "Preencher
+  // Licitação com estes Dados" — some sozinho assim que o campo é editado
+  // (handleSave, na tela que chama este modal, tira a chave da lista ao
+  // detectar que o valor mudou).
+  const veioDaIa = (campo: keyof Bidding) => !!initial?.camposPreenchidosPorIa?.includes(campo)
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
     onSave(form, draftItems)
@@ -109,16 +116,16 @@ export default function BiddingFormModal({
               </Select>
             </Field>
 
-            <Field label="Objeto da Licitação">
+            <Field label="Objeto da Licitação" badge={veioDaIa('objeto') && <IaBadge />}>
               <Textarea rows={2} value={form.objeto ?? ''} onChange={(e) => setForm({ ...form, objeto: e.target.value })} placeholder="Descrição detalhada do objeto licitado (ou deixe em branco — a Análise de Edital por IA preenche depois)" />
             </Field>
 
-            <Field label="Órgão Licitante">
+            <Field label="Órgão Licitante" badge={veioDaIa('orgao') && <IaBadge />}>
               <Input value={form.orgao ?? ''} onChange={(e) => setForm({ ...form, orgao: e.target.value })} placeholder="Ex: Prefeitura Municipal de Sorocaba (ou deixe em branco — a IA preenche depois)" />
             </Field>
 
             <div className="grid grid-cols-[1fr_100px] gap-4">
-              <Field label="Município do Órgão">
+              <Field label="Município do Órgão" badge={veioDaIa('municipio') && <IaBadge />}>
                 <Input value={form.municipio ?? ''} onChange={(e) => setForm({ ...form, municipio: e.target.value })} placeholder="Ex: Imaruí" />
               </Field>
               <Field label="UF">
@@ -127,7 +134,7 @@ export default function BiddingFormModal({
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Modalidade">
+              <Field label="Modalidade" badge={veioDaIa('modalidade') && <IaBadge />}>
                 <Select value={form.modalidade} onChange={(e) => setForm({ ...form, modalidade: e.target.value as BiddingModalidade })}>
                   {MODALIDADES.map((m) => <option key={m} value={m}>{m}</option>)}
                 </Select>
@@ -155,7 +162,7 @@ export default function BiddingFormModal({
             </Field>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <Field label="Valor Total do Edital (R$)">
+              <Field label="Valor Total do Edital (R$)" badge={veioDaIa('valorLicitado') && <IaBadge />}>
                 <CurrencyInput value={form.valorLicitado ?? 0} onChange={(v) => setForm({ ...form, valorLicitado: v })} />
               </Field>
               <Field label="Valor que Vamos Participar (R$)">
@@ -178,7 +185,7 @@ export default function BiddingFormModal({
               <Field label="Data de Cadastro">
                 <Input type="date" value={form.dataCadastro ?? ''} onChange={(e) => setForm({ ...form, dataCadastro: e.target.value })} />
               </Field>
-              <Field label="Data do Pregão" required>
+              <Field label="Data do Pregão" required badge={veioDaIa('dataAbertura') && <IaBadge />}>
                 <Input type="date" required value={form.dataAbertura ?? ''} onChange={(e) => setForm({ ...form, dataAbertura: e.target.value })} />
               </Field>
             </div>
@@ -212,13 +219,13 @@ export default function BiddingFormModal({
             </div>
 
             <div className="grid grid-cols-3 gap-4">
-              <Field label="Nº Edital">
+              <Field label="Nº Edital" badge={veioDaIa('numeroEdital') && <IaBadge />}>
                 <Input value={form.numeroEdital ?? ''} onChange={(e) => setForm({ ...form, numeroEdital: e.target.value })} placeholder="05/2026" />
               </Field>
-              <Field label="Processo">
+              <Field label="Processo" badge={veioDaIa('processo') && <IaBadge />}>
                 <Input value={form.processo ?? ''} onChange={(e) => setForm({ ...form, processo: e.target.value })} placeholder="Proc. 423/2026" />
               </Field>
-              <Field label="Portal">
+              <Field label="Portal" badge={veioDaIa('portal') && <IaBadge />}>
                 <Input value={form.portal ?? ''} onChange={(e) => setForm({ ...form, portal: e.target.value })} placeholder="ComprasNet" />
               </Field>
             </div>
@@ -227,7 +234,7 @@ export default function BiddingFormModal({
               <Textarea rows={2} value={form.observacaoEtapa ?? ''} onChange={(e) => setForm({ ...form, observacaoEtapa: e.target.value })} />
             </Field>
 
-            <Field label="Validade da Proposta (texto livre, ex: 60 (sessenta))">
+            <Field label="Validade da Proposta (texto livre, ex: 60 (sessenta))" badge={veioDaIa('diasValidadeProposta') && <IaBadge />}>
               <Input value={form.diasValidadeProposta ?? ''} onChange={(e) => setForm({ ...form, diasValidadeProposta: e.target.value })} placeholder="60 (sessenta)" />
             </Field>
           </>

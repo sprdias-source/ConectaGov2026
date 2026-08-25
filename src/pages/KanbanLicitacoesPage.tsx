@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   DndContext, DragOverlay, PointerSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors,
@@ -336,6 +336,41 @@ export default function KanbanLicitacoesPage() {
     return { semEtapa, porEtapa }
   }, [ativas])
 
+  // Barra de rolagem duplicada no topo do quadro: o quadro pode ficar bem
+  // mais alto que a tela (colunas com muitos cards), e a barra nativa do
+  // navegador só aparece embaixo de tudo, fora da área visível — obrigando
+  // a rolar a página inteira só pra alcançá-la. Essa segunda barra, fixa
+  // logo abaixo do cabeçalho, controla o mesmo scroll horizontal — arrastar
+  // ela move o quadro, sem precisar descer a página. O ResizeObserver
+  // mantém a largura do "fantasma" igual à largura real do conteúdo
+  // (colunas somadas), que muda conforme licitações entram/saem.
+  const boardScrollRef = useRef<HTMLDivElement>(null)
+  const boardContentRef = useRef<HTMLDivElement>(null)
+  const topScrollRef = useRef<HTMLDivElement>(null)
+  const [boardWidth, setBoardWidth] = useState(0)
+  const sincronizandoRef = useRef<'topo' | 'quadro' | null>(null)
+
+  useEffect(() => {
+    const conteudo = boardContentRef.current
+    if (!conteudo) return
+    const observer = new ResizeObserver(() => setBoardWidth(conteudo.scrollWidth))
+    observer.observe(conteudo)
+    return () => observer.disconnect()
+  }, [])
+
+  const handleScrollTopo = () => {
+    if (sincronizandoRef.current === 'quadro') { sincronizandoRef.current = null; return }
+    if (!boardScrollRef.current || !topScrollRef.current) return
+    sincronizandoRef.current = 'topo'
+    boardScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft
+  }
+  const handleScrollQuadro = () => {
+    if (sincronizandoRef.current === 'topo') { sincronizandoRef.current = null; return }
+    if (!boardScrollRef.current || !topScrollRef.current) return
+    sincronizandoRef.current = 'quadro'
+    topScrollRef.current.scrollLeft = boardScrollRef.current.scrollLeft
+  }
+
   const irParaEtapa = (bidding: Bidding, etapa: BiddingEtapa | null) => {
     if (bidding.etapa === etapa) return
     updateEtapa.mutate({ biddingId: bidding.id, etapa }, {
@@ -420,8 +455,15 @@ export default function KanbanLicitacoesPage() {
 
       {visualizacao === 'quadro' ? (
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setArrastando(null)}>
-          <div className="px-6 mt-4 overflow-x-auto">
-            <div className="flex gap-3 min-w-max pb-4">
+          {boardWidth > 0 && (
+            <div className="px-6 mt-4">
+              <div ref={topScrollRef} onScroll={handleScrollTopo} className="kanban-top-scroll overflow-x-auto overflow-y-hidden">
+                <div style={{ width: boardWidth, height: 1 }} />
+              </div>
+            </div>
+          )}
+          <div ref={boardScrollRef} onScroll={handleScrollQuadro} className="px-6 mt-2 overflow-x-auto">
+            <div ref={boardContentRef} className="flex gap-3 min-w-max pb-4">
               <ColunaKanban id="sem-etapa" titulo="Sem Etapa" itens={colunas.semEtapa.length}>
                 {colunas.semEtapa.length === 0 ? (
                   <p className="text-[11px] text-base-600 italic text-center py-6">Arraste um card aqui pra tirar a etapa</p>

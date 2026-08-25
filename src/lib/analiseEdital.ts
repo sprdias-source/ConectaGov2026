@@ -69,6 +69,14 @@ export function somarValorLicitado(itens: Partial<BiddingItem>[]): number {
   return itens.reduce((s, i) => s + (i.quantidade ?? 0) * (i.valorUnitarioLicitado ?? 0), 0)
 }
 
+// Todo campo que mapearCamposDaAnalise é capaz de preencher — usado só pra
+// saber quais chaves marcar/desmarcar com o selo "IA" (ver
+// Bidding.camposPreenchidosPorIa), nunca pra decidir o que gravar.
+export const CAMPOS_RASTREAVEIS_IA: (keyof Bidding)[] = [
+  'municipio', 'orgao', 'objeto', 'numeroEdital', 'processo', 'portal',
+  'modalidade', 'dataAbertura', 'diasValidadeProposta', 'valorLicitado',
+]
+
 // Só os campos que a análise conseguiu identificar (nunca sobrescreve com
 // vazio) — quem decide o que fazer com campos ausentes (manter o que já
 // tinha, ou deixar em branco por ser uma licitação nova) é quem chama.
