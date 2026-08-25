@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { Lock } from 'lucide-react'
 import { todayLocalISO } from '../../lib/dateUtils'
 import Modal from '../ui/Modal'
 import { Field, Input, Select, Textarea, Button } from '../ui/FormControls'
@@ -6,8 +7,10 @@ import { IaBadge } from '../ui/Primitives'
 import CurrencyInput from '../ui/CurrencyInput'
 import ErrorAlert from '../ui/ErrorAlert'
 import BiddingItemsEditor from './BiddingItemsEditor'
+import UnlockWithPasswordDialog from '../ui/UnlockWithPasswordDialog'
 import { useBiddingItems } from '../../hooks/useBiddingItems'
 import { somarValorLicitado } from '../../lib/analiseEdital'
+import { useBiddingEditLock } from '../../lib/biddingLock'
 import { formatBRL } from '../../hooks/useAccountBalances'
 import type { Bidding, BiddingModalidade, BiddingTipo, BiddingStatus, BiddingEtapa, BiddingItem } from '../../types/domain'
 import type { Client } from '../../types/domain'
@@ -55,8 +58,10 @@ export default function BiddingFormModal({
   const [form, setForm] = useState<Partial<Bidding>>(() => emptyForm(clients))
   const [tab, setTab] = useState<'dados' | 'itens'>('dados')
   const [draftItems, setDraftItems] = useState<Partial<BiddingItem>[]>([])
+  const [mostrandoUnlock, setMostrandoUnlock] = useState(false)
 
   const { items: savedItems } = useBiddingItems(initial?.id ?? null)
+  const { bloqueada, desbloquear } = useBiddingEditLock(initial ?? null)
 
   // CORREÇÃO DE BUG: sincroniza o formulário sempre que o modal abre,
   // em vez de calcular o estado inicial apenas na primeira montagem.
@@ -107,6 +112,17 @@ export default function BiddingFormModal({
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        {bloqueada && (
+          <div className="flex items-center gap-3 bg-accent-500/10 border border-accent-500/30 rounded-lg p-3">
+            <Lock className="w-4 h-4 text-accent-400 shrink-0" />
+            <p className="flex-1 text-[12px] text-accent-200">
+              Esta licitação já está <strong>Ganhou</strong> e <strong>Adjudicada e Homologada</strong> — os dados são definitivos e a edição está bloqueada.
+            </p>
+            <Button type="button" variant="secondary" onClick={() => setMostrandoUnlock(true)}>Desbloquear com senha</Button>
+          </div>
+        )}
+
+        <fieldset disabled={bloqueada} className="contents">
         {tab === 'dados' ? (
           <>
             <Field label="Cliente / Contratante" required>
@@ -241,14 +257,22 @@ export default function BiddingFormModal({
         ) : (
           <BiddingItemsEditor items={draftItems} onChange={setDraftItems} tipoDisputa={form.tipoDisputa ?? 'Item'} />
         )}
+        </fieldset>
 
         <ErrorAlert error={error} />
 
         <div className="flex justify-end gap-2 pt-2 border-t border-base-800">
           <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
-          <Button type="submit" disabled={isSaving || !form.clientId}>{isSaving ? 'Salvando...' : 'Salvar Licitação'}</Button>
+          <Button type="submit" disabled={isSaving || !form.clientId || bloqueada}>{isSaving ? 'Salvando...' : 'Salvar Licitação'}</Button>
         </div>
       </form>
+
+      <UnlockWithPasswordDialog
+        open={mostrandoUnlock}
+        entityLabel={`Licitação "${initial?.objeto ?? ''}"`}
+        onCancel={() => setMostrandoUnlock(false)}
+        onUnlocked={() => { desbloquear(); setMostrandoUnlock(false) }}
+      />
     </Modal>
   )
 }
