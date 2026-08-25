@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { fromClientDocumentRow } from '../lib/mappers'
-import { uploadResumivel } from '../lib/uploadResumivel'
+import { enviarParaDrive, baixarDoDrive, excluirNoDrive, ehArquivoDrive } from '../lib/driveStorage'
 import { mensagemDeErro } from '../lib/errors'
 import { useAuth } from './useAuth'
 import { todayLocalISO } from '../lib/dateUtils'
@@ -137,29 +137,28 @@ export function useClientDocuments(clientId?: string) {
       const path = tipo === 'manual'
         ? `${ownerId}/${clientId}/${tipo}/${Date.now()}.${ext}`
         : `${ownerId}/${clientId}/${tipo}.${ext}`
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) throw new Error('Não autenticado')
-      // Cada etapa tem sua própria rede (upload no Storage, depois insert/
+      // Cada etapa tem sua própria rede (upload no Drive, depois insert/
       // upsert no Postgrest) — sem esse prefixo por etapa, um erro de rede
       // aparece como "Failed to fetch" cru e não dá pra saber qual das duas
       // falhou só olhando o toast no celular, sem console. Erros do
-      // Postgrest/Storage não são instância de Error (são objetos simples
-      // com .message), então String(err) sozinho vira "[object Object]".
+      // Postgrest não são instância de Error (são objetos simples com
+      // .message), então String(err) sozinho vira "[object Object]".
+      let storagePath: string
       try {
-        await uploadResumivel(file, path, session.access_token, () => {})
+        storagePath = await enviarParaDrive(file, path)
       } catch (err) {
         throw new Error(`Envio do arquivo falhou — ${mensagemDeErro(err)}`)
       }
       let id: string
       try {
         id = await upsertDocument.mutateAsync({
-          tipo, nome, storagePath: path, dataEmissao, dataValidade,
+          tipo, nome, storagePath, dataEmissao, dataValidade,
           autoRenovavel: false, observacoes, pasta,
         })
       } catch (err) {
         throw new Error(`Arquivo enviado, mas falhou ao salvar o registro — ${mensagemDeErro(err)}`)
       }
-      return { path, id }
+      return { path: storagePath, id }
     },
     onSuccess: invalidate,
   })
@@ -167,7 +166,11 @@ export function useClientDocuments(clientId?: string) {
   const deleteDocument = useMutation({
     mutationFn: async (doc: ClientDocument) => {
       if (doc.storagePath) {
-        await supabase.storage.from('client-documents').remove([doc.storagePath])
+        if (ehArquivoDrive(doc.storagePath)) {
+          await excluirNoDrive('client_documents', doc.storagePath)
+        } else {
+          await supabase.storage.from('client-documents').remove([doc.storagePath])
+        }
       }
       const { error } = await supabase.from('client_documents').delete().eq('id', doc.id)
       if (error) throw error
@@ -176,6 +179,9 @@ export function useClientDocuments(clientId?: string) {
   })
 
   const getDownloadUrl = async (storagePath: string) => {
+    if (ehArquivoDrive(storagePath)) {
+      return baixarDoDrive('client_documents', storagePath)
+    }
     const { data, error } = await supabase.storage
       .from('client-documents')
       .createSignedUrl(storagePath, 60 * 10) // 10 minutos
