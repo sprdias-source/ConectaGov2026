@@ -5,53 +5,13 @@ import { Field, Input, Button } from './FormControls'
 import ErrorAlert from './ErrorAlert'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { lerTentativas, gravarTentativas, limparTentativas } from '../../lib/passwordLockout'
 
-// O "bloqueio após 5 tentativas" só é real se sobreviver a fechar e reabrir
-// o modal — senão é só cosmético (o usuário erra a senha, cancela, abre de
-// novo, e o contador volta a zero). Como o componente é genérico e usado
-// em várias telas diferentes (cliente, licitação, empenho — ver
-// `grep -rn "DeleteWithPasswordDialog" src/`), o jeito mais simples de
-// persistir sem tocar em nenhum desses chamadores é guardar o contador no
-// sessionStorage, numa chave que identifica O QUE está sendo excluído
-// (título + rótulo da entidade, que já são props recebidas). Expira
-// sozinho depois de alguns minutos e é limpo assim que a senha é aceita —
-// a autenticação real de qualquer forma sempre foi validada de verdade no
-// servidor via supabase.auth.signInWithPassword; isso aqui só evita que o
-// contador visual seja furado fechando/reabrindo o modal.
+// Chave do contador de tentativas identifica O QUE está sendo excluído
+// (título + rótulo da entidade, que já são props recebidas) — ver
+// lib/passwordLockout.ts pra como o "bloqueio após 5 tentativas" persiste
+// fechando/reabrindo o modal.
 const LOCKOUT_STORAGE_PREFIX = 'delete-password-attempts:'
-const LOCKOUT_RESET_MS = 5 * 60 * 1000 // 5 minutos
-
-function lerTentativas(chave: string): number {
-  try {
-    const raw = sessionStorage.getItem(chave)
-    if (!raw) return 0
-    const { count, ts } = JSON.parse(raw) as { count: number; ts: number }
-    if (Date.now() - ts > LOCKOUT_RESET_MS) {
-      sessionStorage.removeItem(chave)
-      return 0
-    }
-    return count
-  } catch {
-    return 0
-  }
-}
-
-function gravarTentativas(chave: string, count: number) {
-  try {
-    sessionStorage.setItem(chave, JSON.stringify({ count, ts: Date.now() }))
-  } catch {
-    // sessionStorage indisponível (aba anônima, navegador bloqueando etc.)
-    // — degrada pra contador só em memória, sem quebrar o fluxo de exclusão.
-  }
-}
-
-function limparTentativas(chave: string) {
-  try {
-    sessionStorage.removeItem(chave)
-  } catch {
-    // ignora — mesmo motivo do gravarTentativas acima.
-  }
-}
 
 interface DeleteWithPasswordDialogProps {
   open: boolean

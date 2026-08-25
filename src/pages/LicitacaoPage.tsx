@@ -4,7 +4,7 @@ import {
   ArrowLeft, FileText, Upload, Plus, Trash2, CheckCircle2, Circle, Download, Eye,
   AlertCircle, Loader2, Sparkles, Award, Check, History, ChevronDown, ChevronUp,
   ClipboardList, Gavel, Wallet, Send, CircleDot, FileSignature, Info, Activity, RefreshCw, Wand2,
-  Paperclip, FolderDown, X, FileSpreadsheet, ScrollText, Copy, Printer, Calculator, Ban, RotateCcw, Archive,
+  Paperclip, FolderDown, X, FileSpreadsheet, ScrollText, Copy, Printer, Calculator, Ban, RotateCcw, Archive, Lock,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
@@ -45,6 +45,8 @@ import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import BiddingItemsEditor from '../components/cadastros/BiddingItemsEditor'
+import UnlockWithPasswordDialog from '../components/ui/UnlockWithPasswordDialog'
+import { useBiddingEditLock } from '../lib/biddingLock'
 import {
   parseCsvPortal, stringifyCsvPortal, textoParaBlobLatin1, bufferParaTextoLatin1, formatarNumeroPtBR, detectarColunasPortal,
 } from '../lib/csvPortalCompras'
@@ -844,6 +846,9 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   const { items, isLoading, salvarRateio, sincronizarItens } = useBiddingItemsDaLicitacao(bidding.id)
   const { nivel, carregando: carregandoPermissao } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivel === 'edicao' && !carregandoPermissao
+  const { bloqueada, desbloquear } = useBiddingEditLock(bidding)
+  const podeEditarItens = podeEditar && !bloqueada
+  const [mostrandoUnlockItens, setMostrandoUnlockItens] = useState(false)
   const { updateBidding } = useBiddings()
   const { clients } = useClients()
   const client = clients.find((c) => c.id === bidding.clientId)
@@ -1364,7 +1369,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Itens da Licitação</p>
-          {podeEditar && statusSalvamento !== 'idle' && (
+          {podeEditarItens && statusSalvamento !== 'idle' && (
             <span className={`text-[10px] flex items-center gap-1 ${statusSalvamento === 'salvo' ? 'text-positive-400 font-semibold' : 'text-base-500'}`}>
               {statusSalvamento === 'salvando' && (<><Loader2 className="w-3 h-3 animate-spin" /> Salvando...</>)}
               {statusSalvamento === 'pendente' && 'Alteração pendente...'}
@@ -1373,7 +1378,17 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
           )}
         </div>
 
-        {podeEditar ? (
+        {podeEditar && bloqueada && (
+          <div className="flex items-center gap-3 bg-accent-500/10 border border-accent-500/30 rounded-lg p-3 mb-2">
+            <Lock className="w-4 h-4 text-accent-400 shrink-0" />
+            <p className="flex-1 text-[12px] text-accent-200">
+              Esta licitação já está <strong>Ganhou</strong> e <strong>Adjudicada e Homologada</strong> — a edição dos itens está bloqueada.
+            </p>
+            <Button type="button" variant="secondary" onClick={() => setMostrandoUnlockItens(true)}>Desbloquear com senha</Button>
+          </div>
+        )}
+
+        {podeEditarItens ? (
           <>
             <p className="text-[11px] text-base-500 mb-2">
               Confira e corrija aqui se a importação automática do edital vier incompleta ou errada — "Adicionar Item" e "Importar Excel" são o plano B pra montar a lista na mão quando for preciso. Cada mudança grava sozinha, não precisa de botão de salvar.
@@ -1504,6 +1519,13 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
       )}
 
       <HistoricoVersoes biddingId={bidding.id} />
+
+      <UnlockWithPasswordDialog
+        open={mostrandoUnlockItens}
+        entityLabel={`Licitação "${bidding.objeto}"`}
+        onCancel={() => setMostrandoUnlockItens(false)}
+        onUnlocked={() => { desbloquear(); setMostrandoUnlockItens(false) }}
+      />
     </div>
   )
 }
@@ -2105,6 +2127,8 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
   const { items: itensAtuais } = useBiddingItems(bidding.id)
   const { showToast } = useToast()
   const [confirmandoPreenchimento, setConfirmandoPreenchimento] = useState(false)
+  const [mostrandoUnlock, setMostrandoUnlock] = useState(false)
+  const { bloqueada, desbloquear } = useBiddingEditLock(bidding)
   const { perguntar, isPending: perguntando } = usePerguntaEdital(bidding.id)
 
   const status = analysis?.status
@@ -2130,8 +2154,18 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
 
   return (
     <div className="flex flex-col gap-4">
+      {bloqueada && (
+        <div className="flex items-center gap-3 bg-accent-500/10 border border-accent-500/30 rounded-lg p-3">
+          <Lock className="w-4 h-4 text-accent-400 shrink-0" />
+          <p className="flex-1 text-[12px] text-accent-200">
+            Esta licitação já está <strong>Ganhou</strong> e <strong>Adjudicada e Homologada</strong> — nova análise e preenchimento automático estão bloqueados.
+          </p>
+          <Button type="button" variant="secondary" onClick={() => setMostrandoUnlock(true)}>Desbloquear com senha</Button>
+        </div>
+      )}
+
       <div className="flex items-center gap-3 flex-wrap">
-        <Button onClick={() => analisar.mutate()} disabled={!temEdital || processando}>
+        <Button onClick={() => analisar.mutate()} disabled={!temEdital || processando || bloqueada}>
           {processando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           {processando ? 'Analisando...' : status === 'concluido' ? 'Analisar Novamente' : 'Analisar com IA'}
         </Button>
@@ -2179,7 +2213,7 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
         <div className="flex flex-col gap-4">
           {podeEditar && preenchimento && preenchimento.resumo.length > 0 && (
             <div className="flex items-center gap-3 flex-wrap bg-accent-500/10 border border-accent-500/25 rounded-lg p-3">
-              <Button type="button" variant="secondary" onClick={() => setConfirmandoPreenchimento(true)} disabled={updateBidding.isPending}>
+              <Button type="button" variant="secondary" onClick={() => setConfirmandoPreenchimento(true)} disabled={updateBidding.isPending || bloqueada}>
                 <Wand2 className="w-4 h-4" /> Preencher Licitação com estes Dados
               </Button>
               <span className="text-[11px] text-base-400 flex-1 min-w-[220px]">
@@ -2218,6 +2252,13 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
         onCancel={() => setConfirmandoPreenchimento(false)}
         onConfirm={confirmarPreenchimento}
         isLoading={updateBidding.isPending}
+      />
+
+      <UnlockWithPasswordDialog
+        open={mostrandoUnlock}
+        entityLabel={`Licitação "${bidding.objeto}"`}
+        onCancel={() => setMostrandoUnlock(false)}
+        onUnlocked={() => { desbloquear(); setMostrandoUnlock(false) }}
       />
     </div>
   )

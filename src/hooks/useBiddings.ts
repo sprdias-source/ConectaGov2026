@@ -1,12 +1,46 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { todayLocalISO } from '../lib/dateUtils'
 import { supabase } from '../lib/supabase'
-import { fromBiddingRow, toBiddingInsert, toBiddingItemInsert, toTransactionInsert } from '../lib/mappers'
+import { fromBiddingRow, fromBiddingItemRow, toBiddingInsert, toBiddingItemInsert, toTransactionInsert } from '../lib/mappers'
+import { somarValorGanho } from '../lib/analiseEdital'
+import { licitacaoBloqueadaPorResultado } from '../lib/biddingLock'
 import type { Bidding, BiddingItem, BiddingStatus } from '../types/domain'
 import { useAuth } from './useAuth'
 import { useAuditLog } from './useAuditLog'
 
 const QUERY_KEY = ['biddings']
+
+// Se a licitação acabou de ficar "Ganhou" + "Adjudicada e Homologada" (nas
+// três mutações que podem chegar nessa combinação: marcarResultado grava o
+// status, updateEtapa grava a etapa, updateBidding pode gravar os dois de
+// uma vez pela edição manual — qualquer uma pode ser a última a chegar),
+// calcula o Valor Ganho de Fato a partir dos itens marcados "Ganhou" (mesma
+// regra de somarValorGanho) e grava sozinho. Só age se: (1) as duas
+// condições já valem nesse momento, (2) o campo ainda está vazio — nunca
+// sobrescreve um valor já digitado ou já calculado antes, a única forma de
+// mudar depois é editar manualmente — e (3) há itens cadastrados somando
+// mais que zero, pra nunca inventar um número quando ainda não há itens.
+async function tentarPreencherValorGanhoAutomatico(bidding: Bidding): Promise<Bidding> {
+  if (!licitacaoBloqueadaPorResultado(bidding) || bidding.valorOfertadoReal != null) return bidding
+
+  const { data: itensRows, error } = await supabase
+    .from('bidding_items')
+    .select('*')
+    .eq('bidding_id', bidding.id)
+  if (error || !itensRows || itensRows.length === 0) return bidding
+
+  const valorGanho = somarValorGanho(itensRows.map(fromBiddingItemRow))
+  if (valorGanho <= 0) return bidding
+
+  const { data, error: updError } = await supabase
+    .from('biddings')
+    .update({ valor_ofertado_real: valorGanho })
+    .eq('id', bidding.id)
+    .select()
+    .single()
+  if (updError || !data) return bidding
+  return fromBiddingRow(data)
+}
 
 async function saveItems(userId: string, biddingId: string, items: Partial<BiddingItem>[]) {
   await supabase.from('bidding_items').delete().eq('bidding_id', biddingId)
@@ -157,8 +191,9 @@ export function useBiddings() {
       }
       await saveItems(user.id, updated.id, items)
       const feeLaunched = await maybeLaunchParticipationFee(user.id, updated)
+      const comValorGanho = await tentarPreencherValorGanhoAutomatico(updated)
 
-      return { updated, feeLaunched }
+      return { updated: comValorGanho, feeLaunched }
     },
     onSuccess: ({ updated, feeLaunched }) => {
       invalidate(updated.id)
@@ -239,7 +274,7 @@ export function useBiddings() {
         .select()
         .single()
       if (error) throw error
-      return fromBiddingRow(data)
+      return tentarPreencherValorGanhoAutomatico(fromBiddingRow(data))
     },
     onSuccess: (updated) => {
       invalidate()
@@ -267,7 +302,7 @@ export function useBiddings() {
         .select()
         .single()
       if (error) throw error
-      return fromBiddingRow(data)
+      return tentarPreencherValorGanhoAutomatico(fromBiddingRow(data))
     },
     onSuccess: (updated) => {
       invalidate()
