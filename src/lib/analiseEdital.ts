@@ -69,6 +69,18 @@ export function somarValorLicitado(itens: Partial<BiddingItem>[]): number {
   return itens.reduce((s, i) => s + (i.quantidade ?? 0) * (i.valorUnitarioLicitado ?? 0), 0)
 }
 
+// Quanto foi de fato ganho, a partir dos itens — mesma regra do "Total
+// Geral (itens ganhos)" do editor de itens (BiddingItemsEditor.tsx): se
+// algum item já foi marcado "Ganhou", soma só esses; senão (ainda não deu
+// pra saber item a item o que foi ganho) soma todos, como aproximação.
+// Usado como fallback de exibição pro "Valor Ganho de Fato" quando esse
+// campo (preenchido manualmente) ainda está vazio — nunca escreve nada,
+// só calcula pra mostrar.
+export function somarValorGanho(itens: Partial<BiddingItem>[]): number {
+  const itensGanhosOuTodos = itens.some((i) => i.ganhou) ? itens.filter((i) => i.ganhou) : itens
+  return itensGanhosOuTodos.reduce((s, i) => s + (i.quantidade ?? 0) * (i.valorUnitarioOfertado ?? i.valorUnitarioLicitado ?? 0), 0)
+}
+
 // Todo campo que mapearCamposDaAnalise é capaz de preencher — usado só pra
 // saber quais chaves marcar/desmarcar com o selo "IA" (ver
 // Bidding.camposPreenchidosPorIa), nunca pra decidir o que gravar.

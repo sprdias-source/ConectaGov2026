@@ -18,6 +18,8 @@ import { formatBRL } from '../hooks/useAccountBalances'
 import { useEmpenhos } from '../hooks/useEmpenhos'
 import { useBiddingIdsComDocumentosFinais } from '../hooks/useAttachedFiles'
 import { useHabilitacaoPorLicitacao, type StatusHabilitacao } from '../hooks/useBiddingChecklist'
+import { useBiddingItemsPorLicitacoes } from '../hooks/useBiddingItems'
+import { somarValorGanho } from '../lib/analiseEdital'
 import type { Bidding, BiddingEtapa, BiddingItem, BiddingStatus } from '../types/domain'
 
 // Encerrar direto do Kanban, sem abrir o cadastro completo — pro caso comum
@@ -198,7 +200,13 @@ function CardLicitacao({
 // que falta fechar pra ela sumir de vista de vez.
 type BadgePendencia = { label: string; bloqueante: boolean }
 
-function CardLicitacaoGanha({ b, clienteNome, badges }: { b: Bidding; clienteNome: string; badges: BadgePendencia[] }) {
+function CardLicitacaoGanha({ b, clienteNome, badges, valorGanhoCalculado }: { b: Bidding; clienteNome: string; badges: BadgePendencia[]; valorGanhoCalculado?: number }) {
+  const valorExibido = b.valorOfertadoReal ?? valorGanhoCalculado ?? valorExibicaoEdital(b)
+  // Só quando o valor não veio nem do campo manual nem dos itens (aí sim é
+  // o valor de participação, uma aproximação mais fraca) mostra o aviso —
+  // sem isso, um valor já correto (calculado pelos itens) ficava com a
+  // mesma ressalva de "aproximado" que não se aplicava mais a ele.
+  const ehAproximado = b.valorOfertadoReal == null && valorGanhoCalculado == null
   return (
     <Link
       to={`/licitacoes/${b.id}`}
@@ -206,7 +214,12 @@ function CardLicitacaoGanha({ b, clienteNome, badges }: { b: Bidding; clienteNom
     >
       <p className="text-[12px] font-semibold text-base-100 line-clamp-2">{b.objeto}</p>
       <p className="text-[11px] text-base-500 truncate">{clienteNome} — {b.orgao}</p>
-      <span className="text-[11px] font-mono font-semibold text-positive-400 mt-1">{formatBRL(b.valorOfertadoReal ?? valorExibicaoEdital(b))}</span>
+      <span
+        className="text-[11px] font-mono font-semibold text-positive-400 mt-1"
+        title={ehAproximado ? 'Nem o Valor Ganho de Fato nem os itens desta licitação foram preenchidos ainda — mostrando o valor de participação como aproximação' : undefined}
+      >
+        {formatBRL(valorExibido)}{ehAproximado && '*'}
+      </span>
       <div className="flex flex-wrap gap-1 mt-1">
         {badges.map((bd) => (
           <span
@@ -326,6 +339,23 @@ export default function KanbanLicitacoesPage() {
       })
       .filter((x) => x.badges.some((bd) => bd.bloqueante))
   }, [biddings, biddingIdsComPropostaReadequada, biddingIdsComEmpenho, biddingIdsComContrato])
+
+  // "Valor Ganho de Fato" é um campo digitado manualmente (ver
+  // BiddingFormModal) — quando ainda não foi preenchido, calcula uma
+  // aproximação a partir dos itens desta licitação, em vez de cair direto
+  // pro valor de participação (que é só o que decidimos disputar, não o
+  // que de fato foi adjudicado). Busca em lote (uma query só) os itens das
+  // licitações "Ganhas" exibidas aqui.
+  const idsGanhasPendencia = useMemo(() => ganhasComPendencia.map((x) => x.bidding.id), [ganhasComPendencia])
+  const { items: itensDasGanhas } = useBiddingItemsPorLicitacoes(idsGanhasPendencia)
+  const valorGanhoPorLicitacao = useMemo(() => {
+    const mapa = new Map<string, number>()
+    for (const id of idsGanhasPendencia) {
+      const itens = itensDasGanhas.filter((i) => i.biddingId === id)
+      if (itens.length > 0) mapa.set(id, somarValorGanho(itens))
+    }
+    return mapa
+  }, [idsGanhasPendencia, itensDasGanhas])
 
   const colunas = useMemo(() => {
     const semEtapa = ativas.filter((b) => !b.etapa)
@@ -485,7 +515,7 @@ export default function KanbanLicitacoesPage() {
               {ganhasComPendencia.length > 0 && (
                 <ColunaKanban id="ganhas-pendencia" titulo="Ganhas — Pendência" cor="border-t-positive-500" itens={ganhasComPendencia.length} droppable={false}>
                   {ganhasComPendencia.map(({ bidding, badges }) => (
-                    <CardLicitacaoGanha key={bidding.id} b={bidding} clienteNome={clientName(bidding.clientId)} badges={badges} />
+                    <CardLicitacaoGanha key={bidding.id} b={bidding} clienteNome={clientName(bidding.clientId)} badges={badges} valorGanhoCalculado={valorGanhoPorLicitacao.get(bidding.id)} />
                   ))}
                 </ColunaKanban>
               )}
