@@ -206,7 +206,7 @@ function CardLicitacaoGanha({ b, clienteNome, badges }: { b: Bidding; clienteNom
     >
       <p className="text-[12px] font-semibold text-base-100 line-clamp-2">{b.objeto}</p>
       <p className="text-[11px] text-base-500 truncate">{clienteNome} — {b.orgao}</p>
-      <span className="text-[11px] font-mono font-semibold text-positive-400 mt-1">{formatBRL(b.valorOfertadoReal ?? b.valorLicitado)}</span>
+      <span className="text-[11px] font-mono font-semibold text-positive-400 mt-1">{formatBRL(b.valorOfertadoReal ?? valorExibicaoEdital(b))}</span>
       <div className="flex flex-wrap gap-1 mt-1">
         {badges.map((bd) => (
           <span
