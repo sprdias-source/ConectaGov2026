@@ -42,15 +42,10 @@
 //   automaticamente pelo Supabase em toda Edge Function.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { DRIVE_PREFIX, obterAccessTokenDrive, resolverPasta, enviarArquivoDrive, excluirArquivoDrive } from '../_shared/googleDrive.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const GOOGLE_CLIENT_ID = Deno.env.get('GOOGLE_DRIVE_CLIENT_ID')!
-const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_DRIVE_CLIENT_SECRET')!
-const GOOGLE_REFRESH_TOKEN = Deno.env.get('GOOGLE_DRIVE_REFRESH_TOKEN')!
-
-const DRIVE_PREFIX = 'gdrive:'
-const ROOT_FOLDER_NAME = 'ConectaGov Arquivos'
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024 // 20MB — mesmo limite já validado no navegador (useAttachedFiles.ts)
 
 // Lista fechada de tabelas que este broker aceita mexer — nunca repassar o
@@ -72,96 +67,6 @@ function json(body: unknown, status = 200) {
 }
 
 type Supa = ReturnType<typeof createClient>
-
-async function obterAccessToken(): Promise<string> {
-  const params = new URLSearchParams({
-    client_id: GOOGLE_CLIENT_ID,
-    client_secret: GOOGLE_CLIENT_SECRET,
-    refresh_token: GOOGLE_REFRESH_TOKEN,
-    grant_type: 'refresh_token',
-  })
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params,
-  })
-  if (!res.ok) throw new Error(`Falha ao renovar o acesso ao Google Drive: ${await res.text()}`)
-  const data = await res.json()
-  return data.access_token as string
-}
-
-// Resolve (criando se preciso) a cadeia de pastas do Drive correspondente
-// aos segmentos recebidos, sempre dentro de uma pasta raiz fixa
-// ("ConectaGov Arquivos") pra não espalhar arquivo solto na raiz do Drive
-// da empresa. Cacheia cada nível em google_drive_folders — a única exceção
-// é a raiz, resolvida/criada uma vez e reaproveitada por tudo depois.
-async function resolverPasta(supabase: Supa, accessToken: string, segmentos: string[]): Promise<string> {
-  let parentId = 'root'
-  let caminhoAtual = ''
-  for (const segmento of [ROOT_FOLDER_NAME, ...segmentos]) {
-    caminhoAtual = caminhoAtual ? `${caminhoAtual}/${segmento}` : segmento
-
-    const { data: doCache } = await supabase
-      .from('google_drive_folders')
-      .select('folder_id')
-      .eq('path', caminhoAtual)
-      .maybeSingle()
-    if (doCache?.folder_id) {
-      parentId = doCache.folder_id as string
-      continue
-    }
-
-    const nomeEscapado = segmento.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-    const consulta = `name='${nomeEscapado}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
-    const buscaRes = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(consulta)}&fields=files(id)&spaces=drive`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    )
-    if (!buscaRes.ok) throw new Error(`Falha ao procurar a pasta "${segmento}" no Drive: ${await buscaRes.text()}`)
-    const buscaJson = await buscaRes.json()
-    let folderId: string | undefined = buscaJson.files?.[0]?.id
-
-    if (!folderId) {
-      const criaRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: segmento, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] }),
-      })
-      if (!criaRes.ok) throw new Error(`Falha ao criar a pasta "${segmento}" no Drive: ${await criaRes.text()}`)
-      const criaJson = await criaRes.json()
-      folderId = criaJson.id as string
-    }
-
-    await supabase.from('google_drive_folders').upsert({ path: caminhoAtual, folder_id: folderId })
-    parentId = folderId
-  }
-  return parentId
-}
-
-// Upload multipart "clássico" (metadados + conteúdo numa única requisição)
-// — suficiente pro limite de 20MB já validado antes de chegar aqui; não
-// precisa do protocolo resumível do Drive (esse sim, em vários passos, faz
-// sentido pra arquivo grande de verdade, que não é o caso aqui).
-async function enviarArquivoDrive(accessToken: string, folderId: string, nomeArquivo: string, mimeType: string, bytes: Uint8Array): Promise<string> {
-  const boundary = `conectagov_${crypto.randomUUID()}`
-  const encoder = new TextEncoder()
-  const metadados = JSON.stringify({ name: nomeArquivo, parents: [folderId] })
-  const corpo = new Blob([
-    encoder.encode(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadados}\r\n`),
-    encoder.encode(`--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`),
-    bytes,
-    encoder.encode(`\r\n--${boundary}--`),
-  ])
-
-  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
-    body: corpo,
-  })
-  if (!res.ok) throw new Error(`Falha ao enviar "${nomeArquivo}" pro Drive: ${await res.text()}`)
-  const data = await res.json()
-  return data.id as string
-}
 
 function base64ParaBytes(base64: string): Uint8Array {
   const binario = atob(base64)
@@ -232,7 +137,7 @@ Deno.serve(async (req: Request) => {
 
       const segmentos = path.split('/')
       const nomeArquivo = segmentos.pop()!
-      const accessToken = await obterAccessToken()
+      const accessToken = await obterAccessTokenDrive()
       const folderId = await resolverPasta(supabase, accessToken, segmentos)
       const driveFileId = await enviarArquivoDrive(accessToken, folderId, nomeArquivo, mimeType || 'application/octet-stream', bytes)
 
@@ -245,7 +150,7 @@ Deno.serve(async (req: Request) => {
       if (!TABELAS_PERMITIDAS.includes(table as TabelaPermitida)) return json({ error: 'Tabela não suportada' }, 400)
 
       const driveFileId = await confirmarPosseEExtrairId(supabase, table as TabelaPermitida, storagePath, ownerId as string)
-      const accessToken = await obterAccessToken()
+      const accessToken = await obterAccessTokenDrive()
 
       if (action === 'download') {
         const res = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`, {
@@ -257,14 +162,7 @@ Deno.serve(async (req: Request) => {
       }
 
       // action === 'delete'
-      const delRes = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${accessToken}` },
-      })
-      // 404 aqui significa que o arquivo já não existe mais no Drive — não
-      // é motivo pra falhar a exclusão do lado do app (o objetivo, "este
-      // arquivo não deve mais existir", já está satisfeito).
-      if (!delRes.ok && delRes.status !== 404) throw new Error(`Falha ao excluir arquivo do Drive: ${await delRes.text()}`)
+      await excluirArquivoDrive(accessToken, driveFileId)
       return json({ ok: true })
     }
 

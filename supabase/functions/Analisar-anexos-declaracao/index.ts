@@ -22,6 +22,7 @@
 //   automaticamente pelo Supabase em toda Edge Function.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { baixarAnexo } from '../_shared/googleDrive.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -188,13 +189,8 @@ async function apagarArquivoGemini(fileName: string) {
 }
 
 async function processarDocumento(supabase: Supa, doc: Anexo) {
-  const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-    .from('client-documents')
-    .createSignedUrl(doc.storage_path, 300)
-  if (signedUrlError || !signedUrlData) throw new Error(`Não foi possível gerar a URL de "${doc.name}" no Storage`)
-
-  const downloadRes = await fetch(signedUrlData.signedUrl)
-  if (!downloadRes.ok || !downloadRes.body) throw new Error(`Falha ao baixar "${doc.name}" do Storage`)
+  const downloadRes = await baixarAnexo(supabase, doc.storage_path)
+  if (!downloadRes.ok || !downloadRes.body) throw new Error(`Falha ao baixar "${doc.name}" do Storage/Drive`)
 
   const mimeType = doc.mime_type || 'application/pdf'
   const sizeBytes = doc.size_bytes ?? Number(downloadRes.headers.get('content-length') ?? 0)
