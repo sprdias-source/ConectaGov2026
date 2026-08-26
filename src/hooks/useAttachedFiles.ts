@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { fromFileRow, toFileInsert } from '../lib/mappers'
-import { uploadResumivel } from '../lib/uploadResumivel'
+import { enviarParaDrive, baixarDoDrive, excluirNoDrive, ehArquivoDrive } from '../lib/driveStorage'
 import { useAuth } from './useAuth'
 import { useToast } from './useToast'
 import type { AttachedFile, FileCategory, FileEntityType } from '../types/domain'
@@ -75,20 +75,20 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
       const erroValidacao = validateFileBeforeUpload(file)
       if (erroValidacao) throw new Error(erroValidacao)
       const ext = file.name.split('.').pop() ?? 'pdf'
-      // Mesmo motivo do fix em useClientDocuments.ts: a policy de Storage
-      // exige que o primeiro segmento do caminho seja owner_efetivo(uid),
-      // não o uid de quem está logado — sem isso, upload de um membro de
-      // equipe sempre falhava com 403.
+      // Mesmo caminho que a Edge Function drive-storage exige pro primeiro
+      // segmento ser o dono efetivo de quem está logado, não o uid — sem
+      // isso, upload de um membro de equipe seria rejeitado.
       const { data: ownerId, error: ownerError } = await supabase.rpc('owner_efetivo', { usuario_id: user.id })
       if (ownerError) throw ownerError
       const path = `${ownerId}/${entityType}/${entityId}/${Date.now()}.${ext}`
 
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) throw new Error('Não autenticado')
-
+      // Upload direto pro Google Drive (conta única da empresa) — não é
+      // resumível em pedaços como era com o Supabase Storage, então não dá
+      // pra reportar progresso incremental aqui; só indica "enviando".
       setUploadProgress(0)
+      let storagePath: string
       try {
-        await uploadResumivel(file, path, session.access_token, setUploadProgress)
+        storagePath = await enviarParaDrive(file, path)
       } finally {
         setUploadProgress(null)
       }
@@ -98,14 +98,14 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
           name: file.name,
           sizeBytes: file.size,
           mimeType: file.type || null,
-          storagePath: path,
+          storagePath,
           category,
           entityType,
           entityId,
         }, user.id)
       ).select('id').single()
       if (error) throw error
-      return { path, id: data.id as string }
+      return { path: storagePath, id: data.id as string }
     },
     onSuccess: (_, variables) => {
       invalidate()
@@ -115,7 +115,11 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
 
   const deleteFile = useMutation({
     mutationFn: async (file: AttachedFile) => {
-      await supabase.storage.from('client-documents').remove([file.storagePath])
+      if (ehArquivoDrive(file.storagePath)) {
+        await excluirNoDrive('attached_files', file.storagePath)
+      } else {
+        await supabase.storage.from('client-documents').remove([file.storagePath])
+      }
       const { error } = await supabase.from('attached_files').delete().eq('id', file.id)
       if (error) throw error
     },
@@ -126,6 +130,10 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
   })
 
   const getDownloadUrl = async (storagePath: string) => {
+    if (ehArquivoDrive(storagePath)) {
+      const mimeType = query.data?.find((f) => f.storagePath === storagePath)?.mimeType
+      return baixarDoDrive('attached_files', storagePath, mimeType)
+    }
     const { data, error } = await supabase.storage
       .from('client-documents')
       .createSignedUrl(storagePath, 60 * 10)

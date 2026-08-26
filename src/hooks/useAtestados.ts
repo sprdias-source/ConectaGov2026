@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { fromAtestadoRow, toAtestadoInsert } from '../lib/mappers'
+import { enviarParaDrive, baixarDoDrive, excluirNoDrive, ehArquivoDrive } from '../lib/driveStorage'
 import { useAuth } from './useAuth'
 import type { AtestadoTecnico } from '../types/domain'
 
@@ -75,12 +76,15 @@ export function useAtestados(clientId?: string) {
       let storagePath: string | null = null
       if (atestado.file) {
         const ext = atestado.file.name.split('.').pop() ?? 'pdf'
-        const path = `${user.id}/${clientId}/atestados/${Date.now()}.${ext}`
-        const { error: uploadError } = await supabase.storage
-          .from('client-documents')
-          .upload(path, atestado.file, { upsert: true })
-        if (uploadError) throw uploadError
-        storagePath = path
+        // Mesmo ajuste já feito em useClientDocuments.ts/useAttachedFiles.ts:
+        // o primeiro segmento do caminho tem que ser o dono efetivo, não o
+        // uid de quem está logado, senão um membro de equipe teria o
+        // upload rejeitado (pela Edge Function drive-storage, que exige
+        // essa regra explicitamente).
+        const { data: ownerId, error: ownerError } = await supabase.rpc('owner_efetivo', { usuario_id: user.id })
+        if (ownerError) throw ownerError
+        const path = `${ownerId}/${clientId}/atestados/${Date.now()}.${ext}`
+        storagePath = await enviarParaDrive(atestado.file, path)
       }
       const { data, error } = await supabase.from('atestados_tecnicos').insert(
         toAtestadoInsert({
@@ -116,7 +120,11 @@ export function useAtestados(clientId?: string) {
         .eq('atestado_id', atestado.id)
 
       if (atestado.storagePath) {
-        await supabase.storage.from('client-documents').remove([atestado.storagePath])
+        if (ehArquivoDrive(atestado.storagePath)) {
+          await excluirNoDrive('atestados_tecnicos', atestado.storagePath)
+        } else {
+          await supabase.storage.from('client-documents').remove([atestado.storagePath])
+        }
       }
       const { error } = await supabase.from('atestados_tecnicos').delete().eq('id', atestado.id)
       if (error) throw error
@@ -129,6 +137,9 @@ export function useAtestados(clientId?: string) {
   })
 
   const getDownloadUrl = async (storagePath: string) => {
+    if (ehArquivoDrive(storagePath)) {
+      return baixarDoDrive('atestados_tecnicos', storagePath)
+    }
     const { data, error } = await supabase.storage
       .from('client-documents')
       .createSignedUrl(storagePath, 60 * 10)
