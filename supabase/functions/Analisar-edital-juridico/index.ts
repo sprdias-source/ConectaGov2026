@@ -24,6 +24,7 @@
 //   automaticamente pelo Supabase em toda Edge Function.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { baixarAnexo } from '../_shared/googleDrive.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -300,13 +301,8 @@ type Anexo = { id: string; name: string; storage_path: string; mime_type: string
 // pro limite de tempo de execução síncrona.
 async function processarAnaliseJuridica(supabase: Supa, analysisRowId: string, edital: Anexo, tipo: Tipo) {
   try {
-    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-      .from('client-documents')
-      .createSignedUrl(edital.storage_path, 300)
-    if (signedUrlError || !signedUrlData) throw new Error('Não foi possível gerar a URL do edital no Storage')
-
-    const downloadRes = await fetch(signedUrlData.signedUrl)
-    if (!downloadRes.ok || !downloadRes.body) throw new Error('Falha ao baixar o edital do Storage')
+    const downloadRes = await baixarAnexo(supabase, edital.storage_path)
+    if (!downloadRes.ok || !downloadRes.body) throw new Error('Falha ao baixar o edital do Storage/Drive')
 
     const mimeType = edital.mime_type || 'application/pdf'
     const sizeBytes = edital.size_bytes ?? Number(downloadRes.headers.get('content-length') ?? 0)
