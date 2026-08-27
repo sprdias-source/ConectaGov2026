@@ -129,7 +129,7 @@ export default function EmpenhoFormModal({
             <CurrencyInput value={form.valorEmpenhada ?? 0} onChange={(v) => setForm({ ...form, valorEmpenhada: v })} />
           </Field>
           <Field label="Comissão (%)" required>
-            <Input type="number" step="0.01" required value={form.percentualComissao ?? ''} onChange={(e) => setForm({ ...form, percentualComissao: parseFloat(e.target.value) || 0 })} />
+            <Input type="number" step="0.01" min={0.01} required value={form.percentualComissao ?? ''} onChange={(e) => setForm({ ...form, percentualComissao: parseFloat(e.target.value) || 0 })} />
           </Field>
         </div>
 

@@ -45,6 +45,11 @@ function addMonths(dateStr: string, months: number): string {
 //   aumentado depois se o contrato for aditado/prorrogado.
 export function buildCommissionTransactions(emp: Empenho): Partial<Transaction>[] {
   if (emp.status === 'Cancelado') return []
+  // Sem valor de comissão nenhum (ex: 0% de comissão, digitado ou
+  // deixado zerado sem querer), dividir por N parcelas só criaria N
+  // lançamentos "fantasma" de R$ 0,00 poluindo Contas a Receber — nenhuma
+  // parcela faz sentido nesse caso.
+  if (!emp.valorComissaoTotal || emp.valorComissaoTotal <= 0) return []
 
   const baseDescription = `Comissão s/ Empenho ${emp.numeroEmpenho} (${emp.percentualComissao}% de R$ ${emp.valorEmpenhada.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`
 

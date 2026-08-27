@@ -85,9 +85,33 @@ export async function resolverPasta(supabase: Supa, accessToken: string, segment
       if (!criaRes.ok) throw new Error(`Falha ao criar a pasta "${segmento}" no Drive: ${await criaRes.text()}`)
       const criaJson = await criaRes.json()
       folderId = criaJson.id as string
+
+      // Duas chamadas concorrentes pro MESMO caminho (ex: dois uploads ao
+      // mesmo tempo pra pasta de um cliente) podem passar pela busca acima
+      // sem achar nada (nenhuma das duas tinha criado a pasta ainda) e
+      // criar uma pasta DUPLICADA cada uma. Um upsert simples aqui faria
+      // "o último grava por cima" e deixaria a pasta perdedora órfã e
+      // duplicada no Drive, sem nada apontando pra ela. Em vez disso,
+      // tenta um INSERT puro (falha com violação de PK se a outra chamada
+      // já reivindicou este path primeiro) — quem perder a corrida usa o
+      // folder_id de quem ganhou e apaga a pasta duplicada que acabou de
+      // criar, convergindo as duas chamadas pra uma única pasta.
+      const { error: erroReivindicar } = await supabase
+        .from('google_drive_folders')
+        .insert({ path: caminhoAtual, folder_id: folderId })
+      if (erroReivindicar) {
+        const { data: doCacheAposCorrida } = await supabase
+          .from('google_drive_folders')
+          .select('folder_id')
+          .eq('path', caminhoAtual)
+          .maybeSingle()
+        if (doCacheAposCorrida?.folder_id && doCacheAposCorrida.folder_id !== folderId) {
+          await excluirArquivoDrive(accessToken, folderId).catch(() => {})
+          folderId = doCacheAposCorrida.folder_id as string
+        }
+      }
     }
 
-    await supabase.from('google_drive_folders').upsert({ path: caminhoAtual, folder_id: folderId })
     parentId = folderId
   }
   return parentId

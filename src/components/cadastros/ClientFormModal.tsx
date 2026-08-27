@@ -5,7 +5,7 @@ import Modal from '../ui/Modal'
 import { Field, Input, Select, Textarea, Button } from '../ui/FormControls'
 import CurrencyInput from '../ui/CurrencyInput'
 import ErrorAlert from '../ui/ErrorAlert'
-import { fetchCnpjData, fetchCepData, formatCnpjMask, formatCepMask } from '../../lib/publicData'
+import { fetchCnpjData, fetchCepData, formatCnpjMask, formatCepMask, validarCnpj, validarCpf } from '../../lib/publicData'
 import type { Client } from '../../types/domain'
 
 const emptyForm: Partial<Client> = {
@@ -33,6 +33,7 @@ export default function ClientFormModal({
   const [cnpjMessage, setCnpjMessage] = useState('')
   const [cepStatus, setCepStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [cepMessage, setCepMessage] = useState('')
+  const [validationError, setValidationError] = useState<string | null>(null)
 
   // CORREÇÃO DE BUG: o modal é montado uma única vez e reaberto com itens
   // diferentes (editar cliente A, depois cliente B). Sem este efeito, o
@@ -96,6 +97,20 @@ export default function ClientFormModal({
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
+    setValidationError(null)
+    // Só checava o FORMATO (14/11 dígitos com máscara) — nunca o dígito
+    // verificador. Um CNPJ/CPF "bem formado" mas inválido (ex:
+    // 11.111.111/1111-11) passava batido e só ia quebrar depois, numa
+    // integração de verdade (emissão de NFS-e, busca de certidão). Ambos
+    // os campos são opcionais — só valida quando preenchidos.
+    if (form.cnpj?.trim() && !validarCnpj(form.cnpj)) {
+      setValidationError('CNPJ inválido — confira os números digitados.')
+      return
+    }
+    if (form.responsavelCpf?.trim() && !validarCpf(form.responsavelCpf)) {
+      setValidationError('CPF do responsável inválido — confira os números digitados.')
+      return
+    }
     onSave(form)
   }
 
@@ -281,6 +296,7 @@ export default function ClientFormModal({
           )}
         </div>
 
+        {validationError && <p className="text-[12px] text-negative-400">{validationError}</p>}
         <ErrorAlert error={error} />
 
         <div className="flex justify-end gap-2 pt-2">
