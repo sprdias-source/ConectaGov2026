@@ -98,7 +98,10 @@ async function main() {
     // nenhuma evidência de qual página realmente carregou.
     await salvarDiagnostico(page, 'apos-navegar-pesquisar', captura)
 
-    await aplicarFiltros(page, busca.filtros || {})
+    const resultadoFiltros = await aplicarFiltros(page, busca.filtros || {})
+    if (resultadoFiltros.falhas.length > 0) {
+      console.warn(`[buscar] ${resultadoFiltros.falhas.length}/${resultadoFiltros.tentados} filtro(s) pedido(s) não aplicaram: ${resultadoFiltros.falhas.join(', ')}`)
+    }
     await salvarDiagnostico(page, 'apos-filtros', captura)
     await page.waitForTimeout(2500) // dá tempo da lista recarregar depois dos filtros
 
@@ -143,11 +146,31 @@ async function main() {
       novos++
     }
 
-    await supabase.from('licitei_buscas').update({ ultima_execucao_em: new Date().toISOString() }).eq('id', BUSCA_ID)
+    // Uma busca que RODOU até o fim mas não aplicou todos os filtros
+    // pedidos não é a mesma coisa que uma busca que aplicou tudo — sem essa
+    // distinção, "sucesso" escondia que os resultados podem ter vindo sem
+    // filtro nenhum (ver aplicarFiltros/licitei-filtros.cjs).
+    const ultimoStatus = resultadoFiltros.falhas.length > 0 ? 'erro_parcial' : 'sucesso'
+    const ultimoErro = resultadoFiltros.falhas.length > 0
+      ? `Filtro(s) não aplicado(s) na tela do Licitei: ${resultadoFiltros.falhas.join(', ')}`
+      : null
+    await supabase.from('licitei_buscas').update({
+      ultima_execucao_em: new Date().toISOString(),
+      ultimo_status: ultimoStatus,
+      ultimo_erro: ultimoErro,
+    }).eq('id', BUSCA_ID)
     console.log(`Concluído em ${Math.round((Date.now() - inicio) / 1000)}s — ${novos} novo(s), ${jaExistiam} já cadastrado(s).`)
   } catch (err) {
     console.error('Erro no robô Licitei (buscar):', err)
     await salvarDiagnostico(page, 'buscar-falha', captura)
+    // Diferente do sucesso, aqui NÃO atualiza ultima_execucao_em — o
+    // usuário precisa continuar vendo a data da última execução que
+    // realmente rodou, com o erro ao lado explicando que a tentativa mais
+    // recente falhou antes de terminar.
+    await supabase.from('licitei_buscas').update({
+      ultimo_status: 'erro',
+      ultimo_erro: String(err.message || err).slice(0, 500),
+    }).eq('id', BUSCA_ID)
     process.exitCode = 1
   } finally {
     await browser.close()

@@ -604,6 +604,11 @@ export interface LicitaiEdital {
   editalStoragePath: string | null
   // Qual busca salva trouxe este edital — nulo pros cadastrados manualmente.
   buscaId: string | null
+  // Resultado da última tentativa de baixar o edital (ver
+  // baixar-edital-licitei.cjs) — 'erro' com editalStoragePath ainda nulo
+  // significa que o robô rodou e falhou, não que ninguém tentou ainda.
+  ultimaTentativaStatus: string | null
+  ultimaTentativaErro: string | null
   createdAt: string
   updatedAt: string
 }
@@ -650,6 +655,11 @@ export interface LicitaiBusca {
   ativo: boolean
   filtros: LicitaiBuscaFiltros
   ultimaExecucaoEm: string | null
+  // Resultado da ÚLTIMA tentativa do robô (ver buscar-licitei.cjs):
+  // 'sucesso' | 'erro_parcial' (rodou, mas algum filtro não aplicou) |
+  // 'erro' (travou antes de terminar) — null antes da primeira execução.
+  ultimoStatus: string | null
+  ultimoErro: string | null
   createdAt: string
   updatedAt: string
 }
