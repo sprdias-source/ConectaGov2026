@@ -44,7 +44,16 @@ export function statusItemChecklist(item: BiddingChecklistItem, clientDocs: Clie
       const status = calcDocStatus(doc.dataValidade)
       if (status === 'valido') return 'atendido'
       if (status === 'vencendo') return 'vencendo'
+      // 'vencido' (ou 'pendente', sem data de validade) cai aqui —
+      // a certidão vinculada não serve mais, então o item volta a precisar
+      // de ação, mesmo que o campo `atendido` tenha ficado gravado como
+      // true desde a confirmação. Sem isso, um item confirmado "curava"
+      // sozinho de novo quando a certidão terminava de vencer de vez.
+      return 'faltando'
     }
+    // clientDocumentId aponta pra um documento sem arquivo (perdido/nunca
+    // salvo) — mesma lógica: não finge que está atendido.
+    return 'faltando'
   }
   if (item.attachedFileId) return 'atendido'
   return item.atendido ? 'atendido' : 'faltando'
@@ -148,8 +157,11 @@ export function sugerirTipoDocumento(descricao: string): Exclude<DocumentTipo, '
 // dentro do texto, cobrindo os formatos mais comuns de numeração de edital
 // (com ou sem alínea). Só reconhece número com ponto ("5.2") ou número +
 // alínea ("5 a)") — evita casar um número solto no meio de uma frase comum
-// (ex: "24 horas de prazo") como se fosse numeração.
-const RE_NUMERO_EDITAL = /^(\d+(?:\.\d+)+\s*(?:[a-zà-ÿ]\))?|\d+\s*[a-zà-ÿ]\))\s+(.+)$/i
+// (ex: "24 horas de prazo") como se fosse numeração. O `\s*` (em vez de
+// `\s+`) depois da numeração é proposital: cobre também o caso sem espaço
+// depois do parêntese da alínea (ex: "5.2.1 a)Apresentar CND"), que antes
+// deixava a alínea vazar pro campo de descrição.
+const RE_NUMERO_EDITAL = /^(\d+(?:\.\d+)+\s*(?:[a-zà-ÿ]\))?|\d+\s*[a-zà-ÿ]\))\s*(.+)$/i
 
 export function extrairNumeroEdital(descricao: string): { numero: string | null; descricao: string } {
   const m = descricao.match(RE_NUMERO_EDITAL)
@@ -375,6 +387,11 @@ export interface PendenciaChecklist extends BiddingChecklistItem {
   clientName: string
 }
 
+type PendenciaRow = Parameters<typeof fromBiddingChecklistItemRow>[0] & {
+  biddings: { objeto: string; orgao: string; client_id: string; clients: { name: string } | null } | null
+  client_documents: { data_validade: string | null; storage_path: string | null } | null
+}
+
 // "Motor de Pendências" — todos os itens de checklist NÃO atendidos, de
 // TODAS as licitações, num painel só (tipo lista de tarefas). Não refaz o
 // cruzamento automático com certidões (isso já acontece só dentro da tela
@@ -388,22 +405,39 @@ export function usePendenciasChecklist() {
     queryKey: ['bidding_checklist_pendencias'],
     enabled: !!user,
     queryFn: async () => {
+      // Antes, um item com client_document_id preenchido era sempre
+      // excluído daqui, tratando "tem certidão vinculada" como sinônimo de
+      // "resolvido" — mas a certidão vinculada pode estar vencendo (ou já
+      // ter vencido) sem que ninguém tenha voltado aqui pra confirmar de
+      // novo, e esse item ficava escondido do painel feito justamente pra
+      // não deixar isso passar. Por isso o filtro agora TRAZ os itens com
+      // client_document_id (com o documento embutido, pra decidir o status
+      // de verdade abaixo) em vez de excluí-los de cara.
       const { data, error } = await supabase
         .from('bidding_checklist_items')
-        .select('*, biddings(objeto, orgao, client_id, clients(name))')
-        .eq('atendido', false)
+        .select('*, biddings(objeto, orgao, client_id, clients(name)), client_documents(data_validade, storage_path)')
         .eq('nao_aplicavel', false)
         .is('attached_file_id', null)
-        .is('client_document_id', null)
         .is('atestado_id', null)
+        .or('atendido.eq.false,client_document_id.not.is.null')
         .order('prazo', { ascending: true, nullsFirst: false })
       if (error) throw error
-      return (data ?? []).map((row: any) => ({
-        ...fromBiddingChecklistItemRow(row),
-        biddingObjeto: row.biddings?.objeto ?? '—',
-        biddingOrgao: row.biddings?.orgao ?? '—',
-        clientName: row.biddings?.clients?.name ?? '—',
-      })) as PendenciaChecklist[]
+      return ((data ?? []) as PendenciaRow[])
+        .filter((row) => {
+          if (!row.client_document_id) return !row.atendido
+          // Mesma lógica de statusItemChecklist: só é atendido de verdade
+          // se o documento vinculado ainda estiver 'valido'. 'vencendo',
+          // 'vencido' ou sem arquivo continuam como pendência.
+          const doc = row.client_documents
+          if (!doc?.storage_path) return true
+          return calcDocStatus(doc.data_validade) !== 'valido'
+        })
+        .map((row) => ({
+          ...fromBiddingChecklistItemRow(row),
+          biddingObjeto: row.biddings?.objeto ?? '—',
+          biddingOrgao: row.biddings?.orgao ?? '—',
+          clientName: row.biddings?.clients?.name ?? '—',
+        })) as PendenciaChecklist[]
     },
   })
 

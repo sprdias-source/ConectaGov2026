@@ -54,6 +54,16 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: userError } = await supabase.auth.getUser(jwt)
     if (userError || !user) return json({ error: 'Não autenticado' }, 401)
 
+    // Compara com o DONO da conta (owner_efetivo), não com quem está
+    // logado — busca/edital sempre têm user_id = dono, então um membro de
+    // equipe sempre bateria 403 se comparássemos direto com user.id.
+    // Também é o ownerId (não o uid de quem clicou) que precisa ir no
+    // client_payload do robô, já que os dados que ele vai ler/gravar
+    // (licitei_buscas, licitei_editais, client_documents...) são todos
+    // dessa conta, não do membro específico.
+    const { data: ownerId, error: ownerError } = await supabase.rpc('owner_efetivo', { usuario_id: user.id })
+    if (ownerError || !ownerId) return json({ error: 'Não foi possível identificar a conta do usuário' }, 500)
+
     let eventType: string
     let clientPayload: Record<string, unknown>
 
@@ -65,9 +75,9 @@ Deno.serve(async (req: Request) => {
         .eq('id', buscaId)
         .single()
       if (buscaError || !busca) return json({ error: 'Busca não encontrada' }, 404)
-      if (busca.user_id !== user.id) return json({ error: 'Sem permissão para esta busca' }, 403)
+      if (busca.user_id !== ownerId) return json({ error: 'Sem permissão para esta busca' }, 403)
       eventType = 'robo-licitei-buscar'
-      clientPayload = { buscaId, userId: user.id }
+      clientPayload = { buscaId, userId: ownerId }
     } else {
       if (!editalId) return json({ error: 'editalId é obrigatório no modo baixar_edital' }, 400)
       const { data: edital, error: editalError } = await supabase
@@ -76,10 +86,10 @@ Deno.serve(async (req: Request) => {
         .eq('id', editalId)
         .single()
       if (editalError || !edital) return json({ error: 'Edital não encontrado' }, 404)
-      if (edital.user_id !== user.id) return json({ error: 'Sem permissão para este edital' }, 403)
+      if (edital.user_id !== ownerId) return json({ error: 'Sem permissão para este edital' }, 403)
       if (!edital.client_id) return json({ error: 'Linke um cliente a este edital antes de baixar' }, 400)
       eventType = 'robo-licitei-baixar-edital'
-      clientPayload = { editalId, userId: user.id }
+      clientPayload = { editalId, userId: ownerId }
     }
 
     // Log ANTES do fetch: confirma no painel do Supabase (Edge Functions →

@@ -63,6 +63,14 @@ export function useModelosDocumentos() {
 
   const deleteModelo = useMutation({
     mutationFn: async (modelo: ModeloDocumento) => {
+      // Apaga primeiro o REGISTRO no banco — só depois de confirmado é que
+      // o arquivo de verdade é apagado no Drive/Storage. Nessa ordem, se o
+      // passo do arquivo falhar, o pior caso é um arquivo órfão consumindo
+      // espaço — nunca um registro apontando pra um arquivo que já não
+      // existe mais.
+      const { error } = await supabase.from('modelos_documentos').delete().eq('id', modelo.id)
+      if (error) throw error
+
       if (modelo.storagePath) {
         if (ehArquivoDrive(modelo.storagePath)) {
           await excluirNoDrive('modelos_documentos', modelo.storagePath)
@@ -70,8 +78,6 @@ export function useModelosDocumentos() {
           await supabase.storage.from('client-documents').remove([modelo.storagePath])
         }
       }
-      const { error } = await supabase.from('modelos_documentos').delete().eq('id', modelo.id)
-      if (error) throw error
     },
     onSuccess: invalidate,
   })
