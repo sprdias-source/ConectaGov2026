@@ -95,3 +95,39 @@ export function formatCepMask(value: string): string {
   const digits = onlyDigits(value).slice(0, 8)
   return digits.replace(/^(\d{5})(\d)/, '$1-$2')
 }
+
+// Valida o CPF pelo algoritmo padrão de dígito verificador (módulo 11) —
+// até aqui só se checava o FORMATO (11 dígitos, com máscara), então um CPF
+// "bem formado" mas matematicamente inválido (ex: 111.111.111-11) passava
+// batido e só ia quebrar depois, numa integração de verdade (emissão de
+// NFS-e no portal da prefeitura, busca de certidão).
+export function validarCpf(cpfRaw: string): boolean {
+  const cpf = onlyDigits(cpfRaw)
+  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false
+  const calcularDigito = (base: string, pesoInicial: number): number => {
+    let soma = 0
+    for (let i = 0; i < base.length; i++) soma += parseInt(base[i], 10) * (pesoInicial - i)
+    const resto = (soma * 10) % 11
+    return resto === 10 ? 0 : resto
+  }
+  const d1 = calcularDigito(cpf.slice(0, 9), 10)
+  const d2 = calcularDigito(cpf.slice(0, 9) + d1, 11)
+  return cpf.endsWith(`${d1}${d2}`)
+}
+
+// Mesma ideia, algoritmo do CNPJ (dois dígitos verificadores, pesos
+// diferentes do CPF).
+export function validarCnpj(cnpjRaw: string): boolean {
+  const cnpj = onlyDigits(cnpjRaw)
+  if (cnpj.length !== 14 || /^(\d)\1{13}$/.test(cnpj)) return false
+  const calcularDigito = (base: string): number => {
+    const pesos = base.length === 12 ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    let soma = 0
+    for (let i = 0; i < base.length; i++) soma += parseInt(base[i], 10) * pesos[i]
+    const resto = soma % 11
+    return resto < 2 ? 0 : 11 - resto
+  }
+  const d1 = calcularDigito(cnpj.slice(0, 12))
+  const d2 = calcularDigito(cnpj.slice(0, 12) + d1)
+  return cnpj.endsWith(`${d1}${d2}`)
+}

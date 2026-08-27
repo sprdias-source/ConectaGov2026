@@ -1823,15 +1823,24 @@ function AbaPrecificacao({ bidding }: { bidding: Bidding }) {
 
   const handleAplicar = () => {
     if (!perfil) { showToast('Selecione um perfil de precificação primeiro.', 'error'); return }
+    // "Aplicar aos Itens Marcados" só deve aplicar o PERFIL (impostos,
+    // despesas, margem) aos itens com o checkbox "participa" marcado — os
+    // demais campos continuam sendo gravados pra TODOS os itens (o
+    // checkbox em si precisa sincronizar mesmo pra quem acabou de ser
+    // desmarcado, e o custo digitado não é exclusivo de quem participa),
+    // mas o perfil/impostos/despesas/margem de quem está desmarcado é
+    // limpo (null) em vez de herdar o perfil aplicado aos outros — sem
+    // isso, clicar aqui gravava o mesmo perfil em TODOS os itens da
+    // licitação, inclusive os que a empresa nem está disputando.
     const payload = linhas.map(({ item, draft, valorMinimo }) => ({
       id: item.id,
       custoUnitario: draft.custo.trim() ? parseFloat(draft.custo) : null,
       valorMinimoCalculado: valorMinimo,
       participaPrecificacao: draft.participa,
-      pricingProfileId: perfil.id,
-      impostosPctAplicado: impostosPct,
-      despesasPctAplicado: despesasPct,
-      margemPctAplicada: draft.margem.trim() ? parseFloat(draft.margem) : null,
+      pricingProfileId: draft.participa ? perfil.id : null,
+      impostosPctAplicado: draft.participa ? impostosPct : null,
+      despesasPctAplicado: draft.participa ? despesasPct : null,
+      margemPctAplicada: draft.participa && draft.margem.trim() ? parseFloat(draft.margem) : null,
     }))
     aplicarPrecificacao.mutate(payload, {
       onSuccess: () => showToast('Precificação aplicada aos itens marcados.'),

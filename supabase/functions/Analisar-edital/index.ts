@@ -262,7 +262,7 @@ async function apagarArquivoGemini(fileName: string) {
   }
 }
 
-async function processarDocumento(supabase: Supa, doc: Anexo) {
+async function processarDocumento(supabase: Supa, doc: Anexo, arquivosGeminiParaApagar: string[]) {
   const downloadRes = await baixarAnexo(supabase, doc.storage_path)
   if (!downloadRes.ok || !downloadRes.body) throw new Error(`Falha ao baixar "${doc.name}" do Storage/Drive`)
 
@@ -271,6 +271,11 @@ async function processarDocumento(supabase: Supa, doc: Anexo) {
   if (!sizeBytes) throw new Error(`Não foi possível determinar o tamanho de "${doc.name}"`)
 
   const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, doc.name)
+  // Registra ANTES de retornar — se outro documento do MESMO lote (ver
+  // Promise.all abaixo) falhar depois deste já ter subido com sucesso, o
+  // Promise.all rejeita sem nunca rodar o .forEach que populava esta lista
+  // só no fim, deixando este arquivo órfão no Gemini até expirar sozinho.
+  arquivosGeminiParaApagar.push(geminiFile.name)
   return {
     fileData: { file_data: { mime_type: mimeType, file_uri: geminiFile.uri } },
     geminiFileName: geminiFile.name,
@@ -284,9 +289,8 @@ async function processarAnalise(supabase: Supa, analysisRowId: string, edital: A
   const arquivosGeminiParaApagar: string[] = []
   try {
     const docs = [edital, tr].filter((d): d is Anexo => !!d)
-    const resultados = await Promise.all(docs.map((doc) => processarDocumento(supabase, doc)))
+    const resultados = await Promise.all(docs.map((doc) => processarDocumento(supabase, doc, arquivosGeminiParaApagar)))
     const partesArquivos = resultados.map((r) => r.fileData)
-    resultados.forEach((r) => arquivosGeminiParaApagar.push(r.geminiFileName))
 
     const genRes = await fetchComRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,

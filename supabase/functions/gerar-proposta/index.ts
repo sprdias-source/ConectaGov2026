@@ -6,6 +6,59 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// --- Acesso ao Google Drive (inline — Dashboard não suporta import de _shared) ---
+const GOOGLE_CLIENT_ID = Deno.env.get('GOOGLE_DRIVE_CLIENT_ID')
+const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_DRIVE_CLIENT_SECRET')
+const GOOGLE_REFRESH_TOKEN = Deno.env.get('GOOGLE_DRIVE_REFRESH_TOKEN')
+const DRIVE_PREFIX = 'gdrive:'
+
+function ehArquivoDrive(storagePath: string): boolean {
+  return storagePath.startsWith(DRIVE_PREFIX)
+}
+
+async function obterAccessTokenDrive(): Promise<string> {
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REFRESH_TOKEN) {
+    throw new Error('Credenciais do Google Drive não configuradas nesta function (GOOGLE_DRIVE_CLIENT_ID/CLIENT_SECRET/REFRESH_TOKEN).')
+  }
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    client_secret: GOOGLE_CLIENT_SECRET,
+    refresh_token: GOOGLE_REFRESH_TOKEN,
+    grant_type: 'refresh_token',
+  })
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params,
+  })
+  if (!res.ok) throw new Error(`Falha ao renovar o acesso ao Google Drive: ${await res.text()}`)
+  const data = await res.json()
+  return data.access_token as string
+}
+
+// Baixa o modelo de proposta de onde ele estiver — Google Drive
+// (modelo_customizado_path com prefixo "gdrive:") ou o bucket 'documents'
+// do Supabase Storage (caminho padrão do sistema e caminho antigo, de
+// antes da migração pro Drive) — sempre devolvendo um Response comum.
+// Sem isso, um modelo customizado que algum dia venha a ser migrado/
+// enviado pro Drive quebraria aqui com "Modelo de proposta não
+// encontrado", já que um path "gdrive:..." não é um caminho válido do
+// Storage.
+async function baixarModelo(supabase: ReturnType<typeof createClient>, storagePath: string): Promise<Response> {
+  if (ehArquivoDrive(storagePath)) {
+    const driveFileId = storagePath.slice(DRIVE_PREFIX.length)
+    const accessToken = await obterAccessTokenDrive()
+    return fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+  }
+  const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+    .from('documents')
+    .createSignedUrl(storagePath, 300)
+  if (signedUrlError || !signedUrlData) throw new Error('Não foi possível gerar a URL do modelo no Storage')
+  return fetch(signedUrlData.signedUrl)
+}
+
 // Caminho do modelo padrão dentro do bucket 'documents'. Quando a
 // licitação tem um modelo próprio (campo `modelo_customizado_path`,
 // usado quando a prefeitura exige formulário específico), esse caminho
@@ -192,15 +245,14 @@ Deno.serve(async (req) => {
     // modelo padrão do sistema.
     const templatePath = bidding.modelo_customizado_path || TEMPLATE_PATH_PADRAO
 
-    // --- Baixa o modelo do Storage (via service role, ver comentário acima) ---
-    const { data: templateBlob, error: templateError } = await supabaseAdmin.storage
-      .from('documents').download(templatePath)
-    if (templateError || !templateBlob) {
-      console.error('gerar-proposta: erro ao baixar modelo:', templateError)
-      throw new Error(`Modelo de proposta não encontrado em '${templatePath}': ${templateError?.message ?? 'motivo desconhecido'}`)
+    // --- Baixa o modelo de onde estiver, Storage ou Drive (via service role, ver comentário acima) ---
+    const templateRes = await baixarModelo(supabaseAdmin, templatePath)
+    if (!templateRes.ok) {
+      console.error('gerar-proposta: erro ao baixar modelo:', templateRes.status, await templateRes.text().catch(() => ''))
+      throw new Error(`Modelo de proposta não encontrado em '${templatePath}'`)
     }
 
-    const zip = await JSZip.loadAsync(await templateBlob.arrayBuffer())
+    const zip = await JSZip.loadAsync(await templateRes.arrayBuffer())
 
     // --- Monta o mapa de valores fixos (não repetem) ---
     const hoje = new Date()

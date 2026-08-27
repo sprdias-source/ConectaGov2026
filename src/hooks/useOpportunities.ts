@@ -153,8 +153,28 @@ export function useOpportunities() {
     mutationFn: async (o: Opportunity) => {
       const { error } = await supabase.from('opportunities').delete().eq('id', o.id)
       if (error) throw error
+
+      // Reflete a exclusão de volta no edital Licitei que originou esta
+      // oportunidade (se houver) — mesmo padrão de marcarResposta
+      // (recusar) e converterEmLicitacao (aceitar), que já sincronizam de
+      // volta. Sem isso, o licitei_edital ficava travado pra sempre em
+      // status 'oportunidade' (sem ação nenhuma disponível na aba Editais
+      // Licitei) sempre que a Oportunidade vinculada fosse excluída em vez
+      // de aceita/recusada. Volta pro estado de antes de enviar (edital já
+      // baixado e com cliente linkado), não pra 'novo' — enviarParaOportunidades
+      // exige clientId, então ele nunca foi perdido.
+      if (o.licitaiEditalId) {
+        const { error: licitaiError } = await supabase
+          .from('licitei_editais')
+          .update({ status: 'linkado' })
+          .eq('id', o.licitaiEditalId)
+        if (licitaiError) throw licitaiError
+      }
     },
-    onSuccess: invalidate,
+    onSuccess: (_, o) => {
+      invalidate()
+      if (o.licitaiEditalId) queryClient.invalidateQueries({ queryKey: ['licitei_editais'] })
+    },
   })
 
   // O coração do "nasce quase pronta": cria a licitação de verdade a
