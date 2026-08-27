@@ -235,6 +235,7 @@ export default function EmpenhosTab() {
             open={!!deleting}
             title="Excluir Empenho Definitivamente"
             entityLabel={`O empenho "${deleting?.numeroEmpenho}"`}
+            entityId={deleting?.id ?? ''}
             financialWarning={financialWarning}
             onCancel={() => setDeleting(null)}
             onConfirm={() => { if (deleting) deleteEmpenho.mutate(deleting, { onSuccess: () => setDeleting(null) }) }}

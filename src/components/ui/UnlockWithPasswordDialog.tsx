@@ -6,11 +6,13 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { lerTentativas, gravarTentativas, limparTentativas } from '../../lib/passwordLockout'
 
-const LOCKOUT_STORAGE_PREFIX = 'unlock-password-attempts:'
-
 interface UnlockWithPasswordDialogProps {
   open: boolean
   entityLabel: string
+  // ID real da entidade (ex: bidding.id) — o contador de tentativas é
+  // chaveado por isso, não pelo entityLabel (texto livre editável pelo
+  // usuário, ver passwordLockout.ts pra por que isso importa).
+  entityId: string
   onCancel: () => void
   onUnlocked: () => void
 }
@@ -23,7 +25,7 @@ interface UnlockWithPasswordDialogProps {
  * mas desbloqueia em vez de excluir.
  */
 export default function UnlockWithPasswordDialog({
-  open, entityLabel, onCancel, onUnlocked,
+  open, entityLabel, entityId, onCancel, onUnlocked,
 }: UnlockWithPasswordDialogProps) {
   const { user } = useAuth()
   const [password, setPassword] = useState('')
@@ -31,12 +33,14 @@ export default function UnlockWithPasswordDialog({
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [failedAttempts, setFailedAttempts] = useState(0)
 
-  const storageKey = `${LOCKOUT_STORAGE_PREFIX}${entityLabel}`
-
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- mesmo padrão do DeleteWithPasswordDialog: recarrega o contador do sessionStorage (fonte externa) quando o diálogo abre.
-    if (open) setFailedAttempts(lerTentativas(storageKey))
-  }, [open, storageKey])
+    if (!open) return
+    let cancelado = false
+    lerTentativas('bidding_unlock', entityId).then((n) => {
+      if (!cancelado) setFailedAttempts(n)
+    })
+    return () => { cancelado = true }
+  }, [open, entityId])
 
   if (!open) return null
 
@@ -57,7 +61,7 @@ export default function UnlockWithPasswordDialog({
     if (authError) {
       const novaContagem = failedAttempts + 1
       setFailedAttempts(novaContagem)
-      gravarTentativas(storageKey, novaContagem)
+      await gravarTentativas('bidding_unlock', entityId, novaContagem)
       setPasswordError(
         failedAttempts >= 4
           ? 'Muitas tentativas incorretas. Cancele e tente novamente em alguns minutos.'
@@ -67,7 +71,7 @@ export default function UnlockWithPasswordDialog({
     }
     setPassword('')
     setFailedAttempts(0)
-    limparTentativas(storageKey)
+    await limparTentativas('bidding_unlock', entityId)
     onUnlocked()
   }
 

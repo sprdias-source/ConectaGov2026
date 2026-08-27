@@ -270,6 +270,7 @@ export default function BiddingFormModal({
       <UnlockWithPasswordDialog
         open={mostrandoUnlock}
         entityLabel={`Licitação "${initial?.objeto ?? ''}"`}
+        entityId={initial?.id ?? ''}
         onCancel={() => setMostrandoUnlock(false)}
         onUnlocked={() => { desbloquear(); setMostrandoUnlock(false) }}
       />

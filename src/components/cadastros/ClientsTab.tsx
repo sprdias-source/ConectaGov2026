@@ -334,6 +334,7 @@ export default function ClientsTab() {
             open={!!deleting}
             title="Excluir Cliente Definitivamente"
             entityLabel={`O cliente "${deleting?.name}"`}
+            entityId={deleting?.id ?? ''}
             financialWarning={financialWarning}
             onCancel={() => setDeleting(null)}
             onConfirm={() => {

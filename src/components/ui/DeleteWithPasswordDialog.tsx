@@ -7,16 +7,14 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { lerTentativas, gravarTentativas, limparTentativas } from '../../lib/passwordLockout'
 
-// Chave do contador de tentativas identifica O QUE está sendo excluído
-// (título + rótulo da entidade, que já são props recebidas) — ver
-// lib/passwordLockout.ts pra como o "bloqueio após 5 tentativas" persiste
-// fechando/reabrindo o modal.
-const LOCKOUT_STORAGE_PREFIX = 'delete-password-attempts:'
-
 interface DeleteWithPasswordDialogProps {
   open: boolean
   title: string
   entityLabel: string
+  // ID real da entidade sendo excluída (ex: client.id) — o contador de
+  // tentativas é chaveado por isso, não por título+entityLabel (texto
+  // livre editável pelo usuário, ver lib/passwordLockout.ts).
+  entityId: string
   financialWarning?: string
   onCancel: () => void
   onConfirm: () => void
@@ -35,7 +33,7 @@ interface DeleteWithPasswordDialogProps {
  * nenhum além da chamada de rede direta ao Supabase.
  */
 export default function DeleteWithPasswordDialog({
-  open, title, entityLabel, financialWarning, onCancel, onConfirm, isLoading, error,
+  open, title, entityLabel, entityId, financialWarning, onCancel, onConfirm, isLoading, error,
 }: DeleteWithPasswordDialogProps) {
   const { user } = useAuth()
   const [password, setPassword] = useState('')
@@ -43,14 +41,17 @@ export default function DeleteWithPasswordDialog({
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [failedAttempts, setFailedAttempts] = useState(0)
 
-  const storageKey = `${LOCKOUT_STORAGE_PREFIX}${title}:${entityLabel}`
-
-  // Toda vez que o modal abre, recarrega o contador de tentativas dessa
-  // MESMA exclusão (mesma chave) do sessionStorage — é isso que faz o
-  // "bloqueio" sobreviver a fechar e reabrir o modal.
+  // Toda vez que o modal abre, recarrega do banco o contador de tentativas
+  // dessa MESMA exclusão (mesmo entityId) — é isso que faz o "bloqueio"
+  // sobreviver a fechar/reabrir o modal e até a fechar a aba.
   useEffect(() => {
-    if (open) setFailedAttempts(lerTentativas(storageKey))
-  }, [open, storageKey])
+    if (!open) return
+    let cancelado = false
+    lerTentativas('delete_confirmation', entityId).then((n) => {
+      if (!cancelado) setFailedAttempts(n)
+    })
+    return () => { cancelado = true }
+  }, [open, entityId])
 
   if (!open) return null
 
@@ -71,7 +72,7 @@ export default function DeleteWithPasswordDialog({
     if (authError) {
       const novaContagem = failedAttempts + 1
       setFailedAttempts(novaContagem)
-      gravarTentativas(storageKey, novaContagem)
+      await gravarTentativas('delete_confirmation', entityId, novaContagem)
       setPasswordError(
         failedAttempts >= 4
           ? 'Muitas tentativas incorretas. Cancele e tente novamente em alguns minutos.'
@@ -81,7 +82,7 @@ export default function DeleteWithPasswordDialog({
     }
     setPassword('')
     setFailedAttempts(0)
-    limparTentativas(storageKey)
+    await limparTentativas('delete_confirmation', entityId)
     onConfirm()
   }
 
