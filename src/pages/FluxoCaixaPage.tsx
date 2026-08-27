@@ -30,9 +30,15 @@ export default function FluxoCaixaPage() {
 
   const monthStr = String(activeMonth + 1).padStart(2, '0')
   const prefix = `${year}-${monthStr}`
-  const monthTxs = transactions.filter((t) => t.dueDate.startsWith(prefix) || t.paymentDate?.startsWith(prefix))
-  const liquidados = monthTxs.filter((t) => t.status === 'Pago')
-  const previstos = monthTxs.filter((t) => t.status !== 'Pago')
+  // Um lançamento pertence ao mês em que foi PAGO se já está liquidado, ou
+  // ao mês de VENCIMENTO se ainda está em aberto — nunca os dois ao mesmo
+  // tempo. Filtrar por dueDate OU paymentDate (como era antes) fazia um
+  // lançamento vencido num mês e pago no seguinte entrar nos DOIS meses:
+  // aparecia como liquidado (Entrada/Saída Real) em ambos, contando o
+  // mesmo valor duas vezes no total do exercício. Mesma regra que `yearly`
+  // já usa acima.
+  const liquidados = transactions.filter((t) => t.status === 'Pago' && t.paymentDate?.startsWith(prefix))
+  const previstos = transactions.filter((t) => t.status !== 'Pago' && t.dueDate.startsWith(prefix))
 
   const totalEntradas = liquidados.filter((t) => t.type === 'Receber').reduce((s, t) => s + t.value, 0)
   const totalSaidas = liquidados.filter((t) => t.type === 'Pagar').reduce((s, t) => s + t.value, 0)
