@@ -115,16 +115,35 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
 
   const deleteFile = useMutation({
     mutationFn: async (file: AttachedFile) => {
+      // Desvincula qualquer item de checklist que dependia deste anexo
+      // (campo legado attached_file_id) ANTES de apagar — mesmo cuidado já
+      // tomado em useAtestados.ts: a FK sozinha (ON DELETE SET NULL) não
+      // reseta o "atendido", que ficaria preso em true pra sempre sem
+      // nenhum arquivo por trás.
+      await supabase
+        .from('bidding_checklist_items')
+        .update({ attached_file_id: null, atendido: false })
+        .eq('attached_file_id', file.id)
+
+      // Apaga primeiro o REGISTRO no banco — é o "ponto de confirmação" da
+      // exclusão. Só depois de confirmar que o banco não referencia mais
+      // esse arquivo é que apagamos o arquivo de verdade no Drive/Storage.
+      // Nessa ordem, se o passo abaixo falhar (rede, cota), o pior caso é
+      // um arquivo órfão consumindo espaço — nunca um registro no banco
+      // apontando pra um arquivo que já não existe mais.
+      const { error } = await supabase.from('attached_files').delete().eq('id', file.id)
+      if (error) throw error
+
       if (ehArquivoDrive(file.storagePath)) {
         await excluirNoDrive('attached_files', file.storagePath)
       } else {
         await supabase.storage.from('client-documents').remove([file.storagePath])
       }
-      const { error } = await supabase.from('attached_files').delete().eq('id', file.id)
-      if (error) throw error
     },
     onSuccess: (_, file) => {
       invalidate()
+      queryClient.invalidateQueries({ queryKey: ['bidding_checklist_items'] })
+      queryClient.invalidateQueries({ queryKey: ['bidding_checklist_pendencias'] })
       showToast(`${file.category} removido.`)
     },
   })

@@ -108,7 +108,13 @@ export default function CentralPrazosPage() {
         continue
       }
 
-      if (doc.status !== 'vencendo' && doc.status !== 'vencido') continue
+      // Recalcula pela data de validade em vez de confiar na coluna
+      // `status` gravada no banco — ela só é escrita no momento do
+      // upload/upsert e nunca é atualizada depois, então uma certidão
+      // avulsa (sem sessão vinculada) salva como "válido" meses atrás
+      // nunca aparecia aqui de novo, mesmo já tendo vencido de verdade.
+      const statusAtual = calcDocStatus(doc.dataValidade)
+      if (statusAtual !== 'vencendo' && statusAtual !== 'vencido') continue
       lista.push({
         key: `doc-${doc.id}`,
         tipo: 'Certidão',

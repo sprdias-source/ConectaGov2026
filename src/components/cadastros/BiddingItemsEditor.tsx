@@ -239,7 +239,12 @@ export default function BiddingItemsEditor({
         <Input value={d.referencia ?? ''} onChange={(e) => updateRow(d._key, { referencia: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
       </td>
       <td className="px-2 py-1.5">
-        {travarValorLicitado ? (
+        {/* A trava só vale pra item que já existia (veio da análise do
+            edital, tem id salvo) — um item adicionado manualmente ou
+            importado depois nunca tem id ainda neste ponto, então nasceria
+            com valor licitado 0 e travado pra sempre, sem nenhum jeito de
+            corrigir na tela. */}
+        {travarValorLicitado && d.id ? (
           <span className="flex items-center justify-end gap-1 font-mono text-[12px] text-base-500 py-1 px-2" title="Vem da análise do edital — não editável aqui">
             {formatBRL(d.valorUnitarioLicitado ?? 0)} <Lock className="w-3 h-3 shrink-0" />
           </span>
@@ -331,8 +336,8 @@ export default function BiddingItemsEditor({
           <Input value={d.referencia ?? ''} onChange={(e) => updateRow(d._key, { referencia: e.target.value })} className="!py-1.5 !px-2 text-[13px]" placeholder="—" />
         </div>
         <div>
-          <p className="text-[9px] font-bold uppercase text-base-500 mb-1 flex items-center gap-1">Vl. Unit. Licitado {travarValorLicitado && <Lock className="w-2.5 h-2.5" />}</p>
-          {travarValorLicitado ? (
+          <p className="text-[9px] font-bold uppercase text-base-500 mb-1 flex items-center gap-1">Vl. Unit. Licitado {travarValorLicitado && d.id && <Lock className="w-2.5 h-2.5" />}</p>
+          {travarValorLicitado && d.id ? (
             <p className="font-mono text-[13px] text-base-500 py-1.5">{formatBRL(d.valorUnitarioLicitado ?? 0)}</p>
           ) : (
             <Input type="number" step="0.01" value={d.valorUnitarioLicitado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioLicitado: parseFloat(e.target.value) || 0 })} className="!py-1.5 !px-2 text-[13px]" />

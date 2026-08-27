@@ -6,7 +6,9 @@ import { useTransactions } from '../hooks/useTransactions'
 import { useFinancialAccounts } from '../hooks/useFinancialAccounts'
 import { useBankReconciliations } from '../hooks/useBankReconciliations'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
+import { useToast } from '../hooks/useToast'
 import { todayLocalISO } from '../lib/dateUtils'
+import { mensagemDeErro } from '../lib/errors'
 
 interface OFXEntry {
   id: string
@@ -103,6 +105,7 @@ export default function ExtratoOFXPage() {
   const { transactions } = useTransactions()
   const { accounts } = useFinancialAccounts()
   const { reconciliations, salvar, remover } = useBankReconciliations()
+  const { showToast } = useToast()
   // Antes não checava permissão nenhuma — qualquer membro conseguia salvar
   // e apagar conciliações bancárias mesmo com acesso só de visualização
   // (ou nenhum) em financeiro.
@@ -216,17 +219,24 @@ export default function ExtratoOFXPage() {
 
   const handleSalvar = async () => {
     if (!accountId || !saldoFinal || !conciliacao) return
-    await salvar.mutateAsync({
-      accountId,
-      dataSaldo: saldoFinal.data,
-      saldoBanco: saldoFinal.valor,
-      saldoSistema: conciliacao.saldoSistema,
-      diferenca: conciliacao.diferenca,
-      nomeArquivo: fileName,
-      totalLancamentos: summary.total,
-      lancamentosEncontrados: summary.comCorrespondencia,
-    })
-    setSalvo(true)
+    try {
+      await salvar.mutateAsync({
+        accountId,
+        dataSaldo: saldoFinal.data,
+        saldoBanco: saldoFinal.valor,
+        saldoSistema: conciliacao.saldoSistema,
+        diferenca: conciliacao.diferenca,
+        nomeArquivo: fileName,
+        totalLancamentos: summary.total,
+        lancamentosEncontrados: summary.comCorrespondencia,
+      })
+      setSalvo(true)
+    } catch (err) {
+      // Sem isso, uma falha aqui (ex: erro de banco) ficava completamente
+      // silenciosa — o botão só voltava ao normal e o usuário acreditava
+      // ter salvo a conciliação sem ela nunca ter sido persistida.
+      showToast(`Não foi possível salvar a conciliação — ${mensagemDeErro(err)}`, 'error')
+    }
   }
 
   return (

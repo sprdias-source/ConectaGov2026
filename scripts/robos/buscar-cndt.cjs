@@ -154,10 +154,14 @@ async function main() {
     const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true })
     await supabase.from('captcha_sessions').update({ status: 'usada' }).eq('id', sessaoId)
 
-    const hoje = new Date()
-    const dataEmissao = hoje.toISOString().split('T')[0]
-    const validade = new Date(hoje)
-    validade.setDate(validade.getDate() + 180)
+    // Data no fuso do Brasil, não em UTC — o runner do GitHub Actions roda
+    // em UTC, então perto da meia-noite em Brasília (21h BRT = 00h UTC do
+    // dia seguinte) a emissão/validade podia ficar gravada um dia à frente
+    // do calendário real.
+    const dataEmissao = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
+    const [anoEmissao, mesEmissao, diaEmissao] = dataEmissao.split('-').map(Number)
+    const validade = new Date(Date.UTC(anoEmissao, mesEmissao - 1, diaEmissao))
+    validade.setUTCDate(validade.getUTCDate() + 180)
     const dataValidade = validade.toISOString().split('T')[0]
 
     const path = `${USER_ID}/${CLIENT_ID}/cndt/cndt_${dataEmissao}.pdf`
@@ -165,13 +169,25 @@ async function main() {
       .from('documents')
       .upload(path, pdfBuffer, { contentType: 'application/pdf', upsert: true })
 
+    if (erroUpload) {
+      // O PDF não foi salvo — NÃO grava como se a certidão estivesse
+      // válida (isso já causou o bug de "certidão atendida com arquivo
+      // perdido"). Registra a falha de verdade e desiste, sem tocar em
+      // client_documents: a certidão anterior (se houver) continua valendo
+      // até uma nova tentativa funcionar.
+      await registrarLog('erro', `PDF emitido mas falhou ao salvar no Storage: ${erroUpload.message}`, inicio)
+      console.error('Falha ao salvar o PDF da CNDT:', erroUpload.message)
+      process.exitCode = 1
+      return
+    }
+
     await supabase.from('client_documents').upsert(
       {
         user_id: USER_ID,
         client_id: CLIENT_ID,
         tipo: 'cndt',
         nome: 'CNDT — Certidão Negativa de Débitos Trabalhistas (TST)',
-        storage_path: erroUpload ? null : path,
+        storage_path: path,
         data_emissao: dataEmissao,
         data_validade: dataValidade,
         status: 'valido',

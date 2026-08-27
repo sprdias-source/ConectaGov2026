@@ -119,6 +119,14 @@ export function useAtestados(clientId?: string) {
         .update({ atestado_id: null, atendido: false })
         .eq('atestado_id', atestado.id)
 
+      // Apaga primeiro o REGISTRO no banco — só depois de confirmado é que
+      // o arquivo de verdade é apagado no Drive/Storage. Nessa ordem, se o
+      // passo do arquivo falhar, o pior caso é um arquivo órfão consumindo
+      // espaço — nunca um registro apontando pra um arquivo que já não
+      // existe mais.
+      const { error } = await supabase.from('atestados_tecnicos').delete().eq('id', atestado.id)
+      if (error) throw error
+
       if (atestado.storagePath) {
         if (ehArquivoDrive(atestado.storagePath)) {
           await excluirNoDrive('atestados_tecnicos', atestado.storagePath)
@@ -126,8 +134,6 @@ export function useAtestados(clientId?: string) {
           await supabase.storage.from('client-documents').remove([atestado.storagePath])
         }
       }
-      const { error } = await supabase.from('atestados_tecnicos').delete().eq('id', atestado.id)
-      if (error) throw error
     },
     onSuccess: () => {
       invalidate()

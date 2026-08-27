@@ -165,6 +165,15 @@ export function useClientDocuments(clientId?: string) {
 
   const deleteDocument = useMutation({
     mutationFn: async (doc: ClientDocument) => {
+      // Apaga primeiro o REGISTRO no banco (o trigger da migração 041 já
+      // desvincula qualquer item de checklist que dependia dele) — só
+      // depois de confirmado é que o arquivo de verdade é apagado no
+      // Drive/Storage. Nessa ordem, se o passo do arquivo falhar, o pior
+      // caso é um arquivo órfão consumindo espaço — nunca um registro
+      // apontando pra um arquivo que já não existe mais.
+      const { error } = await supabase.from('client_documents').delete().eq('id', doc.id)
+      if (error) throw error
+
       if (doc.storagePath) {
         if (ehArquivoDrive(doc.storagePath)) {
           await excluirNoDrive('client_documents', doc.storagePath)
@@ -172,8 +181,6 @@ export function useClientDocuments(clientId?: string) {
           await supabase.storage.from('client-documents').remove([doc.storagePath])
         }
       }
-      const { error } = await supabase.from('client_documents').delete().eq('id', doc.id)
-      if (error) throw error
     },
     onSuccess: invalidate,
   })

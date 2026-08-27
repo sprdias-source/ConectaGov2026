@@ -78,13 +78,19 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: userError } = await supabase.auth.getUser(jwt)
     if (userError || !user) return json({ error: 'Não autenticado' }, 401)
 
+    // Compara com o DONO da conta (owner_efetivo), não com quem está
+    // logado — todo anexo sempre tem user_id = dono, então um membro de
+    // equipe sempre bateria 403 se comparássemos direto com user.id.
+    const { data: ownerId, error: ownerError } = await supabase.rpc('owner_efetivo', { usuario_id: user.id })
+    if (ownerError || !ownerId) return json({ error: 'Não foi possível identificar a conta do usuário' }, 500)
+
     const { data: anexo, error: anexoError } = await supabase
       .from('bidding_declaracao_anexos')
       .select('id, user_id, bidding_id, titulo, texto')
       .eq('id', anexoId)
       .single()
     if (anexoError || !anexo) return json({ error: 'Anexo de declaração não encontrado' }, 404)
-    if (anexo.user_id !== user.id) return json({ error: 'Sem permissão para este anexo' }, 403)
+    if (anexo.user_id !== ownerId) return json({ error: 'Sem permissão para este anexo' }, 403)
     if (!anexo.texto?.trim()) return json({ error: 'Este anexo ainda não tem texto preenchido' }, 400)
 
     const { data: bidding } = await supabase
