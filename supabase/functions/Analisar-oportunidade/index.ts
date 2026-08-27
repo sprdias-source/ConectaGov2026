@@ -363,7 +363,7 @@ Deno.serve(async (req: Request) => {
     } else {
       const { data: novo, error: insertError } = await supabase
         .from('opportunity_analysis')
-        .insert({ user_id: user.id, opportunity_id: opportunityId, status: 'processando' })
+        .insert({ user_id: ownerId, opportunity_id: opportunityId, status: 'processando' })
         .select('id')
         .single()
       if (insertError) throw insertError
