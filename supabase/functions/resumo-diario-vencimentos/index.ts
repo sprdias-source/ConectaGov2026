@@ -56,8 +56,15 @@ interface TxRow {
 }
 
 async function enviarResumoDaConta(supabase: ReturnType<typeof createClient>, ownerId: string, ownerEmail: string) {
-  const today = new Date().toISOString().slice(0, 10)
-  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+  // Data no fuso do Brasil, não em UTC (mesmo ajuste feito em
+  // buscar-cndt.cjs) — o pg_cron roda em UTC, então perto da meia-noite em
+  // Brasília (21h BRT = 00h UTC do dia seguinte) "hoje"/"ontem" podiam
+  // ficar um dia à frente do calendário real, dependendo do horário exato
+  // agendado. Hoje o agendamento roda de manhã (longe da virada), então
+  // isso nunca se manifestou como bug de verdade — mas fica frágil contra
+  // qualquer mudança de horário do agendamento.
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
+  const yesterday = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date(Date.now() - 86400000))
 
   const { data: clients } = await supabase.from('clients').select('id, name').eq('user_id', ownerId)
   const clientName = (id: string | null) => clients?.find((c) => c.id === id)?.name ?? '—'

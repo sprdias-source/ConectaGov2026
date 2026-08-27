@@ -100,7 +100,7 @@ export default function PendenciasPage() {
 
       <div className="px-6 mt-4">
         <p className="text-[11px] text-base-500 mb-3">
-          Itens ligados a certidões automáticas são conferidos sozinhos (na hora que a certidão é renovada, e também de hora em hora) — se a certidão está válida, o item some daqui sozinho; se está vencendo, o prazo aparece automaticamente.
+          Um item só some daqui depois que você confirmar o vínculo com a certidão na aba Checklist da licitação — o sistema nunca marca "atendido" sozinho. Depois de confirmado, ele volta a aparecer aqui automaticamente se a certidão vinculada vencer, entrar no prazo de vencimento ou perder o arquivo.
         </p>
         {isLoading ? (
           <SkeletonList itens={5} />

@@ -12,6 +12,17 @@ export function parseFlexibleNumber(val: unknown): number | null {
 
   str = str.replace(/R\$\s*/i, '').replace(/\s/g, '')
 
+  // "1.234.567" (DOIS OU MAIS grupos de milhar, sem vírgula nenhuma) só
+  // pode ser separador de milhar — um número decimal nunca tem mais de um
+  // ponto. Sem isso, parseFloat truncava no segundo ponto (virava 1.234
+  // em vez de 1234567). O caso de UM ÚNICO ponto com exatamente 3 dígitos
+  // (ex: "1.234") continua ambíguo de propósito — pode ser "1234" (milhar
+  // BR) ou "1,234" literal — e não é alterado aqui, pra não arriscar
+  // reinterpretar um valor decimal de verdade como se fosse milhar.
+  if (!str.includes(',') && /^\d{1,3}(\.\d{3}){2,}$/.test(str)) {
+    str = str.replace(/\./g, '')
+  }
+
   const lastComma = str.lastIndexOf(',')
   const lastDot = str.lastIndexOf('.')
 
