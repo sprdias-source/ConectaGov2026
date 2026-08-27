@@ -21,7 +21,7 @@ import PdfViewerModal from '../components/ui/PdfViewerModal'
 import Modal from '../components/ui/Modal'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useAttachedFiles } from '../hooks/useAttachedFiles'
-import { useBiddingChecklist, calcularHabilitacao, statusItemChecklist, arquivoResolvidoDoItem, extrairNumeroEdital } from '../hooks/useBiddingChecklist'
+import { useBiddingChecklist, calcularHabilitacao, statusItemChecklist, arquivoResolvidoDoItem, certidaoDisponivelParaItem, extrairNumeroEdital } from '../hooks/useBiddingChecklist'
 import { useDeclaracaoAnexos } from '../hooks/useDeclaracaoAnexos'
 import { useBuscaCertidaoAutomatica } from '../hooks/useBuscaCertidaoAutomatica'
 import AcoesDocumentoManual from '../components/documentos/AcoesDocumentoManual'
@@ -2936,6 +2936,7 @@ export default function LicitacaoPage() {
                   {items.filter((item) => !itemPendenteDeExclusao(item.id)).map((item) => {
                     const status = statusItem(item)
                     const arquivo = arquivoResolvidoDoItem(item, clientDocs, atestados, anexos)
+                    const certidaoDisponivel = certidaoDisponivelParaItem(item, clientDocs)
                     const temVinculoProprio = !!(item.clientDocumentId || item.atestadoId || item.attachedFileId)
                     const tipoConhecido = item.clientDocumentTipo
                     const ehAtestado = ehAtestadoTecnico(item)
@@ -3044,6 +3045,22 @@ export default function LicitacaoPage() {
                             <FileText className="w-3 h-3 shrink-0 mt-0.5" />
                             <span><span className="font-semibold text-base-400">Motivo:</span> {item.justificativaNaoAplicavel}</span>
                           </p>
+                        )}
+
+                        {certidaoDisponivel && (
+                          <div className="mt-1.5 pl-7 flex items-center gap-2 flex-wrap">
+                            <span className="text-[10.5px] text-accent-300 bg-accent-500/10 border border-accent-500/25 rounded-full px-2 py-0.5">
+                              Encontramos "{certidaoDisponivel.nome}" válida no cadastro do cliente
+                            </span>
+                            {podeEditar && (
+                              <button
+                                onClick={() => updateItem.mutate({ ...item, clientDocumentId: certidaoDisponivel.id, atendido: true })}
+                                className="text-[10.5px] font-bold text-accent-300 hover:text-accent-200 underline"
+                              >
+                                Usar este documento
+                              </button>
+                            )}
+                          </div>
                         )}
 
                         {arquivo && (
