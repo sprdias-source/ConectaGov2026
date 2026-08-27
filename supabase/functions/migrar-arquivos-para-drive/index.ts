@@ -79,6 +79,7 @@ interface ResultadoTabela {
 async function migrarTabela(
   supabase: Supa,
   accessToken: string,
+  ownerId: string,
   tabela: 'attached_files' | 'client_documents' | 'atestados_tecnicos' | 'modelos_documentos',
   colunaNome: string,
   limite: number
@@ -86,9 +87,13 @@ async function migrarTabela(
   const resultado: ResultadoTabela = { tabela, migrados: 0, falhas: [], restantesNestaChamada: 0 }
   if (limite <= 0) return resultado
 
+  // Restrito à própria conta (owner_efetivo de quem chamou) — sem isso, como
+  // a function roda com a service role (sem RLS), qualquer usuário
+  // autenticado migraria/apagaria arquivos de OUTRAS contas.
   const { data: linhas, error } = await supabase
     .from(tabela)
     .select(`id, storage_path, ${colunaNome}`)
+    .eq('user_id', ownerId)
     .not('storage_path', 'is', null)
     .not('storage_path', 'like', `${DRIVE_PREFIX}%`)
     .limit(limite + 1) // +1 só pra saber se ainda sobra depois deste lote
@@ -168,7 +173,7 @@ Deno.serve(async (req: Request) => {
     const resultados: ResultadoTabela[] = []
     let orcamentoRestante = limiteTotal
     for (const { nome, colunaNome } of tabelas) {
-      const resultado = await migrarTabela(supabase, accessToken, nome, colunaNome, orcamentoRestante)
+      const resultado = await migrarTabela(supabase, accessToken, ownerId, nome, colunaNome, orcamentoRestante)
       resultados.push(resultado)
       orcamentoRestante -= resultado.migrados
       if (orcamentoRestante <= 0) break
