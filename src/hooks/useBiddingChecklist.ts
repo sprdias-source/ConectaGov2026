@@ -188,7 +188,13 @@ export function useBiddingChecklist(biddingId?: string) {
   })
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: [...QUERY_KEY, biddingId] })
+    // Prefixo, não [...QUERY_KEY, biddingId]: invalidateQueries só casa
+    // queries cuja key COMEÇA com a key passada, então invalidar só
+    // [...QUERY_KEY, biddingId] nunca tocava [...QUERY_KEY, 'all']
+    // (useAllBiddingChecklistItems, consumida pela Central de Prazos) — uma
+    // edição de checklist feita aqui dentro da licitação só aparecia lá
+    // depois do staleTime global (60s) expirar sozinho.
+    queryClient.invalidateQueries({ queryKey: QUERY_KEY })
     queryClient.invalidateQueries({ queryKey: ['bidding_checklist_pendencias'] })
   }
 
@@ -420,7 +426,6 @@ export function usePendenciasChecklist() {
         .is('attached_file_id', null)
         .is('atestado_id', null)
         .or('atendido.eq.false,client_document_id.not.is.null')
-        .order('prazo', { ascending: true, nullsFirst: false })
       if (error) throw error
       return ((data ?? []) as PendenciaRow[])
         .filter((row) => {
@@ -434,10 +439,26 @@ export function usePendenciasChecklist() {
         })
         .map((row) => ({
           ...fromBiddingChecklistItemRow(row),
+          // bci.prazo só é sincronizado pelo banco enquanto o item está
+          // atendido=false (ver migração 044) — depois de confirmado, ele
+          // congela (podendo ficar nulo pra sempre, se nunca rodou antes da
+          // confirmação). Quando há um documento vinculado, usa a validade
+          // dele DIRETO, a mesma fonte que a Central de Prazos usa — sem
+          // isso, as duas telas mostravam prazos diferentes pra mesma
+          // certidão.
+          prazo: row.client_documents?.data_validade ?? row.prazo,
           biddingObjeto: row.biddings?.objeto ?? '—',
           biddingOrgao: row.biddings?.orgao ?? '—',
           clientName: row.biddings?.clients?.name ?? '—',
-        })) as PendenciaChecklist[]
+        }))
+        // Reordena no cliente pelo prazo EFETIVO (acima) — o ORDER BY do
+        // Postgres já rodou antes desse ajuste, pela coluna prazo crua.
+        .sort((a, b) => {
+          if (!a.prazo && !b.prazo) return 0
+          if (!a.prazo) return 1
+          if (!b.prazo) return -1
+          return a.prazo < b.prazo ? -1 : a.prazo > b.prazo ? 1 : 0
+        }) as PendenciaChecklist[]
     },
   })
 

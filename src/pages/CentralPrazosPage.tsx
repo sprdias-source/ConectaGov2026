@@ -76,11 +76,20 @@ export default function CentralPrazosPage() {
     for (const doc of documents) {
       const label = doc.tipo === 'manual' ? doc.nome : CERT_CONFIG[doc.tipo]?.label ?? doc.nome
 
-      const biddingVinculada = doc.tipo !== 'manual'
-        ? biddings.find((b) =>
+      // Quando o cliente tem MAIS DE UMA licitação ativa pedindo o mesmo
+      // tipo de certidão, a que importa é a de sessão MAIS PRÓXIMA — é ela
+      // que corre risco primeiro. `biddings` vem ordenado por data_abertura
+      // DESCENDENTE (ver useBiddings.ts), então um .find() simples pegava a
+      // licitação de sessão mais DISTANTE, escondendo o risco real de uma
+      // sessão mais próxima que a mesma certidão vencida também afeta.
+      const candidatasVinculadas = doc.tipo !== 'manual'
+        ? biddings.filter((b) =>
             b.isActive && b.status === 'Em Andamento' && b.clientId === doc.clientId && b.dataAbertura >= hoje &&
             allChecklistItems.some((i) => i.biddingId === b.id && i.clientDocumentTipo === doc.tipo)
           )
+        : []
+      const biddingVinculada = candidatasVinculadas.length > 0
+        ? candidatasVinculadas.reduce((maisProxima, atual) => atual.dataAbertura < maisProxima.dataAbertura ? atual : maisProxima)
         : undefined
 
       if (biddingVinculada) {
