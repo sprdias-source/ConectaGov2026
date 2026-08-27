@@ -210,7 +210,15 @@ async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeByte
     file = await checkRes.json()
     tentativas++
   }
-  if (file.state !== 'ACTIVE') throw new Error(`"${displayName}" não ficou pronto no Gemini (estado: ${file.state})`)
+  if (file.state !== 'ACTIVE') {
+    // Vazamento de cota: se o arquivo nunca chegou a ACTIVE (travou em
+    // PROCESSING ou foi pra FAILED), ele já foi consumido no Gemini mas
+    // nunca seria apagado — quem chama uploadParaGemini só recebe o
+    // file.name em caso de sucesso, então sem isso o arquivo ficava órfão
+    // até expirar sozinho em 48h.
+    await apagarArquivoGemini(file.name)
+    throw new Error(`"${displayName}" não ficou pronto no Gemini (estado: ${file.state})`)
+  }
 
   return file as { name: string; uri: string }
 }
@@ -302,6 +310,7 @@ async function processarAnalise(supabase: Supa, analysisRowId: string, edital: A
           generationConfig: {
             response_mime_type: 'application/json',
             response_schema: ANALISE_SCHEMA,
+            maxOutputTokens: 8192,
           },
         }),
       }
@@ -312,7 +321,15 @@ async function processarAnalise(supabase: Supa, analysisRowId: string, edital: A
     if (!genRes.ok) throw new Error(`Falha ao analisar com Gemini: ${await genRes.text()}`)
     const genData = await genRes.json()
     const textoResposta = genData.candidates?.[0]?.content?.parts?.[0]?.text
-    if (!textoResposta) throw new Error('Gemini não retornou conteúdo na análise')
+    if (!textoResposta) {
+      // finishReason 'MAX_TOKENS' é o caso comum de edital com muitos
+      // itens estourando o limite de saída — sem essa checagem, a
+      // mensagem de erro genérica não dava nenhuma pista do motivo real.
+      if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+        throw new Error('A resposta do Gemini foi cortada por exceder o limite de tamanho (edital com muitos itens) — tente novamente ou reduza os anexos enviados')
+      }
+      throw new Error('Gemini não retornou conteúdo na análise')
+    }
 
     const analise = JSON.parse(textoResposta)
 

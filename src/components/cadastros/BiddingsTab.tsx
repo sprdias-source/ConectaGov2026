@@ -81,7 +81,7 @@ export default function BiddingsTab() {
     setPage(1)
   }, [showInactive, setPage])
 
-  const handleSave = (data: Partial<Bidding>, items: Partial<BiddingItem>[]) => {
+  const handleSave = (data: Partial<Bidding>, items: Partial<BiddingItem>[] | null) => {
     if (editing) {
       // Editar aqui é a "porta lateral" que passa por fora do fluxo de IA —
       // qualquer campo rastreável que a pessoa de fato mudou (valor
@@ -98,7 +98,11 @@ export default function BiddingsTab() {
         onError: (err) => showToast(`Erro ao atualizar a licitação: ${err instanceof Error ? err.message : String(err)}`, 'error'),
       })
     } else {
-      addBidding.mutate({ bidding: data, items }, {
+      // Numa licitação nova (sem "editing") o BiddingFormModal sempre manda
+      // os itens de verdade, nunca null — o null só existe pra proteger a
+      // EDIÇÃO de uma licitação já existente (ver comentário em
+      // BiddingFormModal.handleSubmit).
+      addBidding.mutate({ bidding: data, items: items ?? [] }, {
         onSuccess: () => { setModalOpen(false); showToast('Licitação cadastrada com sucesso.') },
         onError: (err) => showToast(`Erro ao cadastrar a licitação: ${err instanceof Error ? err.message : String(err)}`, 'error'),
       })

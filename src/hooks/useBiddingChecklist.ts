@@ -41,14 +41,21 @@ export function statusItemChecklist(item: BiddingChecklistItem, clientDocs: Clie
   if (item.clientDocumentId) {
     const doc = clientDocs.find((d) => d.id === item.clientDocumentId)
     if (doc?.storagePath) {
+      // Documento sem data de validade (ex: Contrato Social, Procuração —
+      // confirmados manualmente, sem prazo de vencimento) nunca "vence":
+      // calcDocStatus(null) devolve 'pendente' só por falta de data, não
+      // porque falte alguma coisa. Nesse caso o que importa é só o que o
+      // usuário confirmou (item.atendido), senão o item ficava "faltando"
+      // pra sempre mesmo com o arquivo certo já anexado.
+      if (!doc.dataValidade) return item.atendido ? 'atendido' : 'faltando'
       const status = calcDocStatus(doc.dataValidade)
       if (status === 'valido') return 'atendido'
       if (status === 'vencendo') return 'vencendo'
-      // 'vencido' (ou 'pendente', sem data de validade) cai aqui —
-      // a certidão vinculada não serve mais, então o item volta a precisar
-      // de ação, mesmo que o campo `atendido` tenha ficado gravado como
-      // true desde a confirmação. Sem isso, um item confirmado "curava"
-      // sozinho de novo quando a certidão terminava de vencer de vez.
+      // 'vencido' cai aqui — a certidão vinculada não serve mais, então o
+      // item volta a precisar de ação, mesmo que o campo `atendido` tenha
+      // ficado gravado como true desde a confirmação. Sem isso, um item
+      // confirmado "curava" sozinho de novo quando a certidão terminava de
+      // vencer de vez.
       return 'faltando'
     }
     // clientDocumentId aponta pra um documento sem arquivo (perdido/nunca

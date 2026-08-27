@@ -98,7 +98,13 @@ export function useAtestados(clientId?: string) {
           observacoes: atestado.observacoes ?? null,
         }, user.id)
       ).select('id').single()
-      if (error) throw error
+      if (error) {
+        // Se o registro no banco falhar depois do arquivo já ter subido pro
+        // Drive, desfaz o upload — sem isso, o arquivo ficava órfão no
+        // Drive, sem nenhuma referência no banco.
+        if (storagePath) await excluirNoDrive('atestados_tecnicos', storagePath).catch(() => {})
+        throw error
+      }
       return data.id as string
     },
     onSuccess: invalidate,

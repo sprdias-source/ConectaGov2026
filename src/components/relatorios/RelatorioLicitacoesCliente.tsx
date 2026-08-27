@@ -61,7 +61,13 @@ function resumoItensBidding(b: Bidding, itens: BiddingItem[]): ResumoItensBiddin
   const valorLicitado = itens.reduce((s, i) => s + i.quantidade * i.valorUnitarioLicitado, 0)
   const participados = itens.filter((i) => i.valorUnitarioOfertado !== null)
   const valorParticipado = participados.reduce((s, i) => s + i.quantidade * i.valorUnitarioLicitado, 0)
-  const ganhos = itens.filter((i) => i.ganhou)
+  // Mesma regra de somarValorGanho (analiseEdital.ts), usada no Kanban, no
+  // PDF da proposta e no preenchimento automático de Valor Ganho: sem
+  // nenhum item marcado "Ganhou?" ainda, soma todos em vez de zerar — sem
+  // este fallback, este relatório mostrava R$ 0,00 pro mesmo registro que o
+  // Kanban/PDF já mostravam com valor.
+  const temItemMarcadoGanho = itens.some((i) => i.ganhou)
+  const ganhos = temItemMarcadoGanho ? itens.filter((i) => i.ganhou) : itens
   const valorLicitadoGanhos = ganhos.reduce((s, i) => s + i.quantidade * i.valorUnitarioLicitado, 0)
   const valorGanho = ganhos.reduce((s, i) => s + i.quantidade * (i.valorUnitarioOfertado ?? i.valorUnitarioLicitado), 0)
   return {

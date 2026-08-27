@@ -327,7 +327,7 @@ export default function KanbanLicitacoesPage() {
 
   const isMensalista = (id: string) => clients.find((c) => c.id === id)?.isMensalista ?? false
 
-  const handleSalvarEdicao = (data: Partial<Bidding>, items: Partial<BiddingItem>[]) => {
+  const handleSalvarEdicao = (data: Partial<Bidding>, items: Partial<BiddingItem>[] | null) => {
     if (!editando) return
     updateBidding.mutate({ bidding: { ...editando, ...data } as Bidding, items }, {
       onSuccess: () => { setEditando(null); showToast('Licitação atualizada com sucesso.') },

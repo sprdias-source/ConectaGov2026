@@ -42,6 +42,24 @@ const PAGINA_LARGURA = 595.28
 const PAGINA_ALTURA = 841.89
 const MARGEM = 42
 const LARGURA_UTIL = PAGINA_LARGURA - MARGEM * 2
+
+// pdf-lib com StandardFonts (Helvetica) usa a codificação WinAnsi (cp1252)
+// — drawText lança exceção pra qualquer caractere fora dessa tabela, e
+// descrição de item de licitação (elétrica/hidráulica) usa com frequência
+// símbolos como Ω (ohm) e ⌀ (diâmetro), que derrubavam a geração inteira
+// do PDF com um erro 500 cru. Substitui pelo equivalente em texto quando
+// existe um óbvio, senão por "?" — nunca deixa passar cru pro drawText.
+const SUBSTITUICOES_PDF: Record<string, string> = {
+  'Ω': 'Ohm', 'ω': 'ohm', '⌀': 'diam.', '≥': '>=', '≤': '<=', '≈': '~',
+  '–': '-', '—': '-', '’': "'", '‘': "'", '“': '"', '”': '"', '…': '...',
+  '•': '-', '→': '->', '×': 'x',
+}
+function sanitizarParaPdf(texto: string): string {
+  // Equivalente a "fora de \x00-\xFF" (WinAnsi/Latin-1), mas escrito como
+  // intervalo positivo (tudo ACIMA de \xFF) pra não disparar o lint de
+  // caractere de controle em regex (que a negação com \x00 acionava).
+  return texto.replace(/[Ā-￿]/g, (c) => SUBSTITUICOES_PDF[c] ?? '?')
+}
 const PAD_CELULA = 4
 
 function toBase64(bytes: Uint8Array): string {
@@ -155,7 +173,7 @@ Deno.serve(async (req: Request) => {
     }
 
     function quebrarLinha(texto: string, fonteUsada: PDFFont, tamanho: number, larguraMax: number): string[] {
-      const palavras = String(texto).split(/\s+/).filter(Boolean)
+      const palavras = sanitizarParaPdf(String(texto)).split(/\s+/).filter(Boolean)
       const linhas: string[] = []
       let atual = ''
       for (const palavra of palavras) {

@@ -215,14 +215,16 @@ export function useEmpenhos() {
       // "recorrente" fica de fora de propósito: cada parcela ali é um valor
       // independente que se repete (não uma fatia de um total único), então
       // o filtro por projectionMonthNumber acima já evita duplicar sozinho.
-      if ((updated.modoParcelamento === 'quantidade_fixa' || updated.modoParcelamento === 'integral') && paidNumbers.size > 0 && txsToInsert.length > 0) {
+      if ((updated.modoParcelamento === 'quantidade_fixa' || updated.modoParcelamento === 'integral') && paidNumbers.size > 0) {
         const totalJaPago = (paidTxs ?? []).reduce((s, p) => s + (p.value ?? 0), 0)
         const restante = Math.max(0, updated.valorComissaoTotal - totalJaPago)
         if (updated.modoParcelamento === 'integral') {
           // Modo integral nunca divide — só ajusta o valor da transação
-          // única (ou remove ela, se o total já pago cobrir tudo).
-          txsToInsert = restante > 0 ? [{ ...txsToInsert[0], value: Math.round(restante * 100) / 100 }] : []
-        } else {
+          // única (ou remove ela, se o total já pago cobrir tudo). Usa
+          // allTxs[0] como molde (em vez de txsToInsert[0]) porque, com a
+          // única parcela já paga, txsToInsert já chega vazio aqui.
+          txsToInsert = restante > 0 && allTxs[0] ? [{ ...allTxs[0], value: Math.round(restante * 100) / 100 }] : []
+        } else if (txsToInsert.length > 0) {
           const splitValue = Math.round((restante / txsToInsert.length) * 100) / 100
           txsToInsert = txsToInsert.map((t, idx) => ({
             ...t,
@@ -230,6 +232,24 @@ export function useEmpenhos() {
               ? Math.round((restante - splitValue * (txsToInsert.length - 1)) * 100) / 100
               : splitValue,
           }))
+        } else if (restante > 0 && allTxs.length > 0) {
+          // Todas as parcelas já foram pagas (mesma quantidade de antes) mas
+          // o valor total da comissão aumentou — sem este caso, a diferença
+          // desaparecia sem gerar transação nenhuma e sem erro, porque
+          // txsToInsert já chegava vazio (todo número de parcela do plano
+          // novo batia com o de uma parcela já paga). Gera uma parcela
+          // avulsa só com a diferença, com projectionMonthNumber nulo (pra
+          // não colidir com a numeração das parcelas já pagas) e vencimento
+          // hoje.
+          const molde = allTxs[allTxs.length - 1]
+          txsToInsert = [{
+            ...molde,
+            description: `${molde.description} (complemento)`,
+            value: Math.round(restante * 100) / 100,
+            projectionMonthNumber: null,
+            dueDate: todayLocalISO(),
+            status: statusForDate(todayLocalISO()),
+          }]
         }
       }
 

@@ -48,7 +48,7 @@ export default function BiddingFormModal({
 }: {
   open: boolean
   onClose: () => void
-  onSave: (data: Partial<Bidding>, items: Partial<BiddingItem>[]) => void
+  onSave: (data: Partial<Bidding>, items: Partial<BiddingItem>[] | null) => void
   initial?: Bidding | null
   clients: Client[]
   isSaving: boolean
@@ -58,6 +58,13 @@ export default function BiddingFormModal({
   const [form, setForm] = useState<Partial<Bidding>>(() => emptyForm(clients))
   const [tab, setTab] = useState<'dados' | 'itens'>('dados')
   const [draftItems, setDraftItems] = useState<Partial<BiddingItem>[]>([])
+  // Só reenvia os itens no submit se o usuário de fato mexeu na aba
+  // Itens/Lotes nesta sessão do modal — sem isso, salvar só a aba Dados
+  // Gerais (ex: corrigir o campo Órgão) reenviava o snapshot carregado na
+  // abertura do modal, e saveItems apaga/recria TODOS os itens da
+  // licitação a partir dele, perdendo qualquer edição feita nos itens por
+  // outra aba/sessão enquanto este modal estava aberto.
+  const [itemsDirty, setItemsDirty] = useState(false)
   const [mostrandoUnlock, setMostrandoUnlock] = useState(false)
 
   const { items: savedItems } = useBiddingItems(initial?.id ?? null)
@@ -71,6 +78,7 @@ export default function BiddingFormModal({
     if (open) {
       setForm(initial ?? emptyForm(clients))
       setTab('dados')
+      setItemsDirty(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initial])
@@ -97,7 +105,14 @@ export default function BiddingFormModal({
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-    onSave(form, draftItems)
+    // Só se aplica a edição (há "initial") — numa licitação nova não existe
+    // nada salvo pra proteger, então os itens sempre vão junto.
+    onSave(form, initial ? (itemsDirty ? draftItems : null) : draftItems)
+  }
+
+  const handleDraftItemsChange = (next: Partial<BiddingItem>[]) => {
+    setItemsDirty(true)
+    setDraftItems(next)
   }
 
   return (
@@ -255,7 +270,7 @@ export default function BiddingFormModal({
             </Field>
           </>
         ) : (
-          <BiddingItemsEditor items={draftItems} onChange={setDraftItems} tipoDisputa={form.tipoDisputa ?? 'Item'} />
+          <BiddingItemsEditor items={draftItems} onChange={handleDraftItemsChange} tipoDisputa={form.tipoDisputa ?? 'Item'} />
         )}
         </fieldset>
 

@@ -212,10 +212,15 @@ function useBiddingItemsDaLicitacao(biddingId?: string) {
           || (novo.valorUnitarioOfertado ?? null) !== (original.valorUnitarioOfertado ?? null)
           || (novo.ganhou ?? false) !== original.ganhou
         if (!mudou) continue
+        // Nunca grava descrição em branco por cima de uma já preenchida —
+        // mesma proteção aplicada abaixo pros itens novos (paraInserir):
+        // um item sem descrição vira linha vazia na Proposta em PDF e nos
+        // totais do Kanban, sem nenhum aviso.
+        const descricaoValida = (novo.descricao ?? '').trim() ? novo.descricao! : original.descricao
         const { error } = await supabase.from('bidding_items').update({
           numero_item: novo.numeroItem ?? '',
           lote: novo.lote ?? null,
-          descricao: novo.descricao ?? '',
+          descricao: descricaoValida,
           unidade: novo.unidade ?? null,
           quantidade: novo.quantidade ?? 0,
           marca: novo.marca ?? null,
@@ -227,7 +232,10 @@ function useBiddingItemsDaLicitacao(biddingId?: string) {
         if (error) throw error
       }
 
-      const paraInserir = novosItems.filter((i) => !i.id)
+      // Descarta itens novos sem descrição — a coluna é NOT NULL mas aceita
+      // string vazia, e um item sem descrição vira linha vazia na Proposta
+      // em PDF e nos totais do Kanban, sem nenhum aviso.
+      const paraInserir = novosItems.filter((i) => !i.id && (i.descricao ?? '').trim())
       if (paraInserir.length > 0) {
         const rows = paraInserir.map((i) => toBiddingItemInsert({ ...i, biddingId }, user.id))
         const { error } = await supabase.from('bidding_items').insert(rows)
@@ -2636,6 +2644,21 @@ export default function LicitacaoPage() {
 
   const statusItem = (item: BiddingChecklistItem) => statusItemChecklist(item, clientDocs)
 
+  // Mesmo ajuste já feito em usePendenciasChecklist (Painel de Pendências):
+  // bidding_checklist_items.prazo só é sincronizado pelo trigger do banco
+  // enquanto atendido=false — depois de confirmado, o campo cru fica
+  // congelado na data de quando foi vinculado, mesmo que a certidão
+  // vinculada seja renovada depois. Sobrepõe com a validade AO VIVO do
+  // client_documents vinculado quando existir, pra esta aba não mostrar uma
+  // data diferente da que o próprio selo de status já reflete.
+  const prazoEfetivoItem = (item: BiddingChecklistItem): string | null => {
+    if (item.clientDocumentId) {
+      const doc = clientDocs.find((d) => d.id === item.clientDocumentId)
+      if (doc) return doc.dataValidade ?? item.prazo
+    }
+    return item.prazo
+  }
+
   const handleAbrirNaoAplicavel = (item: BiddingChecklistItem) => {
     // Pré-preenche com um texto padrão editável — a maioria dos casos é
     // "não se aplica a esta empresa" mesmo, então dá pra confirmar direto;
@@ -3020,8 +3043,8 @@ export default function LicitacaoPage() {
                               {tipoConhecido && (
                                 <span className="ml-1.5 text-accent-400">· certidão {CERT_CONFIG[tipoConhecido]?.label.split(' — ')[0]}</span>
                               )}
-                              {item.prazo && (
-                                <span className="ml-1.5">· prazo {new Date(item.prazo + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+                              {prazoEfetivoItem(item) && (
+                                <span className="ml-1.5">· prazo {new Date(prazoEfetivoItem(item)! + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
                               )}
                               {item.responsavelNome && (
                                 <span className="ml-1.5">· {item.responsavelNome}</span>

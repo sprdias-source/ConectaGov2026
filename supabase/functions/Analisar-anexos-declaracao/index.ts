@@ -153,7 +153,15 @@ async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeByte
     file = await checkRes.json()
     tentativas++
   }
-  if (file.state !== 'ACTIVE') throw new Error(`"${displayName}" não ficou pronto no Gemini (estado: ${file.state})`)
+  if (file.state !== 'ACTIVE') {
+    // Vazamento de cota: se o arquivo nunca chegou a ACTIVE (travou em
+    // PROCESSING ou foi pra FAILED), ele já foi consumido no Gemini mas
+    // nunca seria apagado — quem chama uploadParaGemini só recebe o
+    // file.name em caso de sucesso, então sem isso o arquivo ficava órfão
+    // até expirar sozinho em 48h.
+    await apagarArquivoGemini(file.name)
+    throw new Error(`"${displayName}" não ficou pronto no Gemini (estado: ${file.state})`)
+  }
 
   return file as { name: string; uri: string }
 }
@@ -296,6 +304,7 @@ Deno.serve(async (req: Request) => {
           generationConfig: {
             response_mime_type: 'application/json',
             response_schema: ANEXOS_SCHEMA,
+            maxOutputTokens: 8192,
           },
         }),
       }
@@ -306,7 +315,15 @@ Deno.serve(async (req: Request) => {
     if (!genRes.ok) throw new Error(`Falha ao analisar anexos com Gemini: ${await genRes.text()}`)
     const genData = await genRes.json()
     const textoResposta = genData.candidates?.[0]?.content?.parts?.[0]?.text
-    if (!textoResposta) throw new Error('Gemini não retornou conteúdo na análise')
+    if (!textoResposta) {
+      // finishReason 'MAX_TOKENS' é o caso comum de edital com muitos
+      // itens estourando o limite de saída — sem essa checagem, a
+      // mensagem de erro genérica não dava nenhuma pista do motivo real.
+      if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+        throw new Error('A resposta do Gemini foi cortada por exceder o limite de tamanho (edital com muitos itens) — tente novamente ou reduza os anexos enviados')
+      }
+      throw new Error('Gemini não retornou conteúdo na análise')
+    }
 
     const resultado = JSON.parse(textoResposta) as { anexos: { fonte: string; titulo: string; texto: string; itensNumeroEdital?: string[] }[] }
     const anexosEncontrados = resultado.anexos ?? []
@@ -314,14 +331,16 @@ Deno.serve(async (req: Request) => {
     // Uma nova análise substitui só os RASCUNHOS anteriores — anexos já
     // enviados ao cliente ou já assinados não podem ser apagados por uma
     // reanálise, senão perderia o histórico de algo que já foi assinado.
+    // Os IDs são capturados agora, mas o delete só roda DEPOIS que os novos
+    // já estiverem inseridos com sucesso (ver fim do loop abaixo) — se a
+    // function fosse interrompida entre um delete antecipado e o insert dos
+    // novos, o usuário perdia os rascunhos até rodar a análise de novo, sem
+    // nenhum jeito de recuperar.
     const { data: rascunhosAntigos } = await supabase
       .from('bidding_declaracao_anexos')
       .select('id')
       .eq('bidding_id', biddingId)
       .eq('status', 'rascunho')
-    if (rascunhosAntigos && rascunhosAntigos.length > 0) {
-      await supabase.from('bidding_declaracao_anexos').delete().in('id', rascunhosAntigos.map((r) => r.id))
-    }
 
     const numeroEditalParaId = new Map(
       (itensChecklist ?? [])
@@ -356,6 +375,13 @@ Deno.serve(async (req: Request) => {
           itensIds.map((checklist_item_id) => ({ anexo_id: novoAnexo.id, checklist_item_id }))
         )
       }
+    }
+
+    // Só agora, com os novos anexos já gravados com sucesso, remove os
+    // rascunhos antigos — nunca ficam os dois períodos (perder tudo) sem
+    // que pelo menos um dos dois conjuntos já esteja garantido no banco.
+    if (rascunhosAntigos && rascunhosAntigos.length > 0) {
+      await supabase.from('bidding_declaracao_anexos').delete().in('id', rascunhosAntigos.map((r) => r.id))
     }
 
     return json({ success: true, criados })

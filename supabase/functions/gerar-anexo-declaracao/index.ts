@@ -60,12 +60,30 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
+// pdf-lib com StandardFonts (Helvetica) usa a codificação WinAnsi (cp1252)
+// — drawText lança exceção pra qualquer caractere fora dessa tabela, e
+// texto de declaração (copiado de edital/minuta) pode trazer símbolos como
+// Ω (ohm) e ⌀ (diâmetro), que derrubavam a geração inteira do PDF com um
+// erro 500 cru. Substitui pelo equivalente em texto quando existe um óbvio,
+// senão por "?" — nunca deixa passar cru pro drawText.
+const SUBSTITUICOES_PDF: Record<string, string> = {
+  'Ω': 'Ohm', 'ω': 'ohm', '⌀': 'diam.', '≥': '>=', '≤': '<=', '≈': '~',
+  '–': '-', '—': '-', '’': "'", '‘': "'", '“': '"', '”': '"', '…': '...',
+  '•': '-', '→': '->', '×': 'x',
+}
+function sanitizarParaPdf(texto: string): string {
+  // Equivalente a "fora de \x00-\xFF" (WinAnsi/Latin-1), mas escrito como
+  // intervalo positivo (tudo ACIMA de \xFF) pra não disparar o lint de
+  // caractere de controle em regex (que a negação com \x00 acionava).
+  return texto.replace(/[Ā-￿]/g, (c) => SUBSTITUICOES_PDF[c] ?? '?')
+}
+
 // Quebra um texto em linhas que cabem em larguraMax na fonte/tamanho dados
 // — pdf-lib não quebra linha sozinho, então isso é feito à mão, palavra por
 // palavra. Não mexe em quebras de linha explícitas (\n) — isso é
 // responsabilidade de quem chama, ver desenharBloco.
 function quebrarLinha(texto: string, fonte: PDFFont, tamanho: number, larguraMax: number): string[] {
-  const palavras = texto.split(/\s+/).filter(Boolean)
+  const palavras = sanitizarParaPdf(texto).split(/\s+/).filter(Boolean)
   const linhas: string[] = []
   let atual = ''
   for (const palavra of palavras) {
@@ -131,7 +149,8 @@ Deno.serve(async (req: Request) => {
     const garantirEspaco = (altura: number) => {
       if (y - altura < MARGEM) novaPagina()
     }
-    const desenharLinha = (texto: string, tamanho: number, fonteUsada: PDFFont, centralizado: boolean) => {
+    const desenharLinha = (textoBruto: string, tamanho: number, fonteUsada: PDFFont, centralizado: boolean) => {
+      const texto = sanitizarParaPdf(textoBruto)
       garantirEspaco(tamanho * 1.4)
       const largura = fonteUsada.widthOfTextAtSize(texto, tamanho)
       const x = centralizado ? MARGEM + (LARGURA_UTIL - largura) / 2 : MARGEM
@@ -144,7 +163,8 @@ Deno.serve(async (req: Request) => {
     // palavras da linha até encostar na margem direita. A última linha de
     // cada bloco/quebra manual nunca é esticada (regra tipográfica padrão).
     // `recuar` desloca essa linha específica pelo recuo de primeira linha.
-    const desenharLinhaJustificada = (texto: string, tamanho: number, fonteUsada: PDFFont, justificar: boolean, recuar: boolean) => {
+    const desenharLinhaJustificada = (textoBruto: string, tamanho: number, fonteUsada: PDFFont, justificar: boolean, recuar: boolean) => {
+      const texto = sanitizarParaPdf(textoBruto)
       garantirEspaco(tamanho * 1.4)
       const xInicial = MARGEM + (recuar ? RECUO_PRIMEIRA_LINHA : 0)
       const palavras = texto.split(/\s+/).filter(Boolean)
