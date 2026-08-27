@@ -64,6 +64,20 @@ Deno.serve(async (req: Request) => {
     const { data: ownerId, error: ownerError } = await supabase.rpc('owner_efetivo', { usuario_id: user.id })
     if (ownerError || !ownerId) return json({ error: 'Não foi possível identificar a conta do usuário' }, 500)
 
+    // owner_efetivo só confirma que o usuário PERTENCE à conta — não que
+    // tem permissão de edição em Cadastros (de onde vêm as buscas/editais
+    // Licitei). Sem esta checagem, o botão só ficava escondido na UI, mas
+    // um membro com nível "visualização" ou "sem_acesso" em Cadastros
+    // conseguia disparar o robô chamando esta function direto com o
+    // próprio token.
+    const { data: temAcesso, error: acessoError } = await supabase.rpc('tem_acesso', {
+      usuario_id: user.id,
+      ferramenta: 'cadastros',
+      nivel_minimo: 'edicao',
+    })
+    if (acessoError) return json({ error: 'Não foi possível verificar a permissão do usuário' }, 500)
+    if (!temAcesso) return json({ error: 'Sem permissão de edição em Cadastros para disparar o robô' }, 403)
+
     let eventType: string
     let clientPayload: Record<string, unknown>
 

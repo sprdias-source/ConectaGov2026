@@ -60,8 +60,10 @@ export default function EditaisAnaliseSection({ client, onClose }: { client: Cli
     }
   }
 
-  const handleCriarLicitacao = (data: Partial<Bidding>, items: Partial<BiddingItem>[]) => {
-    addBidding.mutate({ bidding: data, items }, {
+  // Modal usado só pra criação (sem "initial"), então items nunca vem null
+  // aqui — ver comentário em BiddingFormModal.handleSubmit.
+  const handleCriarLicitacao = (data: Partial<Bidding>, items: Partial<BiddingItem>[] | null) => {
+    addBidding.mutate({ bidding: data, items: items ?? [] }, {
       onSuccess: async ({ created }) => {
         // Promove os arquivos desta pasta (edital/TR do cliente) pra virarem
         // os anexos da licitação recém-criada.

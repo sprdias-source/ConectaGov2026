@@ -25,9 +25,10 @@ interface SaldoFinalOFX {
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number]
 
-function parseOFX(content: string): OFXEntry[] {
+function parseOFX(content: string): { entries: OFXEntry[]; descartados: number } {
   const entries: OFXEntry[] = []
   const txBlocks = content.match(/<STMTTRN[\s\S]*?<\/STMTTRN>/gi) ?? []
+  let descartados = 0
 
   for (const block of txBlocks) {
     const get = (tag: string) => {
@@ -37,7 +38,11 @@ function parseOFX(content: string): OFXEntry[] {
 
     const raw = get('TRNAMT').replace(',', '.')
     const value = parseFloat(raw)
-    if (isNaN(value)) continue
+    // Um lançamento com <TRNAMT> ausente ou não numérico virava NaN e era
+    // pulado sem contar — o extrato "conferido" (0 avisos) podia estar
+    // incompleto, mascarando divergência real de saldo. Agora conta pra
+    // avisar o usuário quantos ficaram de fora.
+    if (isNaN(value)) { descartados++; continue }
 
     const rawDate = get('DTPOSTED')
     const dateStr = rawDate.length >= 8
@@ -52,7 +57,7 @@ function parseOFX(content: string): OFXEntry[] {
     entries.push({ id, date: dateStr, description, value: Math.abs(value), type })
   }
 
-  return entries.sort((a, b) => a.date.localeCompare(b.date))
+  return { entries: entries.sort((a, b) => a.date.localeCompare(b.date)), descartados }
 }
 
 // Lê o saldo final que o próprio banco informa no arquivo (tag padrão OFX
@@ -80,12 +85,18 @@ function parseSaldoFinal(content: string): SaldoFinalOFX | null {
   return { valor, data }
 }
 
-function suggestMatch(entry: OFXEntry, transactions: Transaction[]) {
+// `usados` marca as transações do sistema já casadas com uma linha anterior
+// do extrato nesta mesma varredura — sem isso, duas entradas do banco com
+// mesmo tipo/valor (±R$0,01) numa janela de 3 dias podiam casar as DUAS com
+// a mesma transação única do sistema, e o resumo mostrava "conferido" com
+// uma receita real do extrato nunca lançada.
+function suggestMatch(entry: OFXEntry, transactions: Transaction[], usados?: Set<string>) {
   const targetType = entry.type === 'CREDIT' ? 'Receber' : 'Pagar'
   const entryDate = new Date(entry.date + 'T12:00:00').getTime()
   const THREE_DAYS = 3 * 24 * 60 * 60 * 1000
 
   return transactions.find((t) => {
+    if (usados?.has(t.id)) return false
     if (t.type !== targetType) return false
     if (Math.abs(t.value - entry.value) > 0.01) return false
     const txDate = t.paymentDate
@@ -116,6 +127,7 @@ export default function ExtratoOFXPage() {
   const [accountId, setAccountId] = useState<string>('')
   const [fileName, setFileName] = useState<string | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
+  const [descartados, setDescartados] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
   const [salvo, setSalvo] = useState(false)
 
@@ -129,6 +141,7 @@ export default function ExtratoOFXPage() {
     setSaldoFinal(null)
     setAccountId('')
     setSalvo(false)
+    setDescartados(0)
   }
 
   const handleFile = (file: File) => {
@@ -141,7 +154,7 @@ export default function ExtratoOFXPage() {
     reader.onload = (e) => {
       const content = e.target?.result as string
       try {
-        const parsed = parseOFX(content)
+        const { entries: parsed, descartados: qtdDescartados } = parseOFX(content)
         if (parsed.length === 0) {
           setParseError('Nenhuma transacao encontrada. O arquivo pode estar em formato nao suportado.')
           return
@@ -150,6 +163,7 @@ export default function ExtratoOFXPage() {
         setSaldoFinal(parseSaldoFinal(content))
         setFileName(file.name)
         setParseError(null)
+        setDescartados(qtdDescartados)
         setSalvo(false)
       } catch {
         setParseError('Erro ao ler o arquivo. Verifique se o arquivo OFX esta integro.')
@@ -167,12 +181,31 @@ export default function ExtratoOFXPage() {
     [transactions, accountId]
   )
 
+  // Mapa único entry -> transação casada, computado uma vez e reaproveitado
+  // em todo lugar que precisa saber a correspondência (resumo, lista de
+  // "sem correspondência" e a linha na tabela) — cada transação do sistema
+  // só pode ser reivindicada por UMA linha do extrato (ver `usados` em
+  // suggestMatch), então calcular em lugares diferentes daria resultados
+  // inconsistentes entre si.
+  const matchesPorEntry = useMemo(() => {
+    const usados = new Set<string>()
+    const mapa = new Map<string, Transaction>()
+    for (const e of entries) {
+      const m = suggestMatch(e, transacoesDaConta, usados)
+      if (m) {
+        mapa.set(e.id, m)
+        usados.add(m.id)
+      }
+    }
+    return mapa
+  }, [entries, transacoesDaConta])
+
   const summary = useMemo(() => ({
     totalEntradas: entries.filter((e) => e.type === 'CREDIT').reduce((s, e) => s + e.value, 0),
     totalSaidas: entries.filter((e) => e.type === 'DEBIT').reduce((s, e) => s + e.value, 0),
     total: entries.length,
-    comCorrespondencia: entries.filter((e) => !!suggestMatch(e, transacoesDaConta)).length,
-  }), [entries, transacoesDaConta])
+    comCorrespondencia: entries.filter((e) => matchesPorEntry.has(e.id)).length,
+  }), [entries, matchesPorEntry])
 
   // Saldo do sistema pra aquela conta, calculado até a data do saldo do
   // banco (saldo inicial + lançamentos pagos até aquele dia) — mesmo
@@ -206,16 +239,14 @@ export default function ExtratoOFXPage() {
 
   const lancamentosSemCorrespondencia = useMemo(() => {
     if (!accountId || !periodoExtrato) return []
-    const idsEncontrados = new Set(
-      entries.map((e) => suggestMatch(e, transacoesDaConta)?.id).filter((id): id is string => !!id)
-    )
+    const idsEncontrados = new Set([...matchesPorEntry.values()].map((t) => t.id))
     return transacoesDaConta.filter((t) => {
       if (t.status !== 'Pago') return false
       if (idsEncontrados.has(t.id)) return false
       const dataLanc = t.paymentDate ?? t.dueDate
       return dataLanc >= periodoExtrato.min && dataLanc <= periodoExtrato.max
     })
-  }, [accountId, periodoExtrato, entries, transacoesDaConta])
+  }, [accountId, periodoExtrato, transacoesDaConta, matchesPorEntry])
 
   const handleSalvar = async () => {
     if (!accountId || !saldoFinal || !conciliacao) return
@@ -310,6 +341,18 @@ export default function ExtratoOFXPage() {
             </Card>
           </div>
 
+          {descartados > 0 && (
+            <div className="px-6 mt-4">
+              <div className="flex items-start gap-2 bg-warning-500/10 border border-warning-500/30 rounded-lg px-3 py-2.5 text-[12.5px] text-warning-400">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <p>
+                  Atenção: {descartados} lançamento(s) do arquivo não puderam ser lidos (valor ausente ou inválido) e ficaram de fora desta conferência —
+                  o extrato importado pode estar incompleto.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="px-6 mt-4">
             <Card className="p-4">
               <div className="flex flex-col sm:flex-row sm:items-center gap-4">
@@ -388,7 +431,7 @@ export default function ExtratoOFXPage() {
                   </thead>
                   <tbody>
                     {entries.map((entry) => {
-                      const match = suggestMatch(entry, transacoesDaConta)
+                      const match = matchesPorEntry.get(entry.id) ?? null
                       const dataMatch = match ? (match.paymentDate ?? match.dueDate) : null
                       return (
                         <tr key={entry.id} className="border-b border-base-800/60 hover:bg-base-850/40 transition">

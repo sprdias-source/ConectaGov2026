@@ -2315,6 +2315,10 @@ export type Database = {
     Functions: {
       check_empenho_bidding_cascade: { Args: never; Returns: boolean }
       check_employees_payment_type_constraint: { Args: never; Returns: boolean }
+      aplicar_precificacao_items: {
+        Args: { itens: Json }
+        Returns: undefined
+      }
       checklist_documentos: {
         Args: { p_client_id: string }
         Returns: {

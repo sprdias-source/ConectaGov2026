@@ -104,7 +104,13 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
           entityId,
         }, user.id)
       ).select('id').single()
-      if (error) throw error
+      if (error) {
+        // Se o registro no banco falhar (RLS, rede, timeout) depois do
+        // arquivo já ter subido pro Drive, desfaz o upload — sem isso, o
+        // arquivo ficava órfão no Drive, sem nenhuma referência no banco.
+        await excluirNoDrive('attached_files', storagePath).catch(() => {})
+        throw error
+      }
       return { path: storagePath, id: data.id as string }
     },
     onSuccess: (_, variables) => {

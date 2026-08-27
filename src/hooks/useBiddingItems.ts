@@ -38,8 +38,13 @@ export function useBiddingItems(biddingId: string | null) {
   // de cada item, só nos campos da precificação.
   const aplicarPrecificacao = useMutation({
     mutationFn: async (itens: Pick<BiddingItem, 'id' | 'custoUnitario' | 'valorMinimoCalculado' | 'participaPrecificacao' | 'pricingProfileId' | 'impostosPctAplicado' | 'despesasPctAplicado' | 'margemPctAplicada'>[]) => {
-      for (const item of itens) {
-        const { error } = await supabase.from('bidding_items').update({
+      // RPC atômica (migração 048) em vez de um UPDATE por item — antes,
+      // uma queda de rede no meio do loop deixava alguns itens com o
+      // perfil novo e outros com o antigo, sem rollback nem aviso de quais
+      // foram atualizados.
+      const { error } = await supabase.rpc('aplicar_precificacao_items', {
+        itens: itens.map((item) => ({
+          id: item.id,
           custo_unitario: item.custoUnitario,
           valor_minimo_calculado: item.valorMinimoCalculado,
           participa_precificacao: item.participaPrecificacao,
@@ -47,9 +52,9 @@ export function useBiddingItems(biddingId: string | null) {
           impostos_pct_aplicado: item.impostosPctAplicado,
           despesas_pct_aplicado: item.despesasPctAplicado,
           margem_pct_aplicada: item.margemPctAplicada,
-        }).eq('id', item.id)
-        if (error) throw error
-      }
+        })),
+      })
+      if (error) throw error
     },
     onSuccess: invalidate,
   })

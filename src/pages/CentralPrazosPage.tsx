@@ -77,43 +77,44 @@ export default function CentralPrazosPage() {
       const label = doc.tipo === 'manual' ? doc.nome : CERT_CONFIG[doc.tipo]?.label ?? doc.nome
 
       // Quando o cliente tem MAIS DE UMA licitação ativa pedindo o mesmo
-      // tipo de certidão, a que importa é a de sessão MAIS PRÓXIMA — é ela
-      // que corre risco primeiro. `biddings` vem ordenado por data_abertura
-      // DESCENDENTE (ver useBiddings.ts), então um .find() simples pegava a
-      // licitação de sessão mais DISTANTE, escondendo o risco real de uma
-      // sessão mais próxima que a mesma certidão vencida também afeta.
+      // tipo de certidão, cada uma corre o próprio risco de forma
+      // independente — uma certidão pode estar tranquila pra sessão mais
+      // próxima e ainda assim vencer ANTES da sessão de uma licitação mais
+      // distante. Antes, só a candidata de sessão mais próxima era avaliada
+      // (via .reduce()) e um `continue` prematuro descartava as demais sem
+      // checar nenhuma — escondendo o risco real de uma segunda sessão que
+      // a mesma certidão vencida também afeta.
       const candidatasVinculadas = doc.tipo !== 'manual'
         ? biddings.filter((b) =>
             b.isActive && b.status === 'Em Andamento' && b.clientId === doc.clientId && b.dataAbertura >= hoje &&
             allChecklistItems.some((i) => i.biddingId === b.id && i.clientDocumentTipo === doc.tipo)
           )
         : []
-      const biddingVinculada = candidatasVinculadas.length > 0
-        ? candidatasVinculadas.reduce((maisProxima, atual) => atual.dataAbertura < maisProxima.dataAbertura ? atual : maisProxima)
-        : undefined
 
-      if (biddingVinculada) {
-        const diasAteSessao = Math.floor(
-          (new Date(biddingVinculada.dataAbertura + 'T00:00:00').getTime() - new Date(hoje + 'T00:00:00').getTime())
-          / (1000 * 60 * 60 * 24)
-        )
-        const statusVsSessao = calcDocStatus(doc.dataValidade, diasAteSessao)
-        if (statusVsSessao !== 'vencendo' && statusVsSessao !== 'vencido') continue
-        const venceAntesDaSessao = !!doc.dataValidade && doc.dataValidade < biddingVinculada.dataAbertura
-        lista.push({
-          key: `doc-${doc.id}`,
-          tipo: 'Certidão',
-          titulo: label,
-          subtitulo: venceAntesDaSessao
-            ? `${clientName(doc.clientId)} — vence antes da sessão de "${biddingVinculada.objeto.slice(0, 40)}"`
-            : `${clientName(doc.clientId)} — vinculada à sessão de "${biddingVinculada.objeto.slice(0, 40)}"`,
-          data: doc.dataValidade ?? hoje,
-          dias: diasRestantes(doc.dataValidade) ?? 0,
-          // Vinculada a uma sessão: o lugar certo pra resolver é o
-          // checklist DAQUELA licitação, não o repositório genérico do
-          // cliente — é lá que o vínculo é cobrado.
-          link: `/licitacoes/${biddingVinculada.id}?aba=checklist`,
-        })
+      if (candidatasVinculadas.length > 0) {
+        for (const biddingVinculada of candidatasVinculadas) {
+          const diasAteSessao = Math.floor(
+            (new Date(biddingVinculada.dataAbertura + 'T00:00:00').getTime() - new Date(hoje + 'T00:00:00').getTime())
+            / (1000 * 60 * 60 * 24)
+          )
+          const statusVsSessao = calcDocStatus(doc.dataValidade, diasAteSessao)
+          if (statusVsSessao !== 'vencendo' && statusVsSessao !== 'vencido') continue
+          const venceAntesDaSessao = !!doc.dataValidade && doc.dataValidade < biddingVinculada.dataAbertura
+          lista.push({
+            key: `doc-${doc.id}-${biddingVinculada.id}`,
+            tipo: 'Certidão',
+            titulo: label,
+            subtitulo: venceAntesDaSessao
+              ? `${clientName(doc.clientId)} — vence antes da sessão de "${biddingVinculada.objeto.slice(0, 40)}"`
+              : `${clientName(doc.clientId)} — vinculada à sessão de "${biddingVinculada.objeto.slice(0, 40)}"`,
+            data: doc.dataValidade ?? hoje,
+            dias: diasRestantes(doc.dataValidade) ?? 0,
+            // Vinculada a uma sessão: o lugar certo pra resolver é o
+            // checklist DAQUELA licitação, não o repositório genérico do
+            // cliente — é lá que o vínculo é cobrado.
+            link: `/licitacoes/${biddingVinculada.id}?aba=checklist`,
+          })
+        }
         continue
       }
 

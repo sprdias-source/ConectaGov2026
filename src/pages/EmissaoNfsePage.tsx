@@ -35,8 +35,11 @@ export default function EmissaoNfsePage() {
     setConfigEditavel(config)
   }
 
+  const valorServicoNumero = parseFloat(valorServico)
+  const clienteSemCnpj = !!clienteSelecionado && !clienteSelecionado.cnpj?.trim()
+
   const handlePreencherNfse = async () => {
-    if (!clienteSelecionado || !valorServico) return
+    if (!clienteSelecionado || !valorServico || !(valorServicoNumero > 0) || clienteSemCnpj) return
 
     const payload = {
       tomadorDocumento: clienteSelecionado.cnpj ?? '',
@@ -156,7 +159,7 @@ export default function EmissaoNfsePage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-wider text-base-500 block mb-1">Valor do Serviço (R$)</label>
-                <Input type="number" step="0.01" value={valorServico} onChange={(e) => setValorServico(e.target.value)} placeholder="0,00" />
+                <Input type="number" step="0.01" min={0.01} value={valorServico} onChange={(e) => setValorServico(e.target.value)} placeholder="0,00" />
               </div>
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-wider text-base-500 block mb-1">Data de Execução</label>
@@ -173,9 +176,15 @@ export default function EmissaoNfsePage() {
               />
             </div>
 
+            {clienteSemCnpj && (
+              <p className="text-[11.5px] text-warning-400 -mt-1">
+                Este cliente não tem CNPJ cadastrado — complete o cadastro em Cadastros antes de emitir a NFS-e.
+              </p>
+            )}
+
             <Button
               onClick={handlePreencherNfse}
-              disabled={!clientId || !valorServico}
+              disabled={!clientId || !valorServico || !(valorServicoNumero > 0) || clienteSemCnpj}
               className="self-start"
             >
               <ExternalLink className="w-3.5 h-3.5" /> Preencher NFS-e no Portal da Prefeitura

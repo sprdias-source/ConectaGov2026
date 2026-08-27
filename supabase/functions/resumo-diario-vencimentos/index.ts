@@ -159,7 +159,11 @@ async function enviarResumoDaConta(supabase: ReturnType<typeof createClient>, ow
 
 Deno.serve(async (req: Request) => {
   try {
-    if (CRON_SECRET && req.headers.get('x-cron-secret') !== CRON_SECRET) {
+    // Falha FECHADA, não aberta — mesmo ajuste feito em backup-diario: sem
+    // CRON_SECRET configurado, o "&&" fazia o bloqueio inteiro sumir e
+    // qualquer um com a anon key pública podia disparar o resumo financeiro
+    // de todas as contas sem autenticação nenhuma.
+    if (!CRON_SECRET || req.headers.get('x-cron-secret') !== CRON_SECRET) {
       return new Response(JSON.stringify({ success: false, error: 'Não autorizado' }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' },

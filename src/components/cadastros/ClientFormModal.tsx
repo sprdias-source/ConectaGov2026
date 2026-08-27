@@ -111,6 +111,14 @@ export default function ClientFormModal({
       setValidationError('CPF do responsável inválido — confira os números digitados.')
       return
     }
+    // O atributo type="email" do HTML5 é contornável (autofill, colar
+    // texto, navegador sem validação nativa) — sem checar aqui também, um
+    // e-mail mal formado passava direto pro cadastro e só ia falhar depois,
+    // no envio de um documento ou resumo automático.
+    if (form.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      setValidationError('E-mail inválido — confira o endereço digitado.')
+      return
+    }
     onSave(form)
   }
 

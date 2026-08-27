@@ -241,7 +241,15 @@ async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeByte
     file = await checkRes.json()
     tentativas++
   }
-  if (file.state !== 'ACTIVE') throw new Error(`Arquivo não ficou pronto no Gemini (estado: ${file.state})`)
+  if (file.state !== 'ACTIVE') {
+    // Vazamento de cota: se o arquivo nunca chegou a ACTIVE (travou em
+    // PROCESSING ou foi pra FAILED), ele já foi consumido no Gemini mas
+    // nunca seria apagado — quem chama uploadParaGemini só recebe o
+    // file.name em caso de sucesso, então sem isso o arquivo ficava órfão
+    // até expirar sozinho em 48h.
+    await apagarArquivoGemini(file.name)
+    throw new Error(`Arquivo não ficou pronto no Gemini (estado: ${file.state})`)
+  }
 
   return file as { name: string; uri: string }
 }
@@ -299,16 +307,34 @@ type Anexo = { id: string; name: string; storage_path: string; mime_type: string
 // Todo o trabalho pesado — roda depois da resposta HTTP já ter sido
 // devolvida (ver EdgeRuntime.waitUntil lá embaixo), por isso não conta
 // pro limite de tempo de execução síncrona.
-async function processarAnaliseJuridica(supabase: Supa, analysisRowId: string, edital: Anexo, tipo: Tipo) {
+async function baixarEEnviarAoGemini(supabase: Supa, anexo: Anexo) {
+  const downloadRes = await baixarAnexo(supabase, anexo.storage_path)
+  if (!downloadRes.ok || !downloadRes.body) throw new Error(`Falha ao baixar "${anexo.name}" do Storage/Drive`)
+
+  const mimeType = anexo.mime_type || 'application/pdf'
+  const sizeBytes = anexo.size_bytes ?? Number(downloadRes.headers.get('content-length') ?? 0)
+  if (!sizeBytes) throw new Error(`Não foi possível determinar o tamanho de "${anexo.name}"`)
+
+  const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, anexo.name)
+  return { fileData: { file_data: { mime_type: mimeType, file_uri: geminiFile.uri } }, geminiFileName: geminiFile.name }
+}
+
+// Antes só lia o Edital — mesmo o prompt instruindo o Gemini a analisar
+// "edital, termo de referência, ETP, minuta contratual", só o Edital era
+// de fato enviado. Não existe categoria separada de anexo pra ETP/minuta
+// no sistema (só 'Edital' e 'Termo de Referência'), então passa a ler os
+// dois quando o TR também tiver sido enviado — mesmo padrão já usado por
+// Analisar-edital (não jurídico).
+async function processarAnaliseJuridica(supabase: Supa, analysisRowId: string, edital: Anexo, tr: Anexo | undefined, tipo: Tipo) {
+  const arquivosGeminiParaApagar: string[] = []
   try {
-    const downloadRes = await baixarAnexo(supabase, edital.storage_path)
-    if (!downloadRes.ok || !downloadRes.body) throw new Error('Falha ao baixar o edital do Storage/Drive')
-
-    const mimeType = edital.mime_type || 'application/pdf'
-    const sizeBytes = edital.size_bytes ?? Number(downloadRes.headers.get('content-length') ?? 0)
-    if (!sizeBytes) throw new Error('Não foi possível determinar o tamanho do arquivo')
-
-    const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, edital.name)
+    const docs = [edital, tr].filter((d): d is Anexo => !!d)
+    const resultados = await Promise.all(docs.map(async (doc) => {
+      const r = await baixarEEnviarAoGemini(supabase, doc)
+      arquivosGeminiParaApagar.push(r.geminiFileName)
+      return r
+    }))
+    const partesArquivos = resultados.map((r) => r.fileData)
 
     const genRes = await fetchComRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
@@ -317,25 +343,31 @@ async function processarAnaliseJuridica(supabase: Supa, analysisRowId: string, e
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{
-            parts: [
-              { file_data: { mime_type: mimeType, file_uri: geminiFile.uri } },
-              { text: montarPrompt(tipo) },
-            ],
+            parts: [...partesArquivos, { text: montarPrompt(tipo) }],
           }],
           generationConfig: {
             response_mime_type: 'application/json',
             response_schema: RESULTADO_SCHEMA,
+            maxOutputTokens: 8192,
           },
         }),
       }
     )
 
-    apagarArquivoGemini(geminiFile.name) // não precisa esperar terminar
+    for (const nome of arquivosGeminiParaApagar) apagarArquivoGemini(nome) // não precisa esperar terminar
 
     if (!genRes.ok) throw new Error(`Falha ao analisar com Gemini: ${await genRes.text()}`)
     const genData = await genRes.json()
     const textoResposta = genData.candidates?.[0]?.content?.parts?.[0]?.text
-    if (!textoResposta) throw new Error('Gemini não retornou conteúdo na análise')
+    if (!textoResposta) {
+      // finishReason 'MAX_TOKENS' é o caso comum de edital com muitos
+      // itens estourando o limite de saída — sem essa checagem, a
+      // mensagem de erro genérica não dava nenhuma pista do motivo real.
+      if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+        throw new Error('A resposta do Gemini foi cortada por exceder o limite de tamanho (edital com muitos itens) — tente novamente ou reduza os anexos enviados')
+      }
+      throw new Error('Gemini não retornou conteúdo na análise')
+    }
 
     const resultado = JSON.parse(textoResposta)
 
@@ -377,16 +409,18 @@ Deno.serve(async (req: Request) => {
     if (biddingError || !bidding) return json({ error: 'Licitação não encontrada' }, 404)
     if (bidding.user_id !== ownerId) return json({ error: 'Sem permissão para esta licitação' }, 403)
 
-    const { data: edital, error: editalError } = await supabase
+    const { data: anexos, error: anexosError } = await supabase
       .from('attached_files')
-      .select('id, name, storage_path, mime_type, size_bytes')
+      .select('id, name, storage_path, mime_type, size_bytes, category')
       .eq('entity_type', 'licitacao')
       .eq('entity_id', biddingId)
-      .eq('category', 'Edital')
+      .in('category', ['Edital', 'Termo de Referência'])
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (editalError || !edital) return json({ error: 'Nenhum edital enviado para esta licitação' }, 400)
+    if (anexosError) throw anexosError
+
+    const edital = (anexos as (Anexo & { category: string })[] | null)?.find((a) => a.category === 'Edital')
+    const tr = (anexos as (Anexo & { category: string })[] | null)?.find((a) => a.category === 'Termo de Referência')
+    if (!edital) return json({ error: 'Nenhum edital enviado para esta licitação' }, 400)
 
     let analysisRowId: string
     const { data: existente } = await supabase
@@ -409,7 +443,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // @ts-expect-error: EdgeRuntime é global no runtime do Supabase, não existe no lib.dom.d.ts do TypeScript
-    EdgeRuntime.waitUntil(processarAnaliseJuridica(supabase, analysisRowId, edital as Anexo, tipo as Tipo))
+    EdgeRuntime.waitUntil(processarAnaliseJuridica(supabase, analysisRowId, edital as Anexo, tr as Anexo | undefined, tipo as Tipo))
 
     // Responde já, sem esperar a análise terminar — é isso que evita
     // estourar o limite de execução da function.

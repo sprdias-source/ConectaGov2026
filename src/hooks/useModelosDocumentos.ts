@@ -56,7 +56,13 @@ export function useModelosDocumentos() {
           observacoes: modelo.observacoes ?? null,
         }, user.id)
       )
-      if (error) throw error
+      if (error) {
+        // Se o registro no banco falhar depois do arquivo já ter subido pro
+        // Drive, desfaz o upload — sem isso, o arquivo ficava órfão no
+        // Drive, sem nenhuma referência no banco.
+        if (storagePath) await excluirNoDrive('modelos_documentos', storagePath).catch(() => {})
+        throw error
+      }
     },
     onSuccess: invalidate,
   })

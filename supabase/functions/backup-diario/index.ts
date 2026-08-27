@@ -112,8 +112,15 @@ async function enviarBackupDaConta(supabase: Supa, resendApiKey: string, ownerId
 }
 
 Deno.serve(async (req) => {
+  // Falha FECHADA (nega por padrão), não aberta: antes, se CRON_SECRET
+  // nunca fosse configurado (esquecido num ambiente novo, ou vazio por
+  // engano), o "&&" fazia o bloqueio inteiro sumir — qualquer um com a
+  // anon key pública (embutida no bundle do frontend) podia chamar esta
+  // function sem autenticação nenhuma, e ela devolve e-mail/tamanho dos
+  // dados de TODAS as contas na resposta, além de reenviar o backup
+  // completo repetidamente.
   const cronSecret = Deno.env.get('CRON_SECRET')
-  if (cronSecret && req.headers.get('x-cron-secret') !== cronSecret) {
+  if (!cronSecret || req.headers.get('x-cron-secret') !== cronSecret) {
     return new Response(JSON.stringify({ error: 'Não autorizado' }), {
       status: 401, headers: { 'Content-Type': 'application/json' },
     })

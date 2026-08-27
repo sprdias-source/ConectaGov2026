@@ -59,10 +59,14 @@ export async function recalcularValorGanhoSeAutomatico(biddingId: string): Promi
 
 async function saveItems(userId: string, biddingId: string, items: Partial<BiddingItem>[]) {
   await supabase.from('bidding_items').delete().eq('bidding_id', biddingId)
-  if (items.length === 0) return
+  // Descarta itens sem descrição — a coluna é NOT NULL mas aceita string
+  // vazia, então nada travava um item sem descrição de ser salvo, e ele
+  // aparecia como linha vazia na Proposta em PDF e nos totais do Kanban.
+  const itensValidos = items.filter((i) => (i.descricao ?? '').trim())
+  if (itensValidos.length === 0) return
   const { error } = await supabase
     .from('bidding_items')
-    .insert(items.map((i) => toBiddingItemInsert({ ...i, biddingId }, userId)))
+    .insert(itensValidos.map((i) => toBiddingItemInsert({ ...i, biddingId }, userId)))
   if (error) throw error
 }
 
@@ -184,7 +188,7 @@ export function useBiddings() {
   })
 
   const updateBidding = useMutation({
-    mutationFn: async ({ bidding, items }: { bidding: Bidding; items: Partial<BiddingItem>[] }) => {
+    mutationFn: async ({ bidding, items }: { bidding: Bidding; items: Partial<BiddingItem>[] | null }) => {
       if (!user) throw new Error('Usuário não autenticado')
       const { data, error } = await supabase
         .from('biddings')
@@ -195,16 +199,24 @@ export function useBiddings() {
       if (error) throw error
       const updated = fromBiddingRow(data)
 
-      // Melhor esforço: se o snapshot de versão falhar por qualquer motivo
-      // (ex: duas edições simultâneas gerando a mesma versão), o histórico
-      // fica incompleto, mas a edição real do usuário NUNCA pode ser
-      // bloqueada por causa disso.
-      try {
-        await snapshotItemsBeforeOverwrite(user.id, updated.id, user.email)
-      } catch (err) {
-        console.warn('Não foi possível salvar o histórico de versão dos itens:', err)
+      // items === null significa que o usuário não tocou na aba Itens/Lotes
+      // nesta edição — nesse caso NÃO reenviamos nada, porque saveItems
+      // apaga e recria todos os itens da licitação a partir do array
+      // recebido; reenviar o snapshot carregado na abertura do modal
+      // sobrescreveria qualquer edição feita nos itens por outra aba/sessão
+      // enquanto este modal esteve aberto.
+      if (items !== null) {
+        // Melhor esforço: se o snapshot de versão falhar por qualquer motivo
+        // (ex: duas edições simultâneas gerando a mesma versão), o histórico
+        // fica incompleto, mas a edição real do usuário NUNCA pode ser
+        // bloqueada por causa disso.
+        try {
+          await snapshotItemsBeforeOverwrite(user.id, updated.id, user.email)
+        } catch (err) {
+          console.warn('Não foi possível salvar o histórico de versão dos itens:', err)
+        }
+        await saveItems(user.id, updated.id, items)
       }
-      await saveItems(user.id, updated.id, items)
       const feeLaunched = await maybeLaunchParticipationFee(user.id, updated)
       const comValorGanho = await tentarPreencherValorGanhoAutomatico(updated)
 
@@ -221,12 +233,25 @@ export function useBiddings() {
 
   const deleteBidding = useMutation({
     mutationFn: async (bidding: Bidding) => {
+      // Fecha o ciclo de volta no edital Licitei que originou esta
+      // licitação (se houver) ANTES de excluir — a FK de licitei_editais.
+      // bidding_id já é "on delete set null", mas só ela não desfaz o
+      // status 'aceito'. Sem isso, a aba Editais Licitei mostrava pra
+      // sempre "Virou Licitação" com um link morto pra licitação excluída
+      // (mesmo padrão já corrigido em deleteOpportunity).
+      const { error: licitaiError } = await supabase
+        .from('licitei_editais')
+        .update({ status: 'linkado' })
+        .eq('bidding_id', bidding.id)
+      if (licitaiError) throw licitaiError
+
       const { error } = await supabase.from('biddings').delete().eq('id', bidding.id)
       if (error) throw error
       return bidding
     },
     onSuccess: (deleted) => {
       invalidate()
+      queryClient.invalidateQueries({ queryKey: ['licitei_editais'] })
       logEvent('Excluiu Licitação', `Removeu a licitação do órgão "${deleted.orgao}" referente ao objeto "${deleted.objeto}". Empenhos e lançamentos vinculados foram removidos automaticamente.`, { type: 'bidding', id: deleted.id })
     },
   })
