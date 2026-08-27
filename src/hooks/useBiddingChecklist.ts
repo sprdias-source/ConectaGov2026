@@ -20,25 +20,26 @@ export interface HabilitacaoResumo {
 }
 
 // Um item do checklist está "atendido" se: aponta pra um documento
-// específico do repositório do cliente (clientDocumentId — caso de um
-// documento manual reaproveitável), OU aponta pra um tipo de certidão que
-// o cliente já tem válida (clientDocumentTipo — as 7 certidões padrão, sem
-// precisar de vínculo por item, casa sozinho), OU foi marcado manualmente
-// (atendido — inclui o caso de Atestado Técnico, ligado por atestadoId).
-// attachedFileId é só o campo legado (PR anterior a mover tudo pro
-// repositório do cliente) — mantido só pra não quebrar itens já anexados
-// daquele jeito.
+// específico do repositório do cliente (clientDocumentId — vínculo
+// explícito, seja de um documento manual reaproveitável ou de uma das 7
+// certidões padrão já confirmada pra este item), OU foi marcado
+// manualmente (atendido — inclui o caso de Atestado Técnico, ligado por
+// atestadoId). attachedFileId é só o campo legado (PR anterior a mover
+// tudo pro repositório do cliente) — mantido só pra não quebrar itens já
+// anexados daquele jeito.
+//
+// Importante: um item que pede um tipo de certidão padrão
+// (clientDocumentTipo) NÃO é resolvido sozinho só por existir uma certidão
+// válida daquele tipo no repositório do cliente — combinado com o usuário,
+// isso vira só um aviso (ver certidaoDisponivelParaItem), exigindo
+// confirmação explícita (clicar "Usar este documento") antes de contar como
+// atendido. Antes disso era automático via clientDocumentTipo + um trigger
+// no banco (migração 036) — removido na migração 044 depois de um caso real
+// onde o campo storage_path estava preenchido mas o arquivo por trás já não
+// existia mais, e o item ficou "atendido" sem ninguém perceber.
 export function statusItemChecklist(item: BiddingChecklistItem, clientDocs: ClientDocument[]): 'atendido' | 'vencendo' | 'faltando' {
   if (item.clientDocumentId) {
     const doc = clientDocs.find((d) => d.id === item.clientDocumentId)
-    if (doc?.storagePath) {
-      const status = calcDocStatus(doc.dataValidade)
-      if (status === 'valido') return 'atendido'
-      if (status === 'vencendo') return 'vencendo'
-    }
-  }
-  if (item.clientDocumentTipo) {
-    const doc = clientDocs.find((d) => d.tipo === item.clientDocumentTipo)
     if (doc?.storagePath) {
       const status = calcDocStatus(doc.dataValidade)
       if (status === 'valido') return 'atendido'
@@ -49,9 +50,28 @@ export function statusItemChecklist(item: BiddingChecklistItem, clientDocs: Clie
   return item.atendido ? 'atendido' : 'faltando'
 }
 
+// Quando um item pede um tipo de certidão padrão e o cliente já tem uma
+// válida (ou vencendo) no repositório, mas ESTE item específico ainda não
+// foi confirmado (sem clientDocumentId vinculado) — devolve o documento pra
+// UI oferecer "Usar este documento" como uma ação explícita, em vez do
+// sistema aplicar sozinho. Devolve null se o item já está resolvido de
+// algum jeito, ou se não há certidão desse tipo com storage_path.
+export function certidaoDisponivelParaItem(item: BiddingChecklistItem, clientDocs: ClientDocument[]): ClientDocument | null {
+  if (!item.clientDocumentTipo || item.clientDocumentId || item.attachedFileId) return null
+  const doc = clientDocs.find((d) => d.tipo === item.clientDocumentTipo)
+  if (!doc?.storagePath) return null
+  const status = calcDocStatus(doc.dataValidade)
+  if (status === 'valido' || status === 'vencendo') return doc
+  return null
+}
+
 // Acha o arquivo de verdade que satisfaz um item — pra "Ver PDF" e pro
 // resumo em Documentos Finais. Prioriza os vínculos com o repositório do
-// cliente (reaproveitáveis); attachedFileId é só o fallback legado.
+// cliente (reaproveitáveis); attachedFileId é só o fallback legado. Só
+// considera vínculo EXPLÍCITO (clientDocumentId) — um item cujo tipo apenas
+// "bate" com uma certidão do cliente, sem ter sido confirmado, não conta
+// como resolvido aqui (ver certidaoDisponivelParaItem, que trata esse
+// caso como aviso, não como resposta pronta).
 export function arquivoResolvidoDoItem(
   item: BiddingChecklistItem,
   clientDocs: ClientDocument[],
@@ -60,10 +80,6 @@ export function arquivoResolvidoDoItem(
 ): { nome: string; storagePath: string; dataValidade: string | null } | null {
   if (item.clientDocumentId) {
     const doc = clientDocs.find((d) => d.id === item.clientDocumentId)
-    if (doc?.storagePath) return { nome: doc.nome, storagePath: doc.storagePath, dataValidade: doc.dataValidade }
-  }
-  if (item.clientDocumentTipo) {
-    const doc = clientDocs.find((d) => d.tipo === item.clientDocumentTipo)
     if (doc?.storagePath) return { nome: doc.nome, storagePath: doc.storagePath, dataValidade: doc.dataValidade }
   }
   if (item.atestadoId) {
