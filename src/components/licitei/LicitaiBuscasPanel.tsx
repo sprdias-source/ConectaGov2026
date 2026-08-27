@@ -293,7 +293,8 @@ function BuscaDetalhe({ busca, podeEditar }: { busca: LicitaiBusca; podeEditar: 
       {erroRobo && <p className="text-[11px] text-negative-400">Não consegui disparar o robô: {erroRobo}</p>}
       {avisoRobo && <p className="text-[11px] text-accent-300">{avisoRobo}</p>}
 
-      <div className="flex items-center justify-between pt-1 border-t border-base-800/60">
+      <div className="flex flex-col gap-1.5 pt-1 border-t border-base-800/60">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Button onClick={() => disparar({ modo: 'buscar', buscaId: busca.id })} disabled={!podeEditar || disparando}>
             <Play className="w-3.5 h-3.5" /> {disparando ? 'Disparando...' : 'Rodar Busca'}
@@ -315,6 +316,17 @@ function BuscaDetalhe({ busca, podeEditar }: { busca: LicitaiBusca; podeEditar: 
             </Button>
           </div>
         )}
+      </div>
+      {busca.ultimoStatus === 'erro' && (
+        <p className="text-[11px] text-negative-400" title={busca.ultimoErro ?? undefined}>
+          Última tentativa falhou{busca.ultimoErro ? `: ${busca.ultimoErro}` : ''}
+        </p>
+      )}
+      {busca.ultimoStatus === 'erro_parcial' && (
+        <p className="text-[11px] text-warning-400" title={busca.ultimoErro ?? undefined}>
+          Rodou, mas nem todos os filtros aplicaram{busca.ultimoErro ? ` — ${busca.ultimoErro}` : ''}
+        </p>
+      )}
       </div>
 
       <ConfirmDialog

@@ -1573,6 +1573,8 @@ export type Database = {
           id: string
           nome: string
           ultima_execucao_em: string | null
+          ultimo_erro: string | null
+          ultimo_status: string | null
           updated_at: string
           user_id: string
         }
@@ -1583,6 +1585,8 @@ export type Database = {
           id?: string
           nome: string
           ultima_execucao_em?: string | null
+          ultimo_erro?: string | null
+          ultimo_status?: string | null
           updated_at?: string
           user_id: string
         }
@@ -1593,6 +1597,8 @@ export type Database = {
           id?: string
           nome?: string
           ultima_execucao_em?: string | null
+          ultimo_erro?: string | null
+          ultimo_status?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -1613,6 +1619,8 @@ export type Database = {
           objeto: string | null
           orgao: string | null
           status: string
+          ultima_tentativa_erro: string | null
+          ultima_tentativa_status: string | null
           updated_at: string
           user_id: string
         }
@@ -1630,6 +1638,8 @@ export type Database = {
           objeto?: string | null
           orgao?: string | null
           status?: string
+          ultima_tentativa_erro?: string | null
+          ultima_tentativa_status?: string | null
           updated_at?: string
           user_id: string
         }
@@ -1647,6 +1657,8 @@ export type Database = {
           objeto?: string | null
           orgao?: string | null
           status?: string
+          ultima_tentativa_erro?: string | null
+          ultima_tentativa_status?: string | null
           updated_at?: string
           user_id?: string
         }

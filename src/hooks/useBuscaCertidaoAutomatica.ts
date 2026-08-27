@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import type { DocumentTipo } from '../types/domain'
 
@@ -73,4 +74,43 @@ export function useBuscaCertidaoAutomatica(clientId: string | undefined, cnpj: s
   const limparErro = (tipo: DocumentTipo) => setErrosBusca((p) => { const n = { ...p }; delete n[tipo]; return n })
 
   return { buscando, errosBusca, avisosBusca, buscarAutomatico, limparAviso, limparErro }
+}
+
+export interface UltimoLogRobo {
+  status: string
+  erro: string | null
+  createdAt: string
+}
+
+// Os tipos que rodam via GitHub Actions (ver TIPOS_VIA_GITHUB_ACTIONS) só
+// confirmam o DISPARO na hora — o resultado de verdade (sucesso ou falha)
+// só existe minutos depois, gravado pelo robô direto em document_logs (ver
+// registrarLog em buscar-cndt.cjs). Sem ler essa tabela em algum lugar, uma
+// falha do robô (captcha errado, CNDT positiva, erro ao salvar o PDF) nunca
+// aparecia em lugar nenhum do app — só no log do GitHub Actions, que o
+// usuário do ConectaGov nunca abre. Busca todo o histórico do cliente de
+// uma vez (não por tipo) porque o card de habilitação mostra vários tipos
+// ao mesmo tempo — evita várias queries pequenas.
+export function useUltimosLogsRobo(clientId: string | undefined) {
+  return useQuery({
+    queryKey: ['document_logs_ultimos', clientId],
+    enabled: !!clientId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('document_logs')
+        .select('tipo, status, erro, created_at')
+        .eq('client_id', clientId!)
+        .order('created_at', { ascending: false })
+        .limit(50)
+      if (error) throw error
+      const porTipo: Partial<Record<DocumentTipo, UltimoLogRobo>> = {}
+      for (const row of data ?? []) {
+        const tipo = row.tipo as DocumentTipo
+        // A lista já vem ordenada da mais recente pra mais antiga — a
+        // primeira ocorrência de cada tipo é a última tentativa dele.
+        if (!porTipo[tipo]) porTipo[tipo] = { status: row.status, erro: row.erro, createdAt: row.created_at }
+      }
+      return porTipo
+    },
+  })
 }

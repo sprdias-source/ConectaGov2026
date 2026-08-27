@@ -8,7 +8,7 @@ import { Button, Input } from '../ui/FormControls'
 import ErrorAlert from '../ui/ErrorAlert'
 import { useClientDocuments, calcDocStatus, diasRestantes } from '../../hooks/useClientDocuments'
 import { useAtestados } from '../../hooks/useAtestados'
-import { useBuscaCertidaoAutomatica } from '../../hooks/useBuscaCertidaoAutomatica'
+import { useBuscaCertidaoAutomatica, useUltimosLogsRobo } from '../../hooks/useBuscaCertidaoAutomatica'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import { useToast } from '../../hooks/useToast'
 import AcoesDocumentoManual from './AcoesDocumentoManual'
@@ -198,6 +198,7 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
   const { showToast } = useToast()
 
   const { buscando, errosBusca, avisosBusca, buscarAutomatico, limparAviso, limparErro } = useBuscaCertidaoAutomatica(clientId, cnpj, podeEditar)
+  const { data: ultimosLogsRobo } = useUltimosLogsRobo(clientId)
   const [abertoKey, setAbertoKey] = useState<string | null>(null)
   const [abrindo, setAbrindo] = useState<string | null>(null)
 
@@ -432,6 +433,12 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
         const c = cartaoAberto
         const cfg = CERT_CONFIG[c.tipo]
         const isUploading = uploadingTipo === c.tipo
+        // Falha do robô rodando em segundo plano no GitHub Actions (ex:
+        // CNDT) — só mostra se for MAIS RECENTE que o documento atual, pra
+        // não continuar acusando uma falha antiga já corrigida por um
+        // envio manual ou uma tentativa seguinte bem sucedida.
+        const logRobo = ultimosLogsRobo?.[c.tipo]
+        const falhaRoboRecente = logRobo?.status === 'erro' && (!c.doc?.updatedAt || new Date(logRobo.createdAt) > new Date(c.doc.updatedAt))
         return (
           <div className="bg-base-850/60 border border-accent-500/30 rounded-xl overflow-hidden">
             <div className="flex items-center gap-3 px-4 py-3">
@@ -511,6 +518,16 @@ export default function HabilitacaoChecklist({ clientId, clientName, cnpj }: Pro
                 <button onClick={() => limparErro(c.tipo)} className="ml-auto text-base-500 hover:text-base-300">
                   <X className="w-3 h-3" />
                 </button>
+              </div>
+            )}
+
+            {falhaRoboRecente && (
+              <div className="border-t border-base-800 px-4 py-2 bg-negative-500/5 flex items-start gap-2">
+                <AlertCircle className="w-3.5 h-3.5 text-negative-400 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-negative-400">
+                  A última tentativa automática de emitir esta certidão falhou, em {new Date(logRobo!.createdAt).toLocaleString('pt-BR')}
+                  {logRobo!.erro ? `: ${logRobo!.erro}` : ''}.
+                </p>
               </div>
             )}
 

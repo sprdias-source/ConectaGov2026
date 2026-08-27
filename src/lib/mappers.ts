@@ -729,6 +729,8 @@ export const fromLicitaiEditalRow = (r: Row<'licitei_editais'>): LicitaiEdital =
   biddingId: r.bidding_id,
   editalStoragePath: r.edital_storage_path,
   buscaId: r.busca_id,
+  ultimaTentativaStatus: r.ultima_tentativa_status,
+  ultimaTentativaErro: r.ultima_tentativa_erro,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 })
@@ -757,6 +759,8 @@ export const fromLicitaiBuscaRow = (r: Row<'licitei_buscas'>): LicitaiBusca => (
   ativo: r.ativo,
   filtros: (r.filtros as LicitaiBuscaFiltros | null) ?? {},
   ultimaExecucaoEm: r.ultima_execucao_em,
+  ultimoStatus: r.ultimo_status,
+  ultimoErro: r.ultimo_erro,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 })

@@ -80,7 +80,7 @@ async function main() {
 
     const { error: updateError } = await supabase
       .from('licitei_editais')
-      .update({ edital_storage_path: storagePath })
+      .update({ edital_storage_path: storagePath, ultima_tentativa_status: 'sucesso', ultima_tentativa_erro: null })
       .eq('id', edital.id)
     if (updateError) throw updateError
 
@@ -88,6 +88,14 @@ async function main() {
   } catch (err) {
     console.error('Erro no robô Licitei (baixar edital):', err)
     await salvarDiagnostico(page, 'baixar-edital-falha', captura)
+    // Sem isso, um edital que falha ao baixar fica com edital_storage_path
+    // nulo pra sempre, indistinguível na tela de "ainda ninguém tentou" —
+    // o usuário só descobre olhando o log do GitHub Actions, que ele nunca
+    // abre.
+    await supabase.from('licitei_editais').update({
+      ultima_tentativa_status: 'erro',
+      ultima_tentativa_erro: String(err.message || err).slice(0, 500),
+    }).eq('id', EDITAL_ID)
     process.exitCode = 1
   } finally {
     await browser.close()

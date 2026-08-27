@@ -142,6 +142,11 @@ function EditalDetalhe({ edital, podeEditar, onVisualizar }: {
       {erroRobo && <p className="text-[11px] text-negative-400">Não consegui disparar o robô: {erroRobo}</p>}
       {avisoRobo && <p className="text-[11px] text-accent-300">{avisoRobo}</p>}
       {erro && <p className="text-[11px] text-negative-400">{erro}</p>}
+      {!edital.editalStoragePath && edital.ultimaTentativaStatus === 'erro' && (
+        <p className="text-[11px] text-negative-400" title={edital.ultimaTentativaErro ?? undefined}>
+          A última tentativa do robô de baixar este edital falhou{edital.ultimaTentativaErro ? `: ${edital.ultimaTentativaErro}` : ''}
+        </p>
+      )}
 
       <div className="flex items-center justify-between pt-1 border-t border-base-800/60">
         {edital.status === 'novo' || edital.status === 'linkado' ? (
