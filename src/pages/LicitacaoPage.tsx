@@ -41,7 +41,7 @@ import { calcularValorMinimo, somarLinhasPorTipo } from '../lib/precificacao'
 import { useBiddingItemVersions } from '../hooks/useBiddingItemVersions'
 import { useClientDocuments, calcDocStatus } from '../hooks/useClientDocuments'
 import { useAtestados, calcularSimilaridade } from '../hooks/useAtestados'
-import { useBiddings } from '../hooks/useBiddings'
+import { useBiddings, recalcularValorGanhoSeAutomatico } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import BiddingItemsEditor from '../components/cadastros/BiddingItemsEditor'
@@ -157,6 +157,12 @@ function useBiddingItemsDaLicitacao(biddingId?: string) {
         const valorUnitario = item.quantidade > 0 ? valorTotal / item.quantidade : 0
         await supabase.from('bidding_items').update({ valor_unitario_ofertado: valorUnitario }).eq('id', itemId)
       }
+
+      // O rateio muda o valor ofertado dos itens — se a licitação já está
+      // Ganhou + Adjudicada e Homologada e o Valor Ganho de Fato ainda não
+      // tinha sido preenchido (ver recalcularValorGanhoSeAutomatico), esse é
+      // o momento certo de calculá-lo a partir dos itens atualizados.
+      await recalcularValorGanhoSeAutomatico(biddingId!)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bidding_items', biddingId] })
@@ -228,6 +234,13 @@ function useBiddingItemsDaLicitacao(biddingId?: string) {
         if (error) throw error
       }
 
+      // Se a licitação já está Ganhou + Adjudicada e Homologada e o Valor
+      // Ganho de Fato ainda não tinha sido preenchido (comum quando o
+      // resultado é registrado ANTES de marcar quais itens "Ganhou" nesta
+      // aba), esse é o momento certo de calculá-lo a partir dos itens que
+      // acabaram de ser salvos — ver recalcularValorGanhoSeAutomatico.
+      await recalcularValorGanhoSeAutomatico(biddingId!)
+
       return { precisaResincronizar: paraInserir.length > 0 }
     },
     // Sempre invalida, mesmo quando só houve UPDATE (precisaResincronizar
@@ -241,6 +254,7 @@ function useBiddingItemsDaLicitacao(biddingId?: string) {
     // sincronização.
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bidding_items', biddingId] })
+      queryClient.invalidateQueries({ queryKey: ['biddings'] })
     },
   })
 

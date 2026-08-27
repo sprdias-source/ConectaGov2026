@@ -20,7 +20,7 @@ const QUERY_KEY = ['biddings']
 // sobrescreve um valor já digitado ou já calculado antes, a única forma de
 // mudar depois é editar manualmente — e (3) há itens cadastrados somando
 // mais que zero, pra nunca inventar um número quando ainda não há itens.
-async function tentarPreencherValorGanhoAutomatico(bidding: Bidding): Promise<Bidding> {
+export async function tentarPreencherValorGanhoAutomatico(bidding: Bidding): Promise<Bidding> {
   if (!licitacaoBloqueadaPorResultado(bidding) || bidding.valorOfertadoReal != null) return bidding
 
   const { data: itensRows, error } = await supabase
@@ -40,6 +40,21 @@ async function tentarPreencherValorGanhoAutomatico(bidding: Bidding): Promise<Bi
     .single()
   if (updError || !data) return bidding
   return fromBiddingRow(data)
+}
+
+// Mesma lógica acima, mas a partir só do biddingId — usado por quem edita os
+// ITENS de uma licitação já ganha/homologada (aba Itens/Proposta da
+// LicitacaoPage, fora do formulário de edição da licitação) sem ter o
+// objeto Bidding completo em mãos. Sem isso, uma licitação que vira
+// "Ganhou + Adjudicada e Homologada" ANTES de os itens terem o campo
+// "Ganhou?" marcado (ordem comum: primeiro registra o resultado, só depois
+// ajusta os itens na disputa de lances) nunca recebe o Valor Ganho de Fato
+// automático — ele só era calculado no momento da transição de estado, e
+// a essa altura a soma dos itens "Ganhou" ainda dava zero.
+export async function recalcularValorGanhoSeAutomatico(biddingId: string): Promise<void> {
+  const { data, error } = await supabase.from('biddings').select('*').eq('id', biddingId).single()
+  if (error || !data) return
+  await tentarPreencherValorGanhoAutomatico(fromBiddingRow(data))
 }
 
 async function saveItems(userId: string, biddingId: string, items: Partial<BiddingItem>[]) {
