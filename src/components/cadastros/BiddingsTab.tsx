@@ -512,6 +512,7 @@ export default function BiddingsTab() {
             open={!!deleting}
             title="Excluir Licitação Definitivamente"
             entityLabel={`A licitação "${deleting?.objeto}" e todos os empenhos vinculados a ela`}
+            entityId={deleting?.id ?? ''}
             financialWarning={financialWarning}
             onCancel={() => setDeleting(null)}
             onConfirm={() => { if (deleting) deleteBidding.mutate(deleting, { onSuccess: () => { setDeleting(null); showToast('Licitação excluída.') } }) }}

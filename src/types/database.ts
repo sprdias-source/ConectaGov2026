@@ -1033,6 +1033,30 @@ export type Database = {
         }
         Relationships: []
       }
+      password_unlock_attempts: {
+        Row: {
+          entity_id: string
+          entity_type: string
+          failed_count: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          entity_id: string
+          entity_type: string
+          failed_count?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          entity_id?: string
+          entity_type?: string
+          failed_count?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       platforms: {
         Row: {
           ativo: boolean

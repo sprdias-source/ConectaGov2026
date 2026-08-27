@@ -1537,6 +1537,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
       <UnlockWithPasswordDialog
         open={mostrandoUnlockItens}
         entityLabel={`Licitação "${bidding.objeto}"`}
+        entityId={bidding.id}
         onCancel={() => setMostrandoUnlockItens(false)}
         onUnlocked={() => { desbloquear(); setMostrandoUnlockItens(false) }}
       />
@@ -2271,6 +2272,7 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
       <UnlockWithPasswordDialog
         open={mostrandoUnlock}
         entityLabel={`Licitação "${bidding.objeto}"`}
+        entityId={bidding.id}
         onCancel={() => setMostrandoUnlock(false)}
         onUnlocked={() => { desbloquear(); setMostrandoUnlock(false) }}
       />
