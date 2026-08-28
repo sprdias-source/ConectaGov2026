@@ -1,4 +1,5 @@
 import { formatBRL } from '../../hooks/useAccountBalances'
+import TopScrollTable from '../ui/TopScrollTable'
 import type { AnaliseEdital } from '../../types/domain'
 
 // Formato esperado do JSON retornado pela function analisar-edital (e pela
@@ -167,7 +168,7 @@ export function AnaliseEditalResumo({ analise, onToggleItem, onToggleTodos }: {
               </div>
             )}
           </div>
-          <div className="overflow-x-auto bg-base-850/60 border border-base-800 rounded-xl">
+          <TopScrollTable className="bg-base-850/60 border border-base-800 rounded-xl">
             <table className="w-full text-[12px]">
               <thead>
                 <tr className="text-base-500 border-b border-base-800">
@@ -188,7 +189,7 @@ export function AnaliseEditalResumo({ analise, onToggleItem, onToggleTodos }: {
                   : analise.itens.map((it, idx) => renderLinhaItem(it, idx))}
               </tbody>
             </table>
-          </div>
+          </TopScrollTable>
         </div>
       )}
 

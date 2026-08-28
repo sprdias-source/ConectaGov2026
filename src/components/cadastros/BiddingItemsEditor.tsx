@@ -6,6 +6,7 @@ import { parseFlexibleNumber, compararNumeroItem } from '../../lib/numberParsing
 import { useToast } from '../../hooks/useToast'
 import type { BiddingItem } from '../../types/domain'
 import { formatBRL } from '../../hooks/useAccountBalances'
+import TopScrollTable from '../ui/TopScrollTable'
 
 type ItemDraft = Partial<BiddingItem> & { _key: string }
 
@@ -423,7 +424,8 @@ export default function BiddingItemsEditor({
               lado a lado. Em telas estreitas viraria colunas espremidas demais
               (foi exatamente essa compressão que causou a confusão de "dado
               cortado" nesta tela), por isso o layout troca pra cards abaixo. */}
-          <div className="hidden md:block overflow-x-auto border border-base-700/50 rounded-lg">
+          <div className="hidden md:block">
+            <TopScrollTable className="border border-base-700/50 rounded-lg">
             <table className="w-full text-[12px]">
               <thead>
                 <tr className="bg-base-850 text-left">
@@ -467,6 +469,7 @@ export default function BiddingItemsEditor({
                 </tr>
               </tfoot>
             </table>
+            </TopScrollTable>
           </div>
 
           {/* Resumo fixo no rodapé da viewport, só nas telas largas — fica

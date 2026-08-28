@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react'
 import { FileBarChart, Download, Printer } from 'lucide-react'
 import { PageHeader, Card, StatusBadge, EmptyState } from '../components/ui/Primitives'
+import TopScrollTable from '../components/ui/TopScrollTable'
 import { Select } from '../components/ui/FormControls'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useTransactions } from '../hooks/useTransactions'
@@ -151,7 +152,7 @@ export default function RelatoriosPage() {
             <EmptyState icon={FileBarChart} title="Nenhum registro encontrado" description="Ajuste os filtros para visualizar os lançamentos." />
           ) : (
             <>
-              <div className="overflow-x-auto">
+              <TopScrollTable>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-base-800 text-left">
@@ -184,7 +185,7 @@ export default function RelatoriosPage() {
                     </tr>
                   </tfoot>
                 </table>
-              </div>
+              </TopScrollTable>
               <PaginationControls page={page} totalPages={totalPages} totalItems={totalItems} pageSize={pageSize} onPageChange={setPage} />
             </>
           )}

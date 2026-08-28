@@ -17,6 +17,7 @@ import QuickPaymentModal from './QuickPaymentModal'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import ErrorAlert from '../ui/ErrorAlert'
 import MonthHorizontalPicker from '../ui/MonthHorizontalPicker'
+import TopScrollTable from '../ui/TopScrollTable'
 import { usePagination, PaginationControls } from '../../hooks/usePagination'
 import type { Transaction } from '../../types/domain'
 
@@ -204,7 +205,7 @@ export default function ContasLancamentosTab() {
         ) : filtered.length === 0 ? (
           <EmptyState icon={Receipt} title="Nenhum lançamento neste período" description="Crie um novo lançamento ou ajuste o mês/filtro selecionado." />
         ) : (
-          <div className="overflow-x-auto">
+          <TopScrollTable>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-base-800 text-left">
@@ -270,7 +271,7 @@ export default function ContasLancamentosTab() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TopScrollTable>
         )}
         <PaginationControls page={page} totalPages={totalPages} totalItems={totalItems} pageSize={pageSize} onPageChange={setPage} />
       </div>

@@ -182,31 +182,33 @@ body {
   display: none;
 }
 
-/* Barra de rolagem duplicada no topo do Kanban (ver KanbanLicitacoesPage.tsx)
-   — grossa e com cor de destaque, pra ficar óbvio que é a barra de
-   verdade do quadro, não um detalhe decorativo. Só existe conteúdo (um
-   "fantasma" de 1px de altura) pra dar largura de scroll; a altura visível
-   real vem inteira da própria barra do navegador, por isso ela pode ser
-   bem mais grossa que o padrão sem atrapalhar layout nenhum. */
-.kanban-top-scroll {
+/* Barra de rolagem "fantasma" fixada acima de tabelas/áreas com scroll
+   horizontal (ver TopScrollTable.tsx e KanbanLicitacoesPage.tsx) — grossa e
+   com cor de destaque, pra ficar óbvio que é a barra de verdade, não um
+   detalhe decorativo. Só existe conteúdo (um "fantasma" de 1px de altura)
+   pra dar largura de scroll; a altura visível real vem inteira da própria
+   barra do navegador, por isso ela pode ser bem mais grossa que o padrão
+   sem atrapalhar layout nenhum. (Renomeada de .kanban-top-scroll — deixou
+   de ser exclusiva do Kanban.) */
+.top-scrollbar {
   height: 14px;
 }
-.kanban-top-scroll::-webkit-scrollbar {
+.top-scrollbar::-webkit-scrollbar {
   height: 14px;
 }
-.kanban-top-scroll::-webkit-scrollbar-track {
+.top-scrollbar::-webkit-scrollbar-track {
   background: var(--color-base-850);
   border-radius: 999px;
 }
-.kanban-top-scroll::-webkit-scrollbar-thumb {
+.top-scrollbar::-webkit-scrollbar-thumb {
   background: var(--color-accent-500);
   border-radius: 999px;
   border: 3px solid var(--color-base-850);
 }
-.kanban-top-scroll::-webkit-scrollbar-thumb:hover {
+.top-scrollbar::-webkit-scrollbar-thumb:hover {
   background: var(--color-accent-400);
 }
-.kanban-top-scroll {
+.top-scrollbar {
   scrollbar-color: var(--color-accent-500) var(--color-base-850);
   scrollbar-width: auto;
 }

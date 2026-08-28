@@ -16,6 +16,7 @@ import { UndoToast } from '../components/ui/UndoToast'
 import { PageHeader, Card, StatusBadge } from '../components/ui/Primitives'
 import { useUndoableDelete } from '../hooks/useUndoableAction'
 import { SkeletonTableRows, SkeletonList } from '../components/ui/Skeleton'
+import TopScrollTable from '../components/ui/TopScrollTable'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import PdfViewerModal from '../components/ui/PdfViewerModal'
 import Modal from '../components/ui/Modal'
@@ -456,7 +457,7 @@ function HistoricoVersoes({ biddingId }: { biddingId: string }) {
                 ) : null}
               </div>
               {versaoExpandida === v.id && (
-                <div className="border-t border-base-800 px-3 py-2 overflow-x-auto">
+                <TopScrollTable className="border-t border-base-800 px-3 py-2">
                   <table className="w-full text-[11px]">
                     <thead>
                       <tr className="text-base-500">
@@ -479,7 +480,7 @@ function HistoricoVersoes({ biddingId }: { biddingId: string }) {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </TopScrollTable>
               )}
             </div>
           ))}
@@ -772,7 +773,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
         </div>
       )}
 
-      <div className="overflow-x-auto bg-base-850/60 border border-base-800 rounded-xl">
+      <TopScrollTable className="bg-base-850/60 border border-base-800 rounded-xl">
         <table className="w-full min-w-[1200px] text-[12px]">
           <thead>
             <tr className="text-base-500 border-b border-base-800">
@@ -842,7 +843,7 @@ function AbaCadastrarProposta({ bidding }: { bidding: Bidding }) {
             })}
           </tbody>
         </table>
-      </div>
+      </TopScrollTable>
     </div>
   )
 }
@@ -1306,7 +1307,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
 
               <div className="relative border-[1.5px] border-dashed border-accent-500/60 rounded px-2 pt-3 pb-1.5 mb-4">
                 {podeEditar && statusProposta === 'rascunho' && <span className="absolute -top-2 left-2 bg-accent-500 text-white text-[8.5px] font-mono font-bold px-1.5 rounded-full">editável — clique numa célula</span>}
-                <div className="overflow-x-auto">
+                <TopScrollTable>
                   <table className="w-full text-[9.5px] border-collapse">
                     <thead>
                       <tr className="bg-[#e9e6da]">
@@ -1352,7 +1353,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
                       </tr>
                     </tbody>
                   </table>
-                </div>
+                </TopScrollTable>
               </div>
 
               <div className="relative border-[1.5px] border-dashed border-accent-500/60 rounded px-2.5 py-2 mb-5">
@@ -1421,7 +1422,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
             />
           </>
         ) : (
-          <div className="overflow-x-auto bg-base-850/60 border border-base-800 rounded-xl">
+          <TopScrollTable className="bg-base-850/60 border border-base-800 rounded-xl">
             <table className="w-full text-[12px]">
               <thead>
                 <tr className="text-base-500 border-b border-base-800">
@@ -1450,14 +1451,14 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TopScrollTable>
         )}
       </div>
 
       {podeEditar && items.length > 0 && rateio && (
         <div>
           <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-2">Prévia do Rateio</p>
-          <div className="overflow-x-auto bg-base-850/60 border border-base-800 rounded-xl">
+          <TopScrollTable className="bg-base-850/60 border border-base-800 rounded-xl">
             <table className="w-full text-[12px]">
               <thead>
                 <tr className="text-base-500 border-b border-base-800">
@@ -1499,7 +1500,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
                 </tr>
               </tfoot>
             </table>
-          </div>
+          </TopScrollTable>
         </div>
       )}
 
@@ -1896,7 +1897,7 @@ function AbaPrecificacao({ bidding }: { bidding: Bidding }) {
         )}
       </div>
 
-      <div className="overflow-x-auto border border-base-700/50 rounded-lg">
+      <TopScrollTable className="border border-base-700/50 rounded-lg">
         <table className="w-full text-[12px]">
           <thead>
             <tr className="bg-base-850 text-left">
@@ -1955,7 +1956,7 @@ function AbaPrecificacao({ bidding }: { bidding: Bidding }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </TopScrollTable>
       <p className="text-[11px] text-base-500">
         Vs. Licitado = (Valor Mínimo − Vl. Licitado) ÷ Vl. Licitado. Negativo (verde) = ainda tem folga pra disputar. Positivo (vermelho) = o mínimo calculado já nasce acima do que o edital estima — alerta pra renegociar o custo, revisar a margem ou não disputar esse item.
       </p>

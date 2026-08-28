@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { DollarSign, TrendingUp, Award, ChevronLeft, ChevronRight } from 'lucide-react'
 import { PageHeader, Card, EmptyState } from '../components/ui/Primitives'
+import TopScrollTable from '../components/ui/TopScrollTable'
 import { Select } from '../components/ui/FormControls'
 import { SkeletonTableRows } from '../components/ui/Skeleton'
 import { useTransactions } from '../hooks/useTransactions'
@@ -377,7 +378,7 @@ export default function RentabilidadePage() {
           ) : (
             <div className="px-6 mt-4">
               <Card className="overflow-hidden">
-                <div className="overflow-x-auto">
+                <TopScrollTable>
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-base-800 text-left">
@@ -419,7 +420,7 @@ export default function RentabilidadePage() {
                       )}
                     </tbody>
                   </table>
-                </div>
+                </TopScrollTable>
               </Card>
             </div>
           )}

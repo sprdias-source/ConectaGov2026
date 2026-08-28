@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Upload, FileText, X, TrendingUp, TrendingDown, AlertCircle, Save, History, Trash2 } from 'lucide-react'
 import { PageHeader, Card } from '../components/ui/Primitives'
+import TopScrollTable from '../components/ui/TopScrollTable'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useTransactions } from '../hooks/useTransactions'
 import { useFinancialAccounts } from '../hooks/useFinancialAccounts'
@@ -417,7 +418,7 @@ export default function ExtratoOFXPage() {
                 <span>Extrato do Banco</span>
                 <span className="border-l border-base-800 pl-6">Lancamento no ConectaGov</span>
               </div>
-              <div className="overflow-x-auto">
+              <TopScrollTable>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-base-800 text-left">
@@ -467,7 +468,7 @@ export default function ExtratoOFXPage() {
                     })}
                   </tbody>
                 </table>
-              </div>
+              </TopScrollTable>
             </Card>
           </div>
 
@@ -478,7 +479,7 @@ export default function ExtratoOFXPage() {
                   <p className="text-[12px] font-bold text-base-200">Lancamentos do sistema sem correspondencia no extrato</p>
                   <p className="text-[11px] text-base-500 mt-0.5">Pagos no ConectaGov dentro do periodo desse extrato, mas que nao apareceram no arquivo do banco — vale conferir se a conta ou a data estao certas.</p>
                 </div>
-                <div className="overflow-x-auto">
+                <TopScrollTable>
                   <table className="w-full text-sm">
                     <tbody>
                       {lancamentosSemCorrespondencia.map((t) => (
@@ -494,7 +495,7 @@ export default function ExtratoOFXPage() {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </TopScrollTable>
               </Card>
             </div>
           )}
@@ -510,7 +511,7 @@ export default function ExtratoOFXPage() {
           {reconciliations.length === 0 ? (
             <p className="px-4 py-6 text-[12px] text-base-500 italic text-center">Nenhuma conciliacao salva ainda.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <TopScrollTable>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-base-800 text-left">
@@ -553,7 +554,7 @@ export default function ExtratoOFXPage() {
                   })}
                 </tbody>
               </table>
-            </div>
+            </TopScrollTable>
           )}
         </Card>
       </div>

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Printer, Gavel } from 'lucide-react'
 import { Card, StatusBadge, EmptyState } from '../ui/Primitives'
+import TopScrollTable from '../ui/TopScrollTable'
 import { Select } from '../ui/FormControls'
 import { formatBRL } from '../../hooks/useAccountBalances'
 import { useBiddingItemsPorLicitacoes } from '../../hooks/useBiddingItems'
@@ -351,7 +352,7 @@ export default function RelatorioLicitacoesCliente({ clients, biddings }: { clie
 function TabelaConsolidada({ doCliente, resumos }: { doCliente: Bidding[]; resumos: Map<string, ResumoItensBidding> }) {
   return (
     <Card className="overflow-hidden screen-only">
-      <div className="overflow-x-auto">
+      <TopScrollTable>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-base-800 text-left">
@@ -392,7 +393,7 @@ function TabelaConsolidada({ doCliente, resumos }: { doCliente: Bidding[]; resum
             })}
           </tbody>
         </table>
-      </div>
+      </TopScrollTable>
       <p className="text-[11px] text-base-500 px-4 py-2 border-t border-base-800">
         Vl. Participado = soma dos itens em que houve oferta. Vl. Ganho = soma só dos itens vencidos. Diferença = valor licitado menos valor ganho, nos itens vencidos. Decremento Médio = Diferença ÷ valor licitado dos itens vencidos.
       </p>
@@ -417,7 +418,7 @@ function TabelaNormal({ doCliente, itensPorBidding }: { doCliente: Bidding[]; it
             {itens.length === 0 ? (
               <p className="px-4 py-3 text-[12px] text-base-500 italic">Sem itens detalhados cadastrados nesta licitação. Valor licitado: {formatBRL(b.valorLicitado)}</p>
             ) : (
-              <div className="overflow-x-auto">
+              <TopScrollTable>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-base-800 text-left">
@@ -462,7 +463,7 @@ function TabelaNormal({ doCliente, itensPorBidding }: { doCliente: Bidding[]; it
                     })}
                   </tbody>
                 </table>
-              </div>
+              </TopScrollTable>
             )}
           </Card>
         )

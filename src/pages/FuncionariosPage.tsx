@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { todayLocalISO } from '../lib/dateUtils'
 import { Users, UserPlus, Wallet, CheckCircle2, AlertTriangle, Pencil, Trash2, Landmark } from 'lucide-react'
 import { PageHeader, Card, EmptyState, StatusBadge } from '../components/ui/Primitives'
+import TopScrollTable from '../components/ui/TopScrollTable'
 import { SkeletonTableRows } from '../components/ui/Skeleton'
 import { Field, Select, Input, Button } from '../components/ui/FormControls'
 import { useEmployees } from '../hooks/useEmployees'
@@ -360,7 +361,7 @@ export default function FuncionariosPage() {
             ) : employees.length === 0 ? (
               <EmptyState icon={Users} title="Nenhum colaborador cadastrado" description="Contrate seu primeiro colaborador para começar a gerenciar a equipe." />
             ) : (
-              <div className="overflow-x-auto">
+              <TopScrollTable>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-base-800 text-left">
@@ -392,7 +393,7 @@ export default function FuncionariosPage() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </TopScrollTable>
             )}
           </Card>
           </>

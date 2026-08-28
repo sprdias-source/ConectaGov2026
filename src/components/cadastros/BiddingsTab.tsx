@@ -17,6 +17,7 @@ import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import { useToast } from '../../hooks/useToast'
 import { useHabilitacaoPorLicitacao } from '../../hooks/useBiddingChecklist'
 import { CAMPOS_RASTREAVEIS_IA } from '../../lib/analiseEdital'
+import TopScrollTable from '../ui/TopScrollTable'
 import type { Bidding, BiddingItem } from '../../types/domain'
 
 function fileParaBase64(file: File): Promise<string> {
@@ -386,7 +387,8 @@ export default function BiddingsTab() {
             {/* Desktop: tabela enxuta — 6 colunas em vez de 8, e as ações
                 menos usadas (gerar documentos, modelo, inativar, excluir)
                 foram pro menu "...", deixando só Editar visível na linha. */}
-            <div className="hidden md:block overflow-x-auto">
+            <div className="hidden md:block">
+              <TopScrollTable>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-base-800 text-left">
@@ -444,6 +446,7 @@ export default function BiddingsTab() {
                   ))}
                 </tbody>
               </table>
+              </TopScrollTable>
             </div>
 
             {/* Mobile: card por licitação, mesma informação e ações. */}
