@@ -3,6 +3,7 @@ import { SupabaseClient } from '@supabase/supabase-js'
 import { UserPlus, Users } from 'lucide-react'
 import { Button, Select } from '../ui/FormControls'
 import { EmptyState } from '../ui/Primitives'
+import TopScrollTable from '../ui/TopScrollTable'
 
 type Ferramenta = { key: string; nome: string; ordem: number }
 type Membro = { id: string; nome: string | null; email: string | null; status: string }
@@ -198,7 +199,7 @@ export default function MatrizPermissoes({ supabase }: Props) {
         ) : membros.length === 0 ? (
           <EmptyState icon={Users} title="Nenhum membro na equipe ainda" description="Convide alguém pelo formulário acima para começar." />
         ) : (
-          <div className="overflow-x-auto">
+          <TopScrollTable>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-base-800 text-left">
@@ -233,7 +234,7 @@ export default function MatrizPermissoes({ supabase }: Props) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TopScrollTable>
         )}
       </div>
     </div>

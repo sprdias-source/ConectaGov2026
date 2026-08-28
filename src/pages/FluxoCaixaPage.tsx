@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { CalendarRange, ArrowUpCircle, ArrowDownCircle, ChevronLeft, ChevronRight } from 'lucide-react'
 import { PageHeader, Card, StatusBadge } from '../components/ui/Primitives'
+import TopScrollTable from '../components/ui/TopScrollTable'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useTransactions } from '../hooks/useTransactions'
 import { useClients } from '../hooks/useClients'
@@ -93,7 +94,7 @@ export default function FluxoCaixaPage() {
             <span className="w-1.5 h-1.5 rounded-full bg-accent-400" />
             Resumo Consolidado do Exercício — {year}
           </h3>
-          <div className="overflow-x-auto">
+          <TopScrollTable>
             <table className="w-full text-[12px]">
               <thead>
                 <tr className="text-left text-base-500 uppercase text-[10px] font-bold tracking-wider">
@@ -125,7 +126,7 @@ export default function FluxoCaixaPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TopScrollTable>
         </Card>
       </div>
 

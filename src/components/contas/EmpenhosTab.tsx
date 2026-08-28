@@ -11,6 +11,7 @@ import EmpenhoFormModal from './EmpenhoFormModal'
 import ClientPrefeiturasPanel from './ClientPrefeiturasPanel'
 import DeleteWithPasswordDialog from '../ui/DeleteWithPasswordDialog'
 import ErrorAlert from '../ui/ErrorAlert'
+import TopScrollTable from '../ui/TopScrollTable'
 import type { Empenho } from '../../types/domain'
 
 const MODO_LABELS: Record<string, string> = {
@@ -128,7 +129,7 @@ export default function EmpenhosTab() {
         ) : visibleEmpenhos.length === 0 ? (
           <EmptyState icon={FileSpreadsheet} title="Nenhum empenho registrado" description="Registre o primeiro empenho vinculado a uma licitação ganha para gerar comissões automaticamente." />
         ) : (
-          <div className="overflow-x-auto">
+          <TopScrollTable>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-base-800 text-left">
@@ -214,7 +215,7 @@ export default function EmpenhosTab() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TopScrollTable>
         )}
       </div>
 

@@ -6,6 +6,7 @@ import {
 } from '@dnd-kit/core'
 import { LayoutGrid, ChevronLeft, ChevronRight, ClipboardList, Pencil, GripVertical, Ban, CheckCircle2, Filter, ChevronDown } from 'lucide-react'
 import { PageHeader } from '../components/ui/Primitives'
+import TopScrollTable from '../components/ui/TopScrollTable'
 import { SeloHabilitacaoBadge } from '../components/ui/SeloHabilitacao'
 import BiddingFormModal from '../components/cadastros/BiddingFormModal'
 import Modal from '../components/ui/Modal'
@@ -679,7 +680,7 @@ export default function KanbanLicitacoesPage() {
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setArrastando(null)}>
           {boardWidth > 0 && (
             <div className="px-6 mt-4">
-              <div ref={topScrollRef} onScroll={handleScrollTopo} className="kanban-top-scroll overflow-x-auto overflow-y-hidden">
+              <div ref={topScrollRef} onScroll={handleScrollTopo} className="top-scrollbar overflow-x-auto overflow-y-hidden">
                 <div style={{ width: boardWidth, height: 1 }} />
               </div>
             </div>
@@ -730,7 +731,7 @@ export default function KanbanLicitacoesPage() {
             {ativas.length === 0 ? (
               <div className="p-10 text-center text-base-500 text-sm">Nenhuma licitação em andamento.</div>
             ) : (
-              <div className="overflow-x-auto">
+              <TopScrollTable>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-base-800 text-left">
@@ -780,7 +781,7 @@ export default function KanbanLicitacoesPage() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </TopScrollTable>
             )}
           </div>
         </div>

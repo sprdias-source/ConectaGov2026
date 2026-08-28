@@ -7,6 +7,7 @@ import ClientFormModal from './ClientFormModal'
 import ClientBiddingsModal from './ClientBiddingsModal'
 import DeleteWithPasswordDialog from '../ui/DeleteWithPasswordDialog'
 import ErrorAlert from '../ui/ErrorAlert'
+import TopScrollTable from '../ui/TopScrollTable'
 import { useClients } from '../../hooks/useClients'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import { useToast } from '../../hooks/useToast'
@@ -176,7 +177,7 @@ export default function ClientsTab() {
       ) : (
         <>
           <div className="hidden md:block bg-base-900/60 border border-base-700/50 rounded-xl overflow-hidden">
-            <div className="overflow-x-auto">
+            <TopScrollTable>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-base-800 text-left">
@@ -248,7 +249,7 @@ export default function ClientsTab() {
                 ))}
               </tbody>
             </table>
-            </div>
+            </TopScrollTable>
           </div>
 
           {/* Celular: cada cliente vira um card — evita a tabela de 6 colunas
