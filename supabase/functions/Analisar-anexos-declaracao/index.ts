@@ -192,9 +192,12 @@ async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeByte
   if (!uploadRes.ok) throw new Error(`Falha ao enviar "${displayName}" pro Gemini: ${await uploadRes.text()}`)
   const uploaded = await uploadRes.json()
 
+  // Arquivos grandes/escaneados podem passar bem de 40s em "PROCESSING" no
+  // Gemini antes de ficar ACTIVE (editais de até 60 páginas escaneadas já
+  // observados levando mais que isso) — espera até ~100s antes de desistir.
   let file = uploaded.file
   let tentativas = 0
-  while (file.state === 'PROCESSING' && tentativas < 20) {
+  while (file.state === 'PROCESSING' && tentativas < 50) {
     await new Promise((r) => setTimeout(r, 2000))
     const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${file.name}?key=${GEMINI_API_KEY}`)
     file = await checkRes.json()
