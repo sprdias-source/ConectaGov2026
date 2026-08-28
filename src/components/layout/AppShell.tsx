@@ -292,7 +292,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           ${collapsed ? 'w-16 p-3' : 'w-64 p-4'}
           lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:flex'}`}
       >
-        {collapsed ? (
+        {collapsed && !mobileOpen ? (
           <div
             className="relative flex flex-col gap-3 items-center flex-1 py-1 min-h-0"
             onMouseEnter={abrirEspiada}

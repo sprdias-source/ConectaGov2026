@@ -22,6 +22,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Operação',
     items: [
       { key: 'dashboard', label: 'Dashboard', path: '/', icon: LayoutDashboard },
+      { key: 'licitacoes', label: 'Licitações', path: '/kanban', icon: LayoutGrid },
       { key: 'cadastros', label: 'Cadastros', path: '/cadastros', icon: FolderKanban },
       { key: 'contas', label: 'Transações', path: '/contas', icon: Wallet },
       { key: 'extrato', label: 'Extrato OFX', path: '/extrato', icon: FileText },
@@ -31,7 +32,6 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Licitações',
     items: [
-      { key: 'licitacoes', label: 'Licitações', path: '/kanban', icon: LayoutGrid },
       { key: 'hoje', label: 'Hoje', path: '/hoje', icon: Sun },
       { key: 'agenda', label: 'Agenda', path: '/agenda', icon: CalendarDays },
       { key: 'central-prazos', label: 'Central de Prazos', path: '/central-prazos', icon: AlarmClock },
