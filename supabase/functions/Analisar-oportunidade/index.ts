@@ -325,11 +325,11 @@ async function processarAnalise(supabase: Supa, analysisRowId: string, edital: A
 
     const analise = JSON.parse(textoResposta)
 
-    await supabase.from('opportunity_analysis').update({ status: 'concluido', analise, erro_mensagem: null }).eq('id', analysisRowId)
+    await supabase.from('opportunity_analysis').update({ status: 'concluido', analise, erro_mensagem: null, updated_at: new Date().toISOString() }).eq('id', analysisRowId)
   } catch (err) {
     const mensagem = err instanceof Error ? err.message : String(err)
     console.error('Erro ao analisar oportunidade (segundo plano):', mensagem)
-    await supabase.from('opportunity_analysis').update({ status: 'erro', erro_mensagem: mensagem }).eq('id', analysisRowId)
+    await supabase.from('opportunity_analysis').update({ status: 'erro', erro_mensagem: mensagem, updated_at: new Date().toISOString() }).eq('id', analysisRowId)
   }
 }
 
@@ -379,7 +379,7 @@ Deno.serve(async (req: Request) => {
     let analysisRowId: string
     const { data: existente } = await supabase.from('opportunity_analysis').select('id').eq('opportunity_id', opportunityId).maybeSingle()
     if (existente) {
-      await supabase.from('opportunity_analysis').update({ status: 'processando', erro_mensagem: null }).eq('id', existente.id)
+      await supabase.from('opportunity_analysis').update({ status: 'processando', erro_mensagem: null, updated_at: new Date().toISOString() }).eq('id', existente.id)
       analysisRowId = existente.id as string
     } else {
       const { data: novo, error: insertError } = await supabase

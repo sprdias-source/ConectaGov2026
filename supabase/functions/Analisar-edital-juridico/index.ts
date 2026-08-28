@@ -371,11 +371,11 @@ async function processarAnaliseJuridica(supabase: Supa, analysisRowId: string, e
 
     const resultado = JSON.parse(textoResposta)
 
-    await supabase.from('bidding_analysis_juridica').update({ status: 'concluido', resultado, erro_mensagem: null }).eq('id', analysisRowId)
+    await supabase.from('bidding_analysis_juridica').update({ status: 'concluido', resultado, erro_mensagem: null, updated_at: new Date().toISOString() }).eq('id', analysisRowId)
   } catch (err) {
     const mensagem = err instanceof Error ? err.message : String(err)
     console.error('Erro ao analisar edital jurídico (segundo plano):', mensagem)
-    await supabase.from('bidding_analysis_juridica').update({ status: 'erro', erro_mensagem: mensagem }).eq('id', analysisRowId)
+    await supabase.from('bidding_analysis_juridica').update({ status: 'erro', erro_mensagem: mensagem, updated_at: new Date().toISOString() }).eq('id', analysisRowId)
   }
 }
 
@@ -430,7 +430,7 @@ Deno.serve(async (req: Request) => {
       .eq('tipo', tipo)
       .maybeSingle()
     if (existente) {
-      await supabase.from('bidding_analysis_juridica').update({ status: 'processando', erro_mensagem: null }).eq('id', existente.id)
+      await supabase.from('bidding_analysis_juridica').update({ status: 'processando', erro_mensagem: null, updated_at: new Date().toISOString() }).eq('id', existente.id)
       analysisRowId = existente.id as string
     } else {
       const { data: novo, error: insertError } = await supabase
