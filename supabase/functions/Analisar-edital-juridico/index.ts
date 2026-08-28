@@ -18,8 +18,21 @@
 // já consulta bidding_analysis_juridica periodicamente enquanto o status
 // for "processando", então não precisa mudar nada nela.
 //
+// FALLBACK PRA MISTRAL: o tier gratuito do Gemini limita a 20 requisições
+// por dia — quando a cota diária estoura (HTTP 429 com "PerDay" no corpo),
+// em vez de simplesmente devolver esse erro pro usuário, a function tenta
+// a MESMA extração via Mistral Document AI (endpoint OCR com extração
+// estruturada por schema, usa o modelo Pixtral por trás) como
+// alternativa gratuita, normalizando o resultado pro mesmo formato que o
+// Gemini já devolve — a tela consome o JSON sem saber qual das duas IAs
+// respondeu. Precisa da secret MISTRAL_API_KEY configurada; sem ela, o
+// erro de cota do Gemini sobe normalmente, sem fallback.
+//
 // VARIÁVEIS DE AMBIENTE NECESSÁRIAS (Supabase → Edge Functions → Secrets):
 // - GEMINI_API_KEY: a mesma chave já usada pela function Analisar-edital.
+// - MISTRAL_API_KEY: opcional — habilita o fallback acima quando a cota
+//   diária do Gemini estourar. Sem ela, esse fallback simplesmente não
+//   roda (comportamento igual ao de antes desta mudança).
 // - SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY já vêm injetadas
 //   automaticamente pelo Supabase em toda Edge Function.
 
@@ -32,6 +45,11 @@ const GOOGLE_CLIENT_ID = Deno.env.get('GOOGLE_DRIVE_CLIENT_ID')
 const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_DRIVE_CLIENT_SECRET')
 const GOOGLE_REFRESH_TOKEN = Deno.env.get('GOOGLE_DRIVE_REFRESH_TOKEN')
 const DRIVE_PREFIX = 'gdrive:'
+// Fallback pra quando a cota diária GRATUITA do Gemini estoura (20
+// requisições/dia no tier free) — sem isso, toda análise do dia parava
+// assim que a cota batesse o teto. Opcional: se não configurada, o erro de
+// cota do Gemini simplesmente sobe sem fallback, como já era antes.
+const MISTRAL_API_KEY = Deno.env.get('MISTRAL_API_KEY')
 
 // Embutido aqui em vez de importado de ../_shared/googleDrive.ts: essa
 // function é colada manualmente no Dashboard do Supabase (um arquivo por
@@ -127,6 +145,44 @@ const RESULTADO_SCHEMA = {
     },
   },
   required: ['pontos'],
+}
+
+// Mesmo formato de RESULTADO_SCHEMA, só que em JSON Schema padrão (tipos em
+// minúsculo, sem os "type: 'OBJECT'/'STRING'" do formato proprietário do
+// Gemini) — usado no fallback via Mistral Document AI, cujo modo
+// "json_schema" estrito (strict: true) exige que TODO campo declarado em
+// "properties" apareça também em "required" e que todo objeto tenha
+// "additionalProperties: false". Sem enum nos campos que os prompts mandam
+// "deixar vazio" quando não se aplicam (tipoPonto/probabilidade/prioridade
+// em alguns dos 3 tipos de análise) — um enum aqui rejeitaria a string
+// vazia que o próprio prompt pede.
+const RESULTADO_SCHEMA_MISTRAL = {
+  type: 'object',
+  properties: {
+    resumoGeral: { type: 'string' },
+    pontos: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          tipoPonto: { type: 'string' },
+          localizacao: { type: 'string' },
+          textoOriginal: { type: 'string' },
+          motivo: { type: 'string' },
+          fundamentoLegal: { type: 'string' },
+          jurisprudencia: { type: 'string' },
+          risco: { type: 'string' },
+          probabilidade: { type: 'string' },
+          prioridade: { type: 'string' },
+          sugestao: { type: 'string' },
+        },
+        required: ['tipoPonto', 'localizacao', 'textoOriginal', 'motivo', 'fundamentoLegal', 'jurisprudencia', 'risco', 'probabilidade', 'prioridade', 'sugestao'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['resumoGeral', 'pontos'],
+  additionalProperties: false,
 }
 
 const INTRO_ESCLARECIMENTO = `Você é um especialista em licitações públicas, com profundo conhecimento da Lei nº 14.133/2021, jurisprudência do TCU, Tribunais de Contas Estaduais e princípios da Administração Pública.
@@ -354,6 +410,88 @@ async function apagarArquivoGemini(fileName: string) {
 type Supa = ReturnType<typeof createClient>
 type Anexo = { id: string; name: string; storage_path: string; mime_type: string | null; size_bytes: number | null }
 
+type PontoJuridico = {
+  tipoPonto: string
+  localizacao: string
+  textoOriginal: string
+  motivo: string
+  fundamentoLegal: string
+  jurisprudencia: string
+  risco: string
+  probabilidade: string
+  prioridade: string
+  sugestao: string
+}
+type ResultadoJuridico = { resumoGeral: string; pontos: PontoJuridico[] }
+
+// Mesmo encoder já usado no broker do Drive (drive-storage/index.ts) — o
+// OCR da Mistral não aceita upload em streaming feito arquivo por arquivo
+// como o Gemini; o documento inteiro precisa ir em base64 dentro de um
+// "data:" URI no corpo JSON da requisição.
+function bytesParaBase64(bytes: Uint8Array): string {
+  let binario = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binario += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(binario)
+}
+
+async function baixarBytes(supabase: Supa, anexo: Anexo): Promise<Uint8Array> {
+  const downloadRes = await baixarAnexo(supabase, anexo.storage_path)
+  if (!downloadRes.ok || !downloadRes.body) throw new Error(`Falha ao baixar "${anexo.name}" do Storage/Drive`)
+  return new Uint8Array(await downloadRes.arrayBuffer())
+}
+
+// Fallback via Mistral Document AI (OCR endpoint com extração estruturada
+// por schema — usa o modelo Pixtral por trás). Formato confirmado na
+// documentação oficial (docs.mistral.ai/api/endpoint/ocr): o documento vai
+// como "document_url" mesmo sendo local, aceitando um data URI em base64;
+// a extração estruturada pede um "document_annotation_format" tipo
+// "json_schema" + um "document_annotation_prompt" com as instruções, e a
+// resposta vem em "document_annotation" como uma STRING json (precisa de
+// JSON.parse, não vem já como objeto).
+async function chamarMistralAnnotation(pdfBytes: Uint8Array, prompt: string): Promise<ResultadoJuridico> {
+  const base64 = bytesParaBase64(pdfBytes)
+  const res = await fetch('https://api.mistral.ai/v1/ocr', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MISTRAL_API_KEY}` },
+    body: JSON.stringify({
+      model: 'mistral-ocr-latest',
+      document: { type: 'document_url', document_url: `data:application/pdf;base64,${base64}` },
+      document_annotation_format: {
+        type: 'json_schema',
+        json_schema: { name: 'resultado_juridico', schema: RESULTADO_SCHEMA_MISTRAL, strict: true },
+      },
+      document_annotation_prompt: prompt,
+    }),
+  })
+  if (!res.ok) throw new Error(`Falha ao analisar com Mistral: ${await res.text()}`)
+  const data = await res.json()
+  if (!data.document_annotation) throw new Error('Mistral não retornou document_annotation')
+  return JSON.parse(data.document_annotation) as ResultadoJuridico
+}
+
+// A OCR da Mistral processa UM documento por chamada (diferente do Gemini,
+// que aceita edital + TR juntos numa única requisição) — chama uma vez por
+// documento e junta os resultados: "pontos" de todos concatenados,
+// "resumoGeral" de cada um emendado (raramente os dois documentos geram
+// resumos conflitantes o bastante pra isso ser um problema).
+async function tentarFallbackMistral(supabase: Supa, docs: Anexo[], tipo: Tipo): Promise<ResultadoJuridico> {
+  if (!MISTRAL_API_KEY) {
+    throw new Error('MISTRAL_API_KEY não configurada nesta function — sem fallback disponível.')
+  }
+  const prompt = montarPrompt(tipo)
+  const porDocumento = await Promise.all(docs.map(async (doc) => {
+    const bytes = await baixarBytes(supabase, doc)
+    return chamarMistralAnnotation(bytes, prompt)
+  }))
+  return {
+    resumoGeral: porDocumento.map((r) => r.resumoGeral).filter(Boolean).join('\n\n'),
+    pontos: porDocumento.flatMap((r) => r.pontos ?? []),
+  }
+}
+
 // Todo o trabalho pesado — roda depois da resposta HTTP já ter sido
 // devolvida (ver EdgeRuntime.waitUntil lá embaixo), por isso não conta
 // pro limite de tempo de execução síncrona.
@@ -406,20 +544,46 @@ async function processarAnaliseJuridica(supabase: Supa, analysisRowId: string, e
 
     for (const nome of arquivosGeminiParaApagar) apagarArquivoGemini(nome) // não precisa esperar terminar
 
-    if (!genRes.ok) throw new Error(`Falha ao analisar com Gemini: ${await genRes.text()}`)
-    const genData = await genRes.json()
-    const textoResposta = genData.candidates?.[0]?.content?.parts?.[0]?.text
-    if (!textoResposta) {
-      // finishReason 'MAX_TOKENS' é o caso comum de edital com muitos
-      // itens estourando o limite de saída — sem essa checagem, a
-      // mensagem de erro genérica não dava nenhuma pista do motivo real.
-      if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
-        throw new Error('A resposta do Gemini foi cortada por exceder o limite de tamanho (edital com muitos itens) — tente novamente ou reduza os anexos enviados')
+    let resultado: ResultadoJuridico
+    let provedor: 'gemini' | 'mistral' = 'gemini'
+
+    // fetchComRetry só devolve uma Response com status 429 (em vez de
+    // lançar) exatamente no caso de cota DIÁRIA esgotada — qualquer outro
+    // 429 já foi retentado e, se persistisse, teria lançado erro; qualquer
+    // outro 4xx não-retentável cai direto no "else" abaixo. Ou seja,
+    // chegar aqui com status 429 significa: acabou a cota gratuita de
+    // hoje do Gemini (20 requisições/dia) — tenta o mesmo documento via
+    // Mistral Document AI antes de desistir de vez.
+    if (genRes.status === 429) {
+      console.warn('[Analisar-edital-juridico] Cota diária do Gemini esgotada (429/PerDay) — tentando fallback via Mistral Document AI...')
+      try {
+        resultado = await tentarFallbackMistral(supabase, docs, tipo)
+        provedor = 'mistral'
+      } catch (fallbackErr) {
+        const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
+        throw new Error(`Cota diária do Gemini esgotada e o fallback via Mistral também falhou: ${fallbackMsg}`, { cause: fallbackErr })
       }
-      throw new Error('Gemini não retornou conteúdo na análise')
+    } else if (!genRes.ok) {
+      throw new Error(`Falha ao analisar com Gemini: ${await genRes.text()}`)
+    } else {
+      const genData = await genRes.json()
+      const textoResposta = genData.candidates?.[0]?.content?.parts?.[0]?.text
+      if (!textoResposta) {
+        // finishReason 'MAX_TOKENS' é o caso comum de edital com muitos
+        // itens estourando o limite de saída — sem essa checagem, a
+        // mensagem de erro genérica não dava nenhuma pista do motivo real.
+        if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+          throw new Error('A resposta do Gemini foi cortada por exceder o limite de tamanho (edital com muitos itens) — tente novamente ou reduza os anexos enviados')
+        }
+        throw new Error('Gemini não retornou conteúdo na análise')
+      }
+      resultado = JSON.parse(textoResposta) as ResultadoJuridico
     }
 
-    const resultado = JSON.parse(textoResposta)
+    // Log só pra diagnóstico (qual provedor de fato gerou o resultado) — o
+    // JSON gravado em "resultado" continua exatamente no mesmo formato dos
+    // dois provedores, então a tela não precisa saber qual respondeu.
+    console.log(`[Analisar-edital-juridico] Análise concluída via ${provedor}.`)
 
     await supabase.from('bidding_analysis_juridica').update({ status: 'concluido', resultado, erro_mensagem: null, updated_at: new Date().toISOString() }).eq('id', analysisRowId)
   } catch (err) {
