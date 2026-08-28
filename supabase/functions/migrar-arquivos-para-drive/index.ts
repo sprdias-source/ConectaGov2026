@@ -33,11 +33,146 @@
 // SUPABASE_SERVICE_ROLE_KEY (injetadas automaticamente).
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
-import { DRIVE_PREFIX, obterAccessTokenDrive, resolverPasta, enviarArquivoDrive, ehArquivoDrive, type Supa } from '../_shared/googleDrive.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const LIMITE_PADRAO_POR_CHAMADA = 15
+const GOOGLE_CLIENT_ID = Deno.env.get('GOOGLE_DRIVE_CLIENT_ID')
+const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_DRIVE_CLIENT_SECRET')
+const GOOGLE_REFRESH_TOKEN = Deno.env.get('GOOGLE_DRIVE_REFRESH_TOKEN')
+const DRIVE_PREFIX = 'gdrive:'
+const ROOT_FOLDER_NAME = 'ConectaGov Arquivos'
+
+type Supa = ReturnType<typeof createClient>
+
+function ehArquivoDrive(storagePath: string): boolean {
+  return storagePath.startsWith(DRIVE_PREFIX)
+}
+
+// Embutido aqui em vez de importado de ../_shared/googleDrive.ts: essa
+// function é colada manualmente no Dashboard do Supabase (um arquivo por
+// vez), e o bundler do editor não enxerga pastas irmãs fora da function —
+// só o deploy via CLI/git, que envia o repositório inteiro de uma vez, é que
+// consegue resolver esse import. Fica autossuficiente de propósito.
+async function obterAccessTokenDrive(): Promise<string> {
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REFRESH_TOKEN) {
+    throw new Error('Credenciais do Google Drive não configuradas nesta function (GOOGLE_DRIVE_CLIENT_ID/CLIENT_SECRET/REFRESH_TOKEN).')
+  }
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    client_secret: GOOGLE_CLIENT_SECRET,
+    refresh_token: GOOGLE_REFRESH_TOKEN,
+    grant_type: 'refresh_token',
+  })
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params,
+  })
+  if (!res.ok) throw new Error(`Falha ao renovar o acesso ao Google Drive: ${await res.text()}`)
+  const data = await res.json()
+  return data.access_token as string
+}
+
+// Resolve (criando se preciso) a cadeia de pastas do Drive correspondente
+// aos segmentos recebidos, sempre dentro de uma pasta raiz fixa
+// ("ConectaGov Arquivos") pra não espalhar arquivo solto na raiz do Drive
+// da empresa. Cacheia cada nível em google_drive_folders.
+async function resolverPasta(supabase: Supa, accessToken: string, segmentos: string[]): Promise<string> {
+  let parentId = 'root'
+  let caminhoAtual = ''
+  for (const segmento of [ROOT_FOLDER_NAME, ...segmentos]) {
+    caminhoAtual = caminhoAtual ? `${caminhoAtual}/${segmento}` : segmento
+
+    const { data: doCache } = await supabase
+      .from('google_drive_folders')
+      .select('folder_id')
+      .eq('path', caminhoAtual)
+      .maybeSingle()
+    if (doCache?.folder_id) {
+      parentId = doCache.folder_id as string
+      continue
+    }
+
+    const nomeEscapado = segmento.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    const consulta = `name='${nomeEscapado}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
+    const buscaRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(consulta)}&fields=files(id)&spaces=drive`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    )
+    if (!buscaRes.ok) throw new Error(`Falha ao procurar a pasta "${segmento}" no Drive: ${await buscaRes.text()}`)
+    const buscaJson = await buscaRes.json()
+    let folderId: string | undefined = buscaJson.files?.[0]?.id
+
+    if (!folderId) {
+      const criaRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: segmento, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] }),
+      })
+      if (!criaRes.ok) throw new Error(`Falha ao criar a pasta "${segmento}" no Drive: ${await criaRes.text()}`)
+      const criaJson = await criaRes.json()
+      folderId = criaJson.id as string
+
+      // Duas chamadas concorrentes pro MESMO caminho (ex: dois uploads ao
+      // mesmo tempo pra pasta de um cliente) podem passar pela busca acima
+      // sem achar nada (nenhuma das duas tinha criado a pasta ainda) e
+      // criar uma pasta DUPLICADA cada uma. Um upsert simples aqui faria
+      // "o último grava por cima" e deixaria a pasta perdedora órfã e
+      // duplicada no Drive, sem nada apontando pra ela. Em vez disso,
+      // tenta um INSERT puro (falha com violação de PK se a outra chamada
+      // já reivindicou este path primeiro) — quem perder a corrida usa o
+      // folder_id de quem ganhou e apaga a pasta duplicada que acabou de
+      // criar, convergindo as duas chamadas pra uma única pasta.
+      const { error: erroReivindicar } = await supabase
+        .from('google_drive_folders')
+        .insert({ path: caminhoAtual, folder_id: folderId })
+      if (erroReivindicar) {
+        const { data: doCacheAposCorrida } = await supabase
+          .from('google_drive_folders')
+          .select('folder_id')
+          .eq('path', caminhoAtual)
+          .maybeSingle()
+        if (doCacheAposCorrida?.folder_id && doCacheAposCorrida.folder_id !== folderId) {
+          const accessTokenLimpeza = accessToken
+          await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${accessTokenLimpeza}` },
+          }).catch(() => {})
+          folderId = doCacheAposCorrida.folder_id as string
+        }
+      }
+    }
+
+    parentId = folderId
+  }
+  return parentId
+}
+
+// Upload multipart "clássico" (metadados + conteúdo numa única requisição)
+// — suficiente pro limite de 20MB validado antes de chegar aqui; não
+// precisa do protocolo resumível do Drive, que só faz sentido pra arquivo
+// grande de verdade.
+async function enviarArquivoDrive(accessToken: string, folderId: string, nomeArquivo: string, mimeType: string, bytes: Uint8Array): Promise<string> {
+  const boundary = `conectagov_${crypto.randomUUID()}`
+  const encoder = new TextEncoder()
+  const metadados = JSON.stringify({ name: nomeArquivo, parents: [folderId] })
+  const corpo = new Blob([
+    encoder.encode(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadados}\r\n`),
+    encoder.encode(`--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`),
+    bytes,
+    encoder.encode(`\r\n--${boundary}--`),
+  ])
+
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body: corpo,
+  })
+  if (!res.ok) throw new Error(`Falha ao enviar "${nomeArquivo}" pro Drive: ${await res.text()}`)
+  const data = await res.json()
+  return data.id as string
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
