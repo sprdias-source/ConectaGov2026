@@ -21,7 +21,6 @@
 //   automaticamente pelo Supabase em toda Edge Function.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
-import { baixarAnexo } from '../_shared/googleDrive.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -29,6 +28,54 @@ const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!
 // Ver o mesmo comentário em Analisar-edital/index.ts sobre por que é fixo
 // (não 'gemini-flash-latest') e por que já trocou uma vez de 2.5 pra 3.5.
 const GEMINI_MODEL = 'gemini-3.5-flash'
+const GOOGLE_CLIENT_ID = Deno.env.get('GOOGLE_DRIVE_CLIENT_ID')
+const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_DRIVE_CLIENT_SECRET')
+const GOOGLE_REFRESH_TOKEN = Deno.env.get('GOOGLE_DRIVE_REFRESH_TOKEN')
+const DRIVE_PREFIX = 'gdrive:'
+
+// Embutido aqui em vez de importado de ../_shared/googleDrive.ts: essa
+// function é colada manualmente no Dashboard do Supabase (um arquivo por
+// vez), e o bundler do editor não enxerga pastas irmãs fora da function —
+// só o deploy via CLI/git, que envia o repositório inteiro de uma vez, é que
+// consegue resolver esse import. Fica autossuficiente de propósito.
+async function obterAccessTokenDrive(): Promise<string> {
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REFRESH_TOKEN) {
+    throw new Error('Credenciais do Google Drive não configuradas nesta function (GOOGLE_DRIVE_CLIENT_ID/CLIENT_SECRET/REFRESH_TOKEN).')
+  }
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    client_secret: GOOGLE_CLIENT_SECRET,
+    refresh_token: GOOGLE_REFRESH_TOKEN,
+    grant_type: 'refresh_token',
+  })
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params,
+  })
+  if (!res.ok) throw new Error(`Falha ao renovar o acesso ao Google Drive: ${await res.text()}`)
+  const data = await res.json()
+  return data.access_token as string
+}
+
+// Baixa um anexo de onde ele estiver — Google Drive (storage_path com
+// prefixo "gdrive:") ou Supabase Storage (caminho antigo, de antes da
+// migração pro Drive) — sempre devolvendo um Response comum, exatamente
+// como um fetch(signedUrl) faria.
+async function baixarAnexo(supabase: ReturnType<typeof createClient>, storagePath: string): Promise<Response> {
+  if (storagePath.startsWith(DRIVE_PREFIX)) {
+    const driveFileId = storagePath.slice(DRIVE_PREFIX.length)
+    const accessToken = await obterAccessTokenDrive()
+    return fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+  }
+  const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+    .from('client-documents')
+    .createSignedUrl(storagePath, 300)
+  if (signedUrlError || !signedUrlData) throw new Error('Não foi possível gerar a URL do arquivo no Storage')
+  return fetch(signedUrlData.signedUrl)
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
