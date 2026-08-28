@@ -41,6 +41,12 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!
+// 2º nível de fallback, ANTES do Mistral: a cota gratuita de 20
+// requisições/dia do Gemini é por PROJETO do Google Cloud, não por conta —
+// uma chave de um segundo projeto (criado à parte, de graça) dá mais
+// 20/dia sem custar nada e sem mudar o comportamento do modelo. Opcional:
+// sem ela, só existe a 1ª chave + o fallback do Mistral, como antes.
+const GEMINI_API_KEY_2 = Deno.env.get('GEMINI_API_KEY_2')
 const GOOGLE_CLIENT_ID = Deno.env.get('GOOGLE_DRIVE_CLIENT_ID')
 const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_DRIVE_CLIENT_SECRET')
 const GOOGLE_REFRESH_TOKEN = Deno.env.get('GOOGLE_DRIVE_REFRESH_TOKEN')
@@ -306,8 +312,8 @@ function montarPrompt(tipo: Tipo): string {
 // Upload em streaming pro Gemini Files API — idêntico ao usado em
 // Analisar-edital (o corpo da resposta do Storage é canalizado direto pro
 // corpo da requisição de upload, sem materializar o arquivo inteiro em memória).
-async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeBytes: number, mimeType: string, displayName: string) {
-  const startRes = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${GEMINI_API_KEY}`, {
+async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeBytes: number, mimeType: string, displayName: string, apiKey: string) {
+  const startRes = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`, {
     method: 'POST',
     headers: {
       'X-Goog-Upload-Protocol': 'resumable',
@@ -343,7 +349,7 @@ async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeByte
   let tentativas = 0
   while (file.state === 'PROCESSING' && tentativas < 50) {
     await new Promise((r) => setTimeout(r, 2000))
-    const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${file.name}?key=${GEMINI_API_KEY}`)
+    const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${file.name}?key=${apiKey}`)
     file = await checkRes.json()
     tentativas++
   }
@@ -353,7 +359,7 @@ async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeByte
     // nunca seria apagado — quem chama uploadParaGemini só recebe o
     // file.name em caso de sucesso, então sem isso o arquivo ficava órfão
     // até expirar sozinho em 48h.
-    await apagarArquivoGemini(file.name)
+    await apagarArquivoGemini(file.name, apiKey)
     throw new Error(`Arquivo não ficou pronto no Gemini (estado: ${file.state})`)
   }
 
@@ -399,9 +405,9 @@ async function fetchComRetry(url: string, init: RequestInit, tentativas = 4): Pr
   throw ultimoErro instanceof Error ? ultimoErro : new Error(String(ultimoErro))
 }
 
-async function apagarArquivoGemini(fileName: string) {
+async function apagarArquivoGemini(fileName: string, apiKey: string) {
   try {
-    await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${GEMINI_API_KEY}`, { method: 'DELETE' })
+    await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${apiKey}`, { method: 'DELETE' })
   } catch {
     // best-effort — o Gemini expira arquivos sozinho depois de um tempo
   }
@@ -495,7 +501,7 @@ async function tentarFallbackMistral(supabase: Supa, docs: Anexo[], tipo: Tipo):
 // Todo o trabalho pesado — roda depois da resposta HTTP já ter sido
 // devolvida (ver EdgeRuntime.waitUntil lá embaixo), por isso não conta
 // pro limite de tempo de execução síncrona.
-async function baixarEEnviarAoGemini(supabase: Supa, anexo: Anexo) {
+async function baixarEEnviarAoGemini(supabase: Supa, anexo: Anexo, apiKey: string) {
   const downloadRes = await baixarAnexo(supabase, anexo.storage_path)
   if (!downloadRes.ok || !downloadRes.body) throw new Error(`Falha ao baixar "${anexo.name}" do Storage/Drive`)
 
@@ -503,8 +509,46 @@ async function baixarEEnviarAoGemini(supabase: Supa, anexo: Anexo) {
   const sizeBytes = anexo.size_bytes ?? Number(downloadRes.headers.get('content-length') ?? 0)
   if (!sizeBytes) throw new Error(`Não foi possível determinar o tamanho de "${anexo.name}"`)
 
-  const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, anexo.name)
+  const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, anexo.name, apiKey)
   return { fileData: { file_data: { mime_type: mimeType, file_uri: geminiFile.uri } }, geminiFileName: geminiFile.name }
+}
+
+// Envia os documentos e gera a análise com UMA chave/projeto específico do
+// Gemini — extraído à parte pra poder ser chamado de novo com uma SEGUNDA
+// chave (2º projeto Google Cloud) se a 1ª bater a cota diária. Os arquivos
+// enviados ao Gemini ficam vinculados ao projeto dono da chave que fez o
+// upload, então trocar de chave exige reenviar os documentos — não dá pra
+// só reusar o file_uri já obtido com a chave anterior.
+async function tentarAnaliseComGemini(supabase: Supa, docs: Anexo[], tipo: Tipo, apiKey: string): Promise<Response> {
+  const arquivosGeminiParaApagar: string[] = []
+  const resultados = await Promise.all(docs.map(async (doc) => {
+    const r = await baixarEEnviarAoGemini(supabase, doc, apiKey)
+    arquivosGeminiParaApagar.push(r.geminiFileName)
+    return r
+  }))
+  const partesArquivos = resultados.map((r) => r.fileData)
+
+  const genRes = await fetchComRetry(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [...partesArquivos, { text: montarPrompt(tipo) }],
+        }],
+        generationConfig: {
+          response_mime_type: 'application/json',
+          response_schema: RESULTADO_SCHEMA,
+          maxOutputTokens: 8192,
+        },
+      }),
+    }
+  )
+
+  for (const nome of arquivosGeminiParaApagar) apagarArquivoGemini(nome, apiKey) // não precisa esperar terminar
+
+  return genRes
 }
 
 // Antes só lia o Edital — mesmo o prompt instruindo o Gemini a analisar
@@ -514,54 +558,40 @@ async function baixarEEnviarAoGemini(supabase: Supa, anexo: Anexo) {
 // dois quando o TR também tiver sido enviado — mesmo padrão já usado por
 // Analisar-edital (não jurídico).
 async function processarAnaliseJuridica(supabase: Supa, analysisRowId: string, edital: Anexo, tr: Anexo | undefined, tipo: Tipo) {
-  const arquivosGeminiParaApagar: string[] = []
   try {
     const docs = [edital, tr].filter((d): d is Anexo => !!d)
-    const resultados = await Promise.all(docs.map(async (doc) => {
-      const r = await baixarEEnviarAoGemini(supabase, doc)
-      arquivosGeminiParaApagar.push(r.geminiFileName)
-      return r
-    }))
-    const partesArquivos = resultados.map((r) => r.fileData)
 
-    const genRes = await fetchComRetry(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [...partesArquivos, { text: montarPrompt(tipo) }],
-          }],
-          generationConfig: {
-            response_mime_type: 'application/json',
-            response_schema: RESULTADO_SCHEMA,
-            maxOutputTokens: 8192,
-          },
-        }),
-      }
-    )
-
-    for (const nome of arquivosGeminiParaApagar) apagarArquivoGemini(nome) // não precisa esperar terminar
-
-    let resultado: ResultadoJuridico
-    let provedor: 'gemini' | 'mistral' = 'gemini'
+    let genRes = await tentarAnaliseComGemini(supabase, docs, tipo, GEMINI_API_KEY)
+    let provedor: 'gemini' | 'gemini-2' | 'mistral' = 'gemini'
 
     // fetchComRetry só devolve uma Response com status 429 (em vez de
     // lançar) exatamente no caso de cota DIÁRIA esgotada — qualquer outro
     // 429 já foi retentado e, se persistisse, teria lançado erro; qualquer
-    // outro 4xx não-retentável cai direto no "else" abaixo. Ou seja,
-    // chegar aqui com status 429 significa: acabou a cota gratuita de
-    // hoje do Gemini (20 requisições/dia) — tenta o mesmo documento via
-    // Mistral Document AI antes de desistir de vez.
+    // outro 4xx não-retentável cai direto no "else" abaixo.
+    //
+    // 2º nível: se a 1ª chave bateu a cota diária e existe uma 2ª chave
+    // configurada (de um projeto Google Cloud diferente — a cota de 20
+    // req/dia é por projeto, não por conta), tenta de novo com ela antes
+    // de partir pro Mistral.
+    if (genRes.status === 429 && GEMINI_API_KEY_2) {
+      console.warn('[Analisar-edital-juridico] Cota diária da 1ª chave do Gemini esgotada — tentando 2ª chave (projeto Google Cloud separado)...')
+      genRes = await tentarAnaliseComGemini(supabase, docs, tipo, GEMINI_API_KEY_2)
+      provedor = 'gemini-2'
+    }
+
+    let resultado: ResultadoJuridico
+
+    // Chegar aqui ainda com status 429 significa: acabou a cota gratuita
+    // de hoje em TODAS as chaves do Gemini configuradas — 3º nível, tenta
+    // o mesmo documento via Mistral Document AI antes de desistir de vez.
     if (genRes.status === 429) {
-      console.warn('[Analisar-edital-juridico] Cota diária do Gemini esgotada (429/PerDay) — tentando fallback via Mistral Document AI...')
+      console.warn('[Analisar-edital-juridico] Cota diária do Gemini esgotada em todas as chaves configuradas — tentando fallback via Mistral Document AI...')
       try {
         resultado = await tentarFallbackMistral(supabase, docs, tipo)
         provedor = 'mistral'
       } catch (fallbackErr) {
         const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
-        throw new Error(`Cota diária do Gemini esgotada e o fallback via Mistral também falhou: ${fallbackMsg}`, { cause: fallbackErr })
+        throw new Error(`Cota diária do Gemini esgotada (todas as chaves) e o fallback via Mistral também falhou: ${fallbackMsg}`, { cause: fallbackErr })
       }
     } else if (!genRes.ok) {
       throw new Error(`Falha ao analisar com Gemini: ${await genRes.text()}`)
