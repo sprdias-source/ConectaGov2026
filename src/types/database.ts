@@ -603,6 +603,7 @@ export type Database = {
           created_at: string
           data_abertura: string
           data_cadastro: string
+          data_homologacao: string | null
           dias_validade_proposta: string | null
           proposta_readequada_enviada_em: string | null
           proposta_readequada_assinada_em: string | null
@@ -644,6 +645,7 @@ export type Database = {
           created_at?: string
           data_abertura: string
           data_cadastro?: string
+          data_homologacao?: string | null
           dias_validade_proposta?: string | null
           proposta_readequada_enviada_em?: string | null
           proposta_readequada_assinada_em?: string | null
@@ -685,6 +687,7 @@ export type Database = {
           created_at?: string
           data_abertura?: string
           data_cadastro?: string
+          data_homologacao?: string | null
           dias_validade_proposta?: string | null
           proposta_readequada_enviada_em?: string | null
           proposta_readequada_assinada_em?: string | null

@@ -61,9 +61,9 @@ import type { AnaliseEdital, AttachedFile, Bidding, BiddingChecklistItem, Biddin
 const ETAPAS_TRILHA: BiddingEtapa[] = [
   'Análise de Edital',
   'Montagem de Documentação',
-  'Proposta Enviada',
-  'Disputa de Lances',
+  'Proposta Enviada para Plataforma',
   'Fase Recursal',
+  'Aguardando Pregoeiro',
   'Adjudicada e Homologada',
 ]
 

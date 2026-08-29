@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   DndContext, DragOverlay, PointerSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors,
   type DragEndEvent, type DragStartEvent,
 } from '@dnd-kit/core'
-import { LayoutGrid, ChevronLeft, ChevronRight, ClipboardList, Pencil, GripVertical, Ban, CheckCircle2, Filter, ChevronDown } from 'lucide-react'
+import { LayoutGrid, ChevronLeft, ChevronRight, ClipboardList, Pencil, GripVertical, Ban, Filter, ChevronDown } from 'lucide-react'
 import { PageHeader } from '../components/ui/Primitives'
 import TopScrollTable from '../components/ui/TopScrollTable'
 import { SeloHabilitacaoBadge } from '../components/ui/SeloHabilitacao'
@@ -82,22 +82,53 @@ function EncerrarDialog({ bidding, onClose }: { bidding: Bidding | null; onClose
 const ETAPAS: BiddingEtapa[] = [
   'Análise de Edital',
   'Montagem de Documentação',
-  'Proposta Enviada',
-  'Disputa de Lances',
+  'Proposta Enviada para Plataforma',
   'Fase Recursal',
+  'Aguardando Pregoeiro',
   'Adjudicada e Homologada',
 ]
 
 const CORES_COLUNA: Record<string, string> = {
   'Análise de Edital': 'border-t-base-500',
   'Montagem de Documentação': 'border-t-warning-500',
-  'Proposta Enviada': 'border-t-accent-500',
-  'Disputa de Lances': 'border-t-accent-400',
+  'Proposta Enviada para Plataforma': 'border-t-accent-500',
   'Fase Recursal': 'border-t-negative-400',
+  'Aguardando Pregoeiro': 'border-t-accent-400',
   'Adjudicada e Homologada': 'border-t-positive-500',
 }
 
-type Visualizacao = 'quadro' | 'lista' | 'concluidas'
+const CORES_COLUNA_RESULTADO: Record<'Perdeu' | 'Cancelada' | 'Desistiu', string> = {
+  Perdeu: 'border-t-base-600',
+  Cancelada: 'border-t-warning-500',
+  Desistiu: 'border-t-negative-400',
+}
+
+// Segmentos que o filtro de etapas do quadro pode esconder — cobre as
+// colunas de etapa do funil e as colunas de resultado final, que agora são
+// continuação do mesmo quadro (ver "Concluídas" antiga, removida como aba
+// separada). A ordem aqui é a ordem em que as colunas aparecem no quadro.
+type SegmentoQuadro = 'sem-etapa' | BiddingEtapa | 'ganhas-pendencia' | 'ganhas-sem-pendencia' | 'Perdeu' | 'Cancelada' | 'Desistiu'
+
+const SEGMENTOS_QUADRO: { id: SegmentoQuadro; label: string }[] = [
+  { id: 'sem-etapa', label: 'Sem Etapa' },
+  ...ETAPAS.map((etapa) => ({ id: etapa as SegmentoQuadro, label: etapa })),
+  { id: 'ganhas-pendencia', label: 'Ganha — Pendência' },
+  { id: 'ganhas-sem-pendencia', label: 'Ganha — Sem Pendência' },
+  { id: 'Perdeu', label: 'Perdeu' },
+  { id: 'Cancelada', label: 'Cancelada' },
+  { id: 'Desistiu', label: 'Desistiu' },
+]
+
+type Visualizacao = 'quadro' | 'lista'
+
+const mesCompetencia = (b: Bidding) => b.dataAbertura.slice(0, 7) // "YYYY-MM"
+
+// Filtro de mês (competência = data do pregão) + cliente, aplicado ao
+// quadro inteiro — não só às colunas de resultado final como antes.
+// Função de módulo (não fechada sobre estado do componente) pra poder ser
+// usada dentro de vários useMemo sem precisar entrar como dependência.
+const passaFiltroMesCliente = (b: Bidding, mesFiltro: string, clienteFiltroId: string) =>
+  (mesFiltro === 'todos' || mesCompetencia(b) === mesFiltro) && (!clienteFiltroId || b.clientId === clienteFiltroId)
 
 // Quando o edital não declara um valor total explícito, valorLicitado fica
 // 0 (a IA nunca inventa esse número somando os itens) — cai pra
@@ -237,17 +268,14 @@ function CardLicitacaoGanha({ b, clienteNome, badges, valorGanhoCalculado }: { b
   )
 }
 
-const CORES_COLUNA_RESULTADO: Record<'Ganhou' | 'Perdeu' | 'Cancelada' | 'Desistiu', string> = {
-  Ganhou: 'border-t-positive-500',
-  Perdeu: 'border-t-base-600',
-  Cancelada: 'border-t-warning-500',
-  Desistiu: 'border-t-negative-400',
-}
-
-// Card de uma licitação já encerrada (aba Concluídas) — só leitura, sem
-// arrastar nem botões de mudar etapa, já que o processo terminou. Mostra
-// até qual etapa ela chegou (congelada desde então, ver marcarResultado em
-// useBiddings.ts, que nunca mexe em `etapa`) como registro de análise.
+// Card de uma licitação já encerrada — só leitura, sem arrastar nem botões
+// de mudar etapa, já que o processo terminou. Mostra até qual etapa ela
+// chegou (congelada desde então, ver marcarResultado em useBiddings.ts, que
+// nunca mexe em `etapa`) como registro de análise. Pra "Ganhou", mostra a
+// Data de Homologação (campo próprio, ver tentarPreencherValorGanhoAutomatico
+// em useBiddings.ts) como data principal de conclusão, com a última
+// atualização do cadastro como informação secundária — as duas podem ser
+// bem diferentes, já que updatedAt muda a cada edição, mesmo meses depois.
 function CardLicitacaoConcluida({ b, clienteNome, valorGanhoCalculado }: { b: Bidding; clienteNome: string; valorGanhoCalculado?: number }) {
   const ganhou = b.status === 'Ganhou'
   const valorExibido = ganhou ? (b.valorOfertadoReal ?? valorGanhoCalculado ?? valorExibicaoEdital(b)) : valorExibicaoEdital(b)
@@ -264,16 +292,24 @@ function CardLicitacaoConcluida({ b, clienteNome, valorGanhoCalculado }: { b: Bi
       </span>
       <div className="flex items-center justify-between mt-1">
         <span className={`text-[11px] font-mono font-semibold ${corValor}`}>{formatBRL(valorExibido)}</span>
-        <span className="text-[10px] text-base-500">Concluída em {new Date(b.updatedAt).toLocaleDateString('pt-BR')}</span>
+        {ganhou && b.dataHomologacao ? (
+          <div className="text-right">
+            <span className="block text-[10px] text-base-500">Homologada em {new Date(b.dataHomologacao + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+            <span className="block text-[9px] text-base-600">atualizado {new Date(b.updatedAt).toLocaleDateString('pt-BR')}</span>
+          </div>
+        ) : (
+          <span className="text-[10px] text-base-500">Concluída em {new Date(b.updatedAt).toLocaleDateString('pt-BR')}</span>
+        )}
       </div>
     </Link>
   )
 }
 
 function ColunaKanban({ id, titulo, cor, itens, droppable = true, children }: { id: string; titulo: string; cor?: string; itens: number; droppable?: boolean; children: React.ReactNode }) {
-  // droppable=false pras colunas que só mostram informação (ex: "Ganhas —
-  // Pendência") — sem isso, a coluna acendia como "pode soltar aqui"
-  // durante o arraste mesmo não fazendo nada ao soltar de verdade.
+  // droppable=false pras colunas que só mostram informação (ex: "Ganha —
+  // Pendência", colunas de resultado final) — sem isso, a coluna acendia
+  // como "pode soltar aqui" durante o arraste mesmo não fazendo nada ao
+  // soltar de verdade.
   const { setNodeRef, isOver } = useDroppable({ id, disabled: !droppable })
   return (
     <div
@@ -308,7 +344,11 @@ export default function KanbanLicitacoesPage() {
 
   const [visualizacao, setVisualizacao] = useState<Visualizacao>(() => {
     try {
-      return (localStorage.getItem('cg_kanban_visualizacao') as Visualizacao) || 'quadro'
+      const salvo = localStorage.getItem('cg_kanban_visualizacao')
+      // A aba "concluidas" não existe mais (virou continuação do próprio
+      // quadro) — quem tinha essa preferência salva de uma versão anterior
+      // cai pra "quadro" em vez de ficar numa visualização inexistente.
+      return salvo === 'lista' ? 'lista' : 'quadro'
     } catch {
       return 'quadro'
     }
@@ -357,10 +397,11 @@ export default function KanbanLicitacoesPage() {
 
   // Licitações "Ganhou" continuam fora do funil de etapas, mas não somem
   // de vista enquanto ainda falta fechar o ciclo. Só Proposta Readequada
-  // gerada e Contrato assinado anexado TRAVAM a saída do Kanban — Empenho
-  // não é regra (nem toda prefeitura empenha de fato, ou pode levar meses),
-  // então aparece só como aviso informativo, nunca segurando o card aqui
-  // pra sempre esperando algo que talvez nunca aconteça.
+  // gerada e Contrato assinado anexado TRAVAM a saída da coluna "Ganha —
+  // Pendência" — Empenho não é regra (nem toda prefeitura empenha de fato,
+  // ou pode levar meses), então aparece só como aviso informativo, nunca
+  // segurando o card aqui pra sempre esperando algo que talvez nunca
+  // aconteça.
   const biddingIdsComEmpenho = useMemo(() => new Set(empenhos.map((e) => e.biddingId)), [empenhos])
   const ganhasComBadges = useMemo(() => {
     return biddings
@@ -377,9 +418,9 @@ export default function KanbanLicitacoesPage() {
     () => ganhasComBadges.filter((x) => x.badges.some((bd) => bd.bloqueante)),
     [ganhasComBadges]
   )
-  // Ganhou, mas já resolveu tudo que travava a saída do Kanban (Proposta
-  // Readequada + Contrato) — não aparece mais no quadro nem na coluna
-  // "Ganhas — Pendência", só na aba Concluídas.
+  // Ganhou, mas já resolveu tudo que travava a saída de "Ganha — Pendência"
+  // (Proposta Readequada + Contrato) — vira parte da coluna "Ganha — Sem
+  // Pendência", a última etapa antes do card sair de vista de vez.
   const ganhasResolvidas = useMemo(
     () => ganhasComBadges.filter((x) => !x.badges.some((bd) => bd.bloqueante)).map((x) => x.bidding),
     [ganhasComBadges]
@@ -391,7 +432,7 @@ export default function KanbanLicitacoesPage() {
   // pro valor de participação (que é só o que decidimos disputar, não o
   // que de fato foi adjudicado). Busca em lote (uma query só) os itens de
   // TODAS as licitações "Ganhas" ativas (pendentes e já concluídas), pra
-  // servir tanto a coluna "Ganhas — Pendência" quanto a aba Concluídas.
+  // servir tanto a coluna "Ganha — Pendência" quanto "Ganha — Sem Pendência".
   const idsTodasGanhas = useMemo(() => ganhasComBadges.map((x) => x.bidding.id), [ganhasComBadges])
   const { items: itensDasGanhas } = useBiddingItemsPorLicitacoes(idsTodasGanhas)
   const valorGanhoPorLicitacao = useMemo(() => {
@@ -403,58 +444,30 @@ export default function KanbanLicitacoesPage() {
     return mapa
   }, [idsTodasGanhas, itensDasGanhas])
 
-  // Aba Concluídas: licitações que hoje simplesmente somem do Kanban assim
-  // que resolvem — Ganhou já sem pendência, ou Perdeu/Cancelada/Desistiu
-  // (essas últimas já saem de vista na hora, não têm pendência nenhuma pra
-  // esperar). "Mês de competência" usa a data do pregão (dataAbertura, o
-  // mesmo campo que já identifica a licitação em qualquer outra tela), não
-  // a data em que foi encerrada — essa aparece só como informação no card.
-  const concluidas = useMemo(() => {
-    const perdidasCanceladasDesistidas = biddings.filter(
-      (b) => b.isActive && (b.status === 'Perdeu' || b.status === 'Cancelada' || b.status === 'Desistiu')
-    )
-    return [...ganhasResolvidas, ...perdidasCanceladasDesistidas]
-  }, [biddings, ganhasResolvidas])
-
-  const mesCompetencia = (b: Bidding) => b.dataAbertura.slice(0, 7) // "YYYY-MM"
+  // Filtro de mês (competência) + cliente + etapas visíveis — vale pro
+  // quadro inteiro, do "Sem Etapa" até o resultado final, não só pra parte
+  // de resultado como antes (que era uma aba própria "Concluídas").
   const mesAtual = useMemo(() => todayLocalISO().slice(0, 7), [])
-  const [mesFiltro, setMesFiltro] = useState<string>(mesAtual)
+  const [mesFiltro, setMesFiltro] = useState<string>('todos')
   const [clienteFiltroId, setClienteFiltroId] = useState<string>('')
+  const [segmentosOcultos, setSegmentosOcultos] = useState<Set<SegmentoQuadro>>(new Set())
   const [gavetaAberta, setGavetaAberta] = useState(false)
 
-  // Meses com pelo menos uma concluída, mais recente primeiro — o mês
-  // atual sempre aparece na lista mesmo vazio, pra sempre dar pra voltar
+  const universoQuadro = useMemo(() => biddings.filter((b) => b.isActive), [biddings])
+
+  // Meses com pelo menos uma licitação no quadro, mais recente primeiro — o
+  // mês atual sempre aparece na lista mesmo vazio, pra sempre dar pra voltar
   // pra ele explicitamente.
   const mesesDisponiveis = useMemo(() => {
-    const meses = new Set(concluidas.map(mesCompetencia))
+    const meses = new Set(universoQuadro.map(mesCompetencia))
     meses.add(mesAtual)
     return Array.from(meses).sort((a, b) => b.localeCompare(a))
-  }, [concluidas, mesAtual])
+  }, [universoQuadro, mesAtual])
 
-  const clientesComConcluida = useMemo(() => {
-    const ids = new Set(concluidas.map((b) => b.clientId))
+  const clientesDoQuadro = useMemo(() => {
+    const ids = new Set(universoQuadro.map((b) => b.clientId))
     return clients.filter((c) => ids.has(c.id)).sort((a, b) => a.name.localeCompare(b.name))
-  }, [concluidas, clients])
-
-  const concluidasFiltradas = useMemo(() => {
-    return concluidas.filter((b) => {
-      if (mesFiltro !== 'todos' && mesCompetencia(b) !== mesFiltro) return false
-      if (clienteFiltroId && b.clientId !== clienteFiltroId) return false
-      return true
-    })
-  }, [concluidas, mesFiltro, clienteFiltroId])
-
-  const concluidasPorStatus = useMemo(() => {
-    const grupos: Record<'Ganhou' | 'Perdeu' | 'Cancelada' | 'Desistiu', Bidding[]> = {
-      Ganhou: [], Perdeu: [], Cancelada: [], Desistiu: [],
-    }
-    for (const b of concluidasFiltradas) {
-      if (b.status === 'Ganhou' || b.status === 'Perdeu' || b.status === 'Cancelada' || b.status === 'Desistiu') {
-        grupos[b.status].push(b)
-      }
-    }
-    return grupos
-  }, [concluidasFiltradas])
+  }, [universoQuadro, clients])
 
   const formatarMesLabel = (mes: string) => {
     if (mes === 'todos') return 'Todos os meses'
@@ -463,49 +476,54 @@ export default function KanbanLicitacoesPage() {
     return (mes === mesAtual ? `${nome} (atual)` : nome).replace(/^\w/, (c) => c.toUpperCase())
   }
 
+  const alternarSegmento = (id: SegmentoQuadro) => {
+    setSegmentosOcultos((prev) => {
+      const novo = new Set(prev)
+      if (novo.has(id)) novo.delete(id)
+      else novo.add(id)
+      return novo
+    })
+  }
+
   const colunas = useMemo(() => {
-    const semEtapa = ativas.filter((b) => !b.etapa)
+    const ativasFiltradas = ativas.filter((b) => passaFiltroMesCliente(b, mesFiltro, clienteFiltroId))
+    const semEtapa = ativasFiltradas.filter((b) => !b.etapa)
     const porEtapa = ETAPAS.map((etapa) => ({
       etapa,
-      itens: ativas.filter((b) => b.etapa === etapa),
+      itens: ativasFiltradas.filter((b) => b.etapa === etapa),
     }))
     return { semEtapa, porEtapa }
-  }, [ativas])
+  }, [ativas, mesFiltro, clienteFiltroId])
 
-  // Barra de rolagem duplicada no topo do quadro: o quadro pode ficar bem
-  // mais alto que a tela (colunas com muitos cards), e a barra nativa do
-  // navegador só aparece embaixo de tudo, fora da área visível — obrigando
-  // a rolar a página inteira só pra alcançá-la. Essa segunda barra, fixa
-  // logo abaixo do cabeçalho, controla o mesmo scroll horizontal — arrastar
-  // ela move o quadro, sem precisar descer a página. O ResizeObserver
-  // mantém a largura do "fantasma" igual à largura real do conteúdo
-  // (colunas somadas), que muda conforme licitações entram/saem.
-  const boardScrollRef = useRef<HTMLDivElement>(null)
-  const boardContentRef = useRef<HTMLDivElement>(null)
-  const topScrollRef = useRef<HTMLDivElement>(null)
-  const [boardWidth, setBoardWidth] = useState(0)
-  const sincronizandoRef = useRef<'topo' | 'quadro' | null>(null)
+  const ganhasComPendenciaFiltradas = useMemo(
+    () => ganhasComPendencia.filter((x) => passaFiltroMesCliente(x.bidding, mesFiltro, clienteFiltroId)),
+    [ganhasComPendencia, mesFiltro, clienteFiltroId]
+  )
+  const ganhasSemPendenciaFiltradas = useMemo(
+    () => ganhasResolvidas.filter((b) => passaFiltroMesCliente(b, mesFiltro, clienteFiltroId)),
+    [ganhasResolvidas, mesFiltro, clienteFiltroId]
+  )
+  const perdeuFiltradas = useMemo(
+    () => biddings.filter((b) => b.isActive && b.status === 'Perdeu' && passaFiltroMesCliente(b, mesFiltro, clienteFiltroId)),
+    [biddings, mesFiltro, clienteFiltroId]
+  )
+  const canceladaFiltradas = useMemo(
+    () => biddings.filter((b) => b.isActive && b.status === 'Cancelada' && passaFiltroMesCliente(b, mesFiltro, clienteFiltroId)),
+    [biddings, mesFiltro, clienteFiltroId]
+  )
+  const desistiuFiltradas = useMemo(
+    () => biddings.filter((b) => b.isActive && b.status === 'Desistiu' && passaFiltroMesCliente(b, mesFiltro, clienteFiltroId)),
+    [biddings, mesFiltro, clienteFiltroId]
+  )
 
-  useEffect(() => {
-    const conteudo = boardContentRef.current
-    if (!conteudo) return
-    const observer = new ResizeObserver(() => setBoardWidth(conteudo.scrollWidth))
-    observer.observe(conteudo)
-    return () => observer.disconnect()
-  }, [])
-
-  const handleScrollTopo = () => {
-    if (sincronizandoRef.current === 'quadro') { sincronizandoRef.current = null; return }
-    if (!boardScrollRef.current || !topScrollRef.current) return
-    sincronizandoRef.current = 'topo'
-    boardScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft
-  }
-  const handleScrollQuadro = () => {
-    if (sincronizandoRef.current === 'topo') { sincronizandoRef.current = null; return }
-    if (!boardScrollRef.current || !topScrollRef.current) return
-    sincronizandoRef.current = 'quadro'
-    topScrollRef.current.scrollLeft = boardScrollRef.current.scrollLeft
-  }
+  const totalVisivel =
+    colunas.semEtapa.length +
+    colunas.porEtapa.reduce((acc, x) => acc + x.itens.length, 0) +
+    ganhasComPendenciaFiltradas.length +
+    ganhasSemPendenciaFiltradas.length +
+    perdeuFiltradas.length +
+    canceladaFiltradas.length +
+    desistiuFiltradas.length
 
   const irParaEtapa = (bidding: Bidding, etapa: BiddingEtapa | null) => {
     if (bidding.etapa === etapa) return
@@ -585,19 +603,11 @@ export default function KanbanLicitacoesPage() {
             >
               <ClipboardList className="w-3.5 h-3.5" /> Lista
             </button>
-            <button
-              onClick={() => mudarVisualizacao('concluidas')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-semibold transition ${
-                visualizacao === 'concluidas' ? 'bg-accent-500/15 text-accent-300' : 'text-base-500 hover:text-base-300'
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" /> Concluídas
-            </button>
           </div>
         }
       />
 
-      {visualizacao === 'concluidas' && (
+      {visualizacao === 'quadro' && (
         <div className="px-6 mt-4 flex flex-col gap-4">
           <div className="flex items-center gap-3 flex-wrap bg-base-900/60 border border-base-700/50 rounded-xl p-3">
             <button
@@ -610,7 +620,10 @@ export default function KanbanLicitacoesPage() {
             <span className="text-[12px] text-base-500">
               Mostrando <strong className="text-base-200 font-semibold">{formatarMesLabel(mesFiltro)}</strong>
               {clienteFiltroId && <> · <strong className="text-base-200 font-semibold">{clientName(clienteFiltroId)}</strong></>}
-              {' '}· <strong className="text-base-200 font-semibold">{concluidasFiltradas.length}</strong> licitaç{concluidasFiltradas.length === 1 ? 'ão' : 'ões'}
+              {segmentosOcultos.size > 0 && (
+                <> · <strong className="text-base-200 font-semibold">{SEGMENTOS_QUADRO.length - segmentosOcultos.size}</strong> de {SEGMENTOS_QUADRO.length} etapas</>
+              )}
+              {' '}· <strong className="text-base-200 font-semibold">{totalVisivel}</strong> licitaç{totalVisivel === 1 ? 'ão' : 'ões'}
             </span>
           </div>
 
@@ -644,75 +657,122 @@ export default function KanbanLicitacoesPage() {
                 <span className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Cliente</span>
                 <Select value={clienteFiltroId} onChange={(e) => setClienteFiltroId(e.target.value)}>
                   <option value="">Todos os clientes</option>
-                  {clientesComConcluida.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {clientesDoQuadro.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Etapas visíveis no quadro</span>
+                  {segmentosOcultos.size > 0 && (
+                    <button onClick={() => setSegmentosOcultos(new Set())} className="text-[11px] font-semibold text-accent-300 hover:underline">
+                      Mostrar todas
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {SEGMENTOS_QUADRO.map((seg) => {
+                    const visivel = !segmentosOcultos.has(seg.id)
+                    return (
+                      <button
+                        key={seg.id}
+                        onClick={() => alternarSegmento(seg.id)}
+                        className={`px-3 py-1.5 rounded-full text-[12px] font-bold transition ${
+                          visivel ? 'bg-accent-500 text-base-950' : 'bg-base-850 border border-base-700 text-base-500 hover:text-base-300'
+                        }`}
+                      >
+                        {seg.label}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
             </div>
           )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {(['Ganhou', 'Perdeu', 'Cancelada', 'Desistiu'] as const).map((status) => {
-              const itens = concluidasPorStatus[status]
-              const titulo = status === 'Ganhou' ? 'Ganhou — Concluída' : status
-              return (
-                <div key={status} className={`bg-base-900/40 border border-base-800 border-t-2 ${CORES_COLUNA_RESULTADO[status]} rounded-xl p-3`}>
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-base-400">{titulo}</p>
-                    <span className="text-[10px] font-bold bg-base-800 text-base-400 rounded-full px-2 py-0.5">{itens.length}</span>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    {itens.length === 0 ? (
-                      <p className="text-[11px] text-base-600 italic text-center py-6">Nenhuma licitação aqui</p>
-                    ) : (
-                      itens.map((b) => (
-                        <CardLicitacaoConcluida key={b.id} b={b} clienteNome={clientName(b.clientId)} valorGanhoCalculado={valorGanhoPorLicitacao.get(b.id)} />
-                      ))
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
         </div>
       )}
 
       {visualizacao === 'quadro' && (
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setArrastando(null)}>
-          {boardWidth > 0 && (
-            <div className="px-6 mt-4">
-              <div ref={topScrollRef} onScroll={handleScrollTopo} className="top-scrollbar overflow-x-auto overflow-y-hidden">
-                <div style={{ width: boardWidth, height: 1 }} />
-              </div>
-            </div>
-          )}
-          <div ref={boardScrollRef} onScroll={handleScrollQuadro} className="px-6 mt-2 overflow-x-auto">
-            <div ref={boardContentRef} className="flex gap-3 min-w-max pb-4">
-              <ColunaKanban id="sem-etapa" titulo="Sem Etapa" itens={colunas.semEtapa.length}>
-                {colunas.semEtapa.length === 0 ? (
-                  <p className="text-[11px] text-base-600 italic text-center py-6">Arraste um card aqui pra tirar a etapa</p>
-                ) : (
-                  colunas.semEtapa.map(renderCard)
+          <div className="px-6 mt-2">
+            <TopScrollTable>
+              <div className="flex gap-3 min-w-max pb-4">
+                {!segmentosOcultos.has('sem-etapa') && (
+                  <ColunaKanban id="sem-etapa" titulo="Sem Etapa" itens={colunas.semEtapa.length}>
+                    {colunas.semEtapa.length === 0 ? (
+                      <p className="text-[11px] text-base-600 italic text-center py-6">Arraste um card aqui pra tirar a etapa</p>
+                    ) : (
+                      colunas.semEtapa.map(renderCard)
+                    )}
+                  </ColunaKanban>
                 )}
-              </ColunaKanban>
 
-              {colunas.porEtapa.map(({ etapa, itens }) => (
-                <ColunaKanban key={etapa} id={etapa} titulo={etapa} cor={CORES_COLUNA[etapa]} itens={itens.length}>
-                  {itens.length === 0 ? (
-                    <p className="text-[11px] text-base-600 italic text-center py-6">Nenhuma licitação aqui</p>
-                  ) : (
-                    itens.map(renderCard)
-                  )}
-                </ColunaKanban>
-              ))}
-
-              {ganhasComPendencia.length > 0 && (
-                <ColunaKanban id="ganhas-pendencia" titulo="Ganhas — Pendência" cor="border-t-positive-500" itens={ganhasComPendencia.length} droppable={false}>
-                  {ganhasComPendencia.map(({ bidding, badges }) => (
-                    <CardLicitacaoGanha key={bidding.id} b={bidding} clienteNome={clientName(bidding.clientId)} badges={badges} valorGanhoCalculado={valorGanhoPorLicitacao.get(bidding.id)} />
+                {colunas.porEtapa
+                  .filter(({ etapa }) => !segmentosOcultos.has(etapa))
+                  .map(({ etapa, itens }) => (
+                    <ColunaKanban key={etapa} id={etapa} titulo={etapa} cor={CORES_COLUNA[etapa]} itens={itens.length}>
+                      {itens.length === 0 ? (
+                        <p className="text-[11px] text-base-600 italic text-center py-6">Nenhuma licitação aqui</p>
+                      ) : (
+                        itens.map(renderCard)
+                      )}
+                    </ColunaKanban>
                   ))}
-                </ColunaKanban>
-              )}
-            </div>
+
+                {!segmentosOcultos.has('ganhas-pendencia') && (
+                  <ColunaKanban id="ganhas-pendencia" titulo="Ganha — Pendência" cor="border-t-positive-500" itens={ganhasComPendenciaFiltradas.length} droppable={false}>
+                    {ganhasComPendenciaFiltradas.length === 0 ? (
+                      <p className="text-[11px] text-base-600 italic text-center py-6">Nenhuma licitação aqui</p>
+                    ) : (
+                      ganhasComPendenciaFiltradas.map(({ bidding, badges }) => (
+                        <CardLicitacaoGanha key={bidding.id} b={bidding} clienteNome={clientName(bidding.clientId)} badges={badges} valorGanhoCalculado={valorGanhoPorLicitacao.get(bidding.id)} />
+                      ))
+                    )}
+                  </ColunaKanban>
+                )}
+
+                {!segmentosOcultos.has('ganhas-sem-pendencia') && (
+                  <ColunaKanban id="ganhas-sem-pendencia" titulo="Ganha — Sem Pendência" cor="border-t-positive-500" itens={ganhasSemPendenciaFiltradas.length} droppable={false}>
+                    {ganhasSemPendenciaFiltradas.length === 0 ? (
+                      <p className="text-[11px] text-base-600 italic text-center py-6">Nenhuma licitação aqui</p>
+                    ) : (
+                      ganhasSemPendenciaFiltradas.map((b) => (
+                        <CardLicitacaoConcluida key={b.id} b={b} clienteNome={clientName(b.clientId)} valorGanhoCalculado={valorGanhoPorLicitacao.get(b.id)} />
+                      ))
+                    )}
+                  </ColunaKanban>
+                )}
+
+                {!segmentosOcultos.has('Perdeu') && (
+                  <ColunaKanban id="perdeu" titulo="Perdeu" cor={CORES_COLUNA_RESULTADO.Perdeu} itens={perdeuFiltradas.length} droppable={false}>
+                    {perdeuFiltradas.length === 0 ? (
+                      <p className="text-[11px] text-base-600 italic text-center py-6">Nenhuma licitação aqui</p>
+                    ) : (
+                      perdeuFiltradas.map((b) => <CardLicitacaoConcluida key={b.id} b={b} clienteNome={clientName(b.clientId)} />)
+                    )}
+                  </ColunaKanban>
+                )}
+
+                {!segmentosOcultos.has('Cancelada') && (
+                  <ColunaKanban id="cancelada" titulo="Cancelada" cor={CORES_COLUNA_RESULTADO.Cancelada} itens={canceladaFiltradas.length} droppable={false}>
+                    {canceladaFiltradas.length === 0 ? (
+                      <p className="text-[11px] text-base-600 italic text-center py-6">Nenhuma licitação aqui</p>
+                    ) : (
+                      canceladaFiltradas.map((b) => <CardLicitacaoConcluida key={b.id} b={b} clienteNome={clientName(b.clientId)} />)
+                    )}
+                  </ColunaKanban>
+                )}
+
+                {!segmentosOcultos.has('Desistiu') && (
+                  <ColunaKanban id="desistiu" titulo="Desistiu" cor={CORES_COLUNA_RESULTADO.Desistiu} itens={desistiuFiltradas.length} droppable={false}>
+                    {desistiuFiltradas.length === 0 ? (
+                      <p className="text-[11px] text-base-600 italic text-center py-6">Nenhuma licitação aqui</p>
+                    ) : (
+                      desistiuFiltradas.map((b) => <CardLicitacaoConcluida key={b.id} b={b} clienteNome={clientName(b.clientId)} />)
+                    )}
+                  </ColunaKanban>
+                )}
+              </div>
+            </TopScrollTable>
           </div>
 
           <DragOverlay>

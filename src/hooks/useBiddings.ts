@@ -14,27 +14,41 @@ const QUERY_KEY = ['biddings']
 // três mutações que podem chegar nessa combinação: marcarResultado grava o
 // status, updateEtapa grava a etapa, updateBidding pode gravar os dois de
 // uma vez pela edição manual — qualquer uma pode ser a última a chegar),
-// calcula o Valor Ganho de Fato a partir dos itens marcados "Ganhou" (mesma
-// regra de somarValorGanho) e grava sozinho. Só age se: (1) as duas
-// condições já valem nesse momento, (2) o campo ainda está vazio — nunca
-// sobrescreve um valor já digitado ou já calculado antes, a única forma de
-// mudar depois é editar manualmente — e (3) há itens cadastrados somando
-// mais que zero, pra nunca inventar um número quando ainda não há itens.
+// preenche sozinho dois campos que dependem exatamente dessa transição:
+// - Valor Ganho de Fato: calculado a partir dos itens marcados "Ganhou"
+//   (mesma regra de somarValorGanho). Só se: o campo ainda está vazio —
+//   nunca sobrescreve um valor já digitado ou já calculado antes, a única
+//   forma de mudar depois é editar manualmente — e há itens cadastrados
+//   somando mais que zero, pra nunca inventar um número sem itens.
+// - Data de Homologação: marcada com a data de hoje, já que é o momento em
+//   que o sistema identifica a transição (nem sempre é o dia exato em que o
+//   órgão homologou de fato, mas fica editável manualmente depois pra
+//   corrigir). Só se ainda estiver vazia.
 export async function tentarPreencherValorGanhoAutomatico(bidding: Bidding): Promise<Bidding> {
-  if (!licitacaoBloqueadaPorResultado(bidding) || bidding.valorOfertadoReal != null) return bidding
+  if (!licitacaoBloqueadaPorResultado(bidding)) return bidding
 
-  const { data: itensRows, error } = await supabase
-    .from('bidding_items')
-    .select('*')
-    .eq('bidding_id', bidding.id)
-  if (error || !itensRows || itensRows.length === 0) return bidding
+  const updates: { valor_ofertado_real?: number; data_homologacao?: string } = {}
 
-  const valorGanho = somarValorGanho(itensRows.map(fromBiddingItemRow))
-  if (valorGanho <= 0) return bidding
+  if (bidding.dataHomologacao == null) {
+    updates.data_homologacao = todayLocalISO()
+  }
+
+  if (bidding.valorOfertadoReal == null) {
+    const { data: itensRows, error } = await supabase
+      .from('bidding_items')
+      .select('*')
+      .eq('bidding_id', bidding.id)
+    if (!error && itensRows && itensRows.length > 0) {
+      const valorGanho = somarValorGanho(itensRows.map(fromBiddingItemRow))
+      if (valorGanho > 0) updates.valor_ofertado_real = valorGanho
+    }
+  }
+
+  if (Object.keys(updates).length === 0) return bidding
 
   const { data, error: updError } = await supabase
     .from('biddings')
-    .update({ valor_ofertado_real: valorGanho })
+    .update(updates)
     .eq('id', bidding.id)
     .select()
     .single()
@@ -50,7 +64,8 @@ export async function tentarPreencherValorGanhoAutomatico(bidding: Bidding): Pro
 // "Ganhou?" marcado (ordem comum: primeiro registra o resultado, só depois
 // ajusta os itens na disputa de lances) nunca recebe o Valor Ganho de Fato
 // automático — ele só era calculado no momento da transição de estado, e
-// a essa altura a soma dos itens "Ganhou" ainda dava zero.
+// a essa altura a soma dos itens "Ganhou" ainda dava zero (a Data de
+// Homologação não tem esse problema, já foi preenchida na transição).
 export async function recalcularValorGanhoSeAutomatico(biddingId: string): Promise<void> {
   const { data, error } = await supabase.from('biddings').select('*').eq('id', biddingId).single()
   if (error || !data) return

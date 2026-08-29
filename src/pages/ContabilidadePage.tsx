@@ -13,8 +13,8 @@ import type { BiddingEtapa } from '../types/domain'
 // Mesma sequência de etapas usada em LicitacaoPage.tsx/KanbanLicitacoesPage.tsx/
 // BiddingFormModal.tsx — duplicada aqui de propósito (mesmo padrão dos outros
 // três lugares) só pra saber se uma licitação "Em Andamento" já passou do
-// estágio de Proposta Enviada, sem precisar importar entre páginas.
-const ETAPAS_ORDEM: BiddingEtapa[] = ['Análise de Edital', 'Montagem de Documentação', 'Proposta Enviada', 'Disputa de Lances', 'Fase Recursal', 'Adjudicada e Homologada']
+// estágio de Proposta Enviada para Plataforma, sem precisar importar entre páginas.
+const ETAPAS_ORDEM: BiddingEtapa[] = ['Análise de Edital', 'Montagem de Documentação', 'Proposta Enviada para Plataforma', 'Fase Recursal', 'Aguardando Pregoeiro', 'Adjudicada e Homologada']
 
 export default function ContabilidadePage() {
   const { transactions } = useTransactions()
@@ -180,15 +180,16 @@ export default function ContabilidadePage() {
 
   // Funil de licitações
   const editaisMonitorados = biddings.length
-  // "Proposta enviada" = já passou (ou está) da etapa Proposta Enviada em
-  // diante, ou já foi disputada até o fim (Ganhou/Perdeu implica que a
-  // proposta foi enviada e avaliada). Cancelada/Desistiu não conta — nesses
-  // casos a licitação saiu do funil sem necessariamente ter enviado nada.
+  // "Proposta enviada" = já passou (ou está) da etapa Proposta Enviada para
+  // Plataforma em diante, ou já foi disputada até o fim (Ganhou/Perdeu
+  // implica que a proposta foi enviada e avaliada). Cancelada/Desistiu não
+  // conta — nesses casos a licitação saiu do funil sem necessariamente ter
+  // enviado nada.
   const propostasEnviadas = biddings.filter((b) => {
     if (b.status === 'Ganhou' || b.status === 'Perdeu') return true
     if (b.status !== 'Em Andamento') return false
     const indice = b.etapa ? ETAPAS_ORDEM.indexOf(b.etapa) : -1
-    return indice >= ETAPAS_ORDEM.indexOf('Proposta Enviada')
+    return indice >= ETAPAS_ORDEM.indexOf('Proposta Enviada para Plataforma')
   }).length
   const disputasVencidas = biddings.filter((b) => b.status === 'Ganhou').length
   const finalizadas = biddings.filter((b) => b.status === 'Ganhou' || b.status === 'Perdeu').length
