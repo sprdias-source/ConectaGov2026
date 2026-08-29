@@ -30,9 +30,9 @@ export type BiddingStatus = 'Em Andamento' | 'Ganhou' | 'Perdeu' | 'Cancelada' |
 export type BiddingEtapa =
   | 'Análise de Edital'
   | 'Montagem de Documentação'
-  | 'Proposta Enviada'
-  | 'Disputa de Lances'
+  | 'Proposta Enviada para Plataforma'
   | 'Fase Recursal'
+  | 'Aguardando Pregoeiro'
   | 'Adjudicada e Homologada'
 
 export interface Client {
@@ -119,6 +119,12 @@ export interface Bidding {
   motivoPerda: string | null
   motivoDesistencia: string | null
   motivoCancelamento: string | null
+  // Data em que a licitação foi de fato homologada (encerramento formal) —
+  // diferente de updatedAt, que muda a cada edição do cadastro. Preenchida
+  // sozinha na hora em que a licitação vira "Ganhou" + "Adjudicada e
+  // Homologada" (ver tentarPreencherValorGanhoAutomatico em useBiddings.ts),
+  // mas pode ser corrigida manualmente depois.
+  dataHomologacao: string | null
   isActive: boolean
   createdAt: string
   updatedAt: string
