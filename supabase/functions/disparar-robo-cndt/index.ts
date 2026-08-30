@@ -28,6 +28,27 @@ Deno.serve(async (req) => {
     const { data: { user } } = await supabase.auth.getUser(token)
     if (!user) throw new Error('Não autenticado')
 
+    // Compara com o DONO da conta (owner_efetivo), não com quem está
+    // logado — mesmo padrão de disparar-robo-licitei, já que o userId vai
+    // no client_payload do robô e é usado pra gravar os documentos gerados
+    // sob a conta certa.
+    const { data: ownerId, error: ownerError } = await supabase.rpc('owner_efetivo', { usuario_id: user.id })
+    if (ownerError || !ownerId) throw new Error('Não foi possível identificar a conta do usuário')
+
+    // owner_efetivo só confirma que o usuário PERTENCE à conta — não que
+    // tem permissão de edição em Cadastros (de onde vem o botão que dispara
+    // este robô). Sem esta checagem, o botão só ficava escondido na UI, mas
+    // um membro com nível "visualização" ou "sem_acesso" em Cadastros
+    // conseguia disparar o robô chamando esta function direto com o
+    // próprio token — mesmo bug já corrigido em disparar-robo-licitei.
+    const { data: temAcesso, error: acessoError } = await supabase.rpc('tem_acesso', {
+      usuario_id: user.id,
+      ferramenta: 'cadastros',
+      nivel_minimo: 'edicao',
+    })
+    if (acessoError) throw new Error('Não foi possível verificar a permissão do usuário')
+    if (!temAcesso) throw new Error('Sem permissão de edição em Cadastros para disparar o robô')
+
     // Busca com o token do próprio usuário (respeita RLS) — se não achar,
     // ou não existe o cliente ou ele não tem permissão de acesso.
     const { data: cliente, error } = await supabase
@@ -51,7 +72,7 @@ Deno.serve(async (req) => {
         client_payload: {
           clientId,
           cnpj: cliente.cnpj,
-          userId: user.id,
+          userId: ownerId,
         },
       }),
     })

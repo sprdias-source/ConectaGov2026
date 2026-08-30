@@ -183,7 +183,19 @@ Deno.serve(async (req) => {
     const token = authHeader.replace(/^Bearer\s+/i, '')
     const { data: { user } } = await supabase.auth.getUser(token)
     if (!user) throw new Error('Não autenticado')
-    userIdLog = user.id
+
+    // Compara com o DONO da conta (owner_efetivo), não com quem está
+    // logado — client_documents.user_id (e o caminho no Storage) sempre
+    // usam o dono, já que clients.user_id também é sempre o dono.
+    const { data: ownerId, error: ownerError } = await supabase.rpc('owner_efetivo', { usuario_id: user.id })
+    if (ownerError || !ownerId) throw new Error('Não foi possível identificar a conta do usuário')
+    userIdLog = ownerId as string
+
+    // Confirma que o cliente pertence à conta de quem chamou (respeita
+    // RLS) antes de gastar uma sessão paga do Browserless.
+    const { data: clienteExiste, error: clienteError } = await supabase
+      .from('clients').select('id').eq('id', clientId).single()
+    if (clienteError || !clienteExiste) throw new Error('Cliente não encontrado ou sem permissão de acesso')
 
     const resultado = await tentarBuscarFGTSCRF(cnpjLimpo, apiKey)
 
@@ -210,14 +222,14 @@ Deno.serve(async (req) => {
     const dataValidade = validade.toISOString().split('T')[0]
 
     const bytes = Uint8Array.from(atob(resultado.pdfBase64), (c) => c.charCodeAt(0))
-    const path = `${user.id}/${clientId}/fgts_crf/fgts_crf_${dataEmissao}.pdf`
+    const path = `${ownerId}/${clientId}/fgts_crf/fgts_crf_${dataEmissao}.pdf`
     const { error: uploadError } = await supabase.storage.from('documents')
       .upload(path, bytes, { contentType: 'application/pdf', upsert: true })
 
     if (uploadError) throw new Error(`Erro ao salvar PDF: ${uploadError.message}`)
 
     await supabase.from('client_documents').upsert({
-      user_id: user.id, client_id: clientId,
+      user_id: ownerId, client_id: clientId,
       // CORRIGIDO (10/07/2026): era 'fgts_caixa', que não bate com o
       // DocumentTipo real usado no checklist ('fgts') — o documento nunca
       // aparecia certo na tela por causa desse nome diferente.

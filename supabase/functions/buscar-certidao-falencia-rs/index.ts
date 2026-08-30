@@ -145,10 +145,19 @@ Deno.serve(async (req) => {
     const token = authHeader.replace(/^Bearer\s+/i, '')
     const { data: { user } } = await supabase.auth.getUser(token)
     if (!user) throw new Error('Não autenticado')
-    userIdLog = user.id
+
+    // Compara com o DONO da conta (owner_efetivo), não com quem está
+    // logado — client_documents.user_id (e o caminho no Storage) sempre
+    // usam o dono, já que clients.user_id também é sempre o dono.
+    const { data: ownerId, error: ownerError } = await supabase.rpc('owner_efetivo', { usuario_id: user.id })
+    if (ownerError || !ownerId) throw new Error('Não foi possível identificar a conta do usuário')
+    userIdLog = ownerId as string
 
     // Esse portal exige nome e endereço além do CNPJ — busca da própria
-    // tabela clients, em vez de pedir pro frontend mandar de novo.
+    // tabela clients, em vez de pedir pro frontend mandar de novo. A busca
+    // usa o token de quem chamou (respeita RLS), então também serve pra
+    // confirmar que o cliente pertence à conta antes de gastar uma sessão
+    // paga do Browserless.
     const { data: cliente, error: clienteError } = await supabase
       .from('clients')
       .select('name, address')
@@ -174,14 +183,14 @@ Deno.serve(async (req) => {
     const dataValidade = validade.toISOString().split('T')[0]
 
     const bytes = Uint8Array.from(atob(resultado.pdfBase64), (c) => c.charCodeAt(0))
-    const path = `${user.id}/${clientId}/certidao_falencia/certidao_falencia_${dataEmissao}.pdf`
+    const path = `${ownerId}/${clientId}/certidao_falencia/certidao_falencia_${dataEmissao}.pdf`
     const { error: uploadError } = await supabase.storage.from('documents')
       .upload(path, bytes, { contentType: 'application/pdf', upsert: true })
 
     if (uploadError) throw new Error(`Erro ao salvar PDF: ${uploadError.message}`)
 
     await supabase.from('client_documents').upsert({
-      user_id: user.id, client_id: clientId,
+      user_id: ownerId, client_id: clientId,
       // CORRIGIDO (10/07/2026): era 'certidao_negativa_falencia', que não
       // bate com o DocumentTipo real ('certidao_falencia_rs') — o
       // documento nunca apareceria certo no checklist com esse nome antigo.

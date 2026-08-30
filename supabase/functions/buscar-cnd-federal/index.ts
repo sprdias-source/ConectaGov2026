@@ -174,6 +174,12 @@ Deno.serve(async (req) => {
     if (ownerError || !ownerId) throw new Error('Não foi possível identificar a conta do usuário')
     userIdLog = ownerId as string
 
+    // Confirma que o cliente pertence à conta de quem chamou (respeita
+    // RLS) antes de gastar uma sessão paga do Browserless.
+    const { data: clienteExiste, error: clienteError } = await supabase
+      .from('clients').select('id').eq('id', clientId).single()
+    if (clienteError || !clienteExiste) throw new Error('Cliente não encontrado ou sem permissão de acesso')
+
     let resultado: { sucesso: boolean; pageText: string; pdfBase64: string | null } | null = null
     let ultimoErro: unknown = null
 

@@ -97,7 +97,19 @@ Deno.serve(async (req) => {
     const token = authHeader.replace(/^Bearer\s+/i, '')
     const { data: { user } } = await supabase.auth.getUser(token)
     if (!user) throw new Error('Não autenticado')
-    userIdLog = user.id
+
+    // Compara com o DONO da conta (owner_efetivo), não com quem está
+    // logado — client_documents.user_id (e o caminho no Storage) sempre
+    // usam o dono, já que clients.user_id também é sempre o dono.
+    const { data: ownerId, error: ownerError } = await supabase.rpc('owner_efetivo', { usuario_id: user.id })
+    if (ownerError || !ownerId) throw new Error('Não foi possível identificar a conta do usuário')
+    userIdLog = ownerId as string
+
+    // Confirma que o cliente pertence à conta de quem chamou (respeita
+    // RLS) antes de gastar uma sessão paga do Browserless.
+    const { data: clienteExiste, error: clienteError } = await supabase
+      .from('clients').select('id').eq('id', clientId).single()
+    if (clienteError || !clienteExiste) throw new Error('Cliente não encontrado ou sem permissão de acesso')
 
     let resultado: { sucesso: boolean; bytes: Uint8Array } | null = null
     let ultimoErro: unknown = null
@@ -128,14 +140,14 @@ Deno.serve(async (req) => {
     const dataEmissao = hoje.toISOString().split('T')[0]
     const dataValidade = validade.toISOString().split('T')[0]
 
-    const path = `${user.id}/${clientId}/cnd_estadual_rs/cnd_estadual_rs_${dataEmissao}.pdf`
+    const path = `${ownerId}/${clientId}/cnd_estadual_rs/cnd_estadual_rs_${dataEmissao}.pdf`
     const { error: uploadError } = await supabase.storage.from('documents')
       .upload(path, bytes, { contentType: 'application/pdf', upsert: true })
 
     if (uploadError) throw new Error(`Erro ao salvar PDF: ${uploadError.message}`)
 
     await supabase.from('client_documents').upsert({
-      user_id: user.id, client_id: clientId, tipo: 'cnd_estadual_rs',
+      user_id: ownerId, client_id: clientId, tipo: 'cnd_estadual_rs',
       nome: 'CND Estadual RS — SEFAZ-RS',
       storage_path: path, data_emissao: dataEmissao, data_validade: dataValidade,
       status: 'valido', auto_renovavel: true,
