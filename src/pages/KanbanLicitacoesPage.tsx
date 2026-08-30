@@ -79,6 +79,49 @@ function EncerrarDialog({ bidding, onClose }: { bidding: Bidding | null; onClose
   )
 }
 
+// Ao invés de deixar o sistema preencher a Data de Homologação sozinho com
+// "hoje" (comportamento antigo, só disparava quando a licitação também já
+// estivesse "Ganhou" — ver tentarPreencherValorGanhoAutomatico em
+// useBiddings.ts), pede a data certa assim que o card entra na última etapa
+// do funil, direto no Kanban — raramente o card é movido no dia exato em
+// que o órgão de fato homologou. Só pergunta se ainda não tem data
+// guardada (ver irParaEtapa) — mover o card de novo depois não pergunta de
+// novo, já que a data já está registrada.
+function HomologacaoDialog({ bidding, onClose }: { bidding: Bidding | null; onClose: () => void }) {
+  const { updateEtapa } = useBiddings()
+  const { showToast } = useToast()
+  const [data, setData] = useState(() => todayLocalISO())
+
+  if (!bidding) return null
+
+  const salvar = () => {
+    updateEtapa.mutate(
+      { biddingId: bidding.id, etapa: 'Adjudicada e Homologada', dataHomologacao: data },
+      {
+        onSuccess: () => { showToast('Licitação movida para Adjudicada e Homologada.'); onClose() },
+        onError: (err) => showToast(`Erro ao mudar a etapa: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+      }
+    )
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Data de Homologação" maxWidth="max-w-sm">
+      <div className="flex flex-col gap-4">
+        <p className="text-[12px] text-base-400">{bidding.objeto}</p>
+        <Field label="Data em que o órgão homologou o resultado" required>
+          <Input type="date" value={data} onChange={(e) => setData(e.target.value)} />
+        </Field>
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>Cancelar</Button>
+          <Button onClick={salvar} disabled={!data || updateEtapa.isPending}>
+            {updateEtapa.isPending ? 'Salvando...' : 'Confirmar'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 const ETAPAS: BiddingEtapa[] = [
   'Análise de Edital',
   'Montagem de Documentação',
@@ -356,6 +399,7 @@ export default function KanbanLicitacoesPage() {
   const [editando, setEditando] = useState<Bidding | null>(null)
   const [encerrando, setEncerrando] = useState<Bidding | null>(null)
   const [arrastando, setArrastando] = useState<Bidding | null>(null)
+  const [pendenteHomologacao, setPendenteHomologacao] = useState<Bidding | null>(null)
 
   const sensors = useSensors(
     // distance mínima antes de virar drag — sem isso, qualquer clique no
@@ -527,6 +571,14 @@ export default function KanbanLicitacoesPage() {
 
   const irParaEtapa = (bidding: Bidding, etapa: BiddingEtapa | null) => {
     if (bidding.etapa === etapa) return
+    // Entrando na última etapa do funil pela primeira vez (ainda sem Data
+    // de Homologação registrada) — abre o diálogo pra pedir a data em vez
+    // de mudar a etapa direto; quem confirma o diálogo é que efetivamente
+    // chama updateEtapa (ver HomologacaoDialog acima).
+    if (etapa === 'Adjudicada e Homologada' && bidding.dataHomologacao == null) {
+      setPendenteHomologacao(bidding)
+      return
+    }
     updateEtapa.mutate({ biddingId: bidding.id, etapa }, {
       onError: (err) => showToast(`Erro ao mudar a etapa: ${err instanceof Error ? err.message : String(err)}`, 'error'),
     })
@@ -861,6 +913,11 @@ export default function KanbanLicitacoesPage() {
       )}
 
       {podeEditar && <EncerrarDialog bidding={encerrando} onClose={() => setEncerrando(null)} />}
+      {/* key troca a cada licitação — remonta o diálogo do zero (data volta
+          pra hoje) em vez de sincronizar o estado via useEffect */}
+      {podeEditar && (
+        <HomologacaoDialog key={pendenteHomologacao?.id ?? 'none'} bidding={pendenteHomologacao} onClose={() => setPendenteHomologacao(null)} />
+      )}
     </div>
   )
 }

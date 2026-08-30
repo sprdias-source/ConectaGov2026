@@ -20,10 +20,13 @@ const QUERY_KEY = ['biddings']
 //   nunca sobrescreve um valor já digitado ou já calculado antes, a única
 //   forma de mudar depois é editar manualmente — e há itens cadastrados
 //   somando mais que zero, pra nunca inventar um número sem itens.
-// - Data de Homologação: marcada com a data de hoje, já que é o momento em
-//   que o sistema identifica a transição (nem sempre é o dia exato em que o
-//   órgão homologou de fato, mas fica editável manualmente depois pra
-//   corrigir). Só se ainda estiver vazia.
+// - Data de Homologação: normalmente já veio preenchida pelo próprio Kanban
+//   no momento em que o card entrou na etapa "Adjudicada e Homologada" (ver
+//   HomologacaoDialog em KanbanLicitacoesPage.tsx). Serve de rede de
+//   segurança pros outros dois caminhos que completam a mesma combinação
+//   sem passar por lá — marcarResultado (LicitacaoPage) e updateBidding
+//   (edição manual do cadastro) — caindo pra data de hoje só nesses casos.
+//   Só se ainda estiver vazia.
 export async function tentarPreencherValorGanhoAutomatico(bidding: Bidding): Promise<Bidding> {
   if (!licitacaoBloqueadaPorResultado(bidding)) return bidding
 
@@ -321,10 +324,16 @@ export function useBiddings() {
   // arriscar mexer nos itens da licitação (updateBidding sempre reescreve
   // bidding_items a partir do array `items` recebido).
   const updateEtapa = useMutation({
-    mutationFn: async ({ biddingId, etapa }: { biddingId: string; etapa: Bidding['etapa'] }) => {
+    // dataHomologacao é opcional — só vem preenchida quando o destino é
+    // "Adjudicada e Homologada" e o Kanban pediu a data ao usuário antes de
+    // chamar essa mutação (ver HomologacaoDialog em KanbanLicitacoesPage.tsx);
+    // nos demais casos fica undefined e a coluna no banco nem é tocada.
+    mutationFn: async ({ biddingId, etapa, dataHomologacao }: { biddingId: string; etapa: Bidding['etapa']; dataHomologacao?: string }) => {
+      const updates: { etapa: Bidding['etapa']; data_homologacao?: string } = { etapa }
+      if (dataHomologacao) updates.data_homologacao = dataHomologacao
       const { data, error } = await supabase
         .from('biddings')
-        .update({ etapa })
+        .update(updates)
         .eq('id', biddingId)
         .select()
         .single()
