@@ -403,6 +403,7 @@ async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeByte
 // arquivo, cujo corpo é uma stream que não dá pra reler depois de falhar.
 async function fetchComRetry(url: string, init: RequestInit, tentativas = 4): Promise<Response> {
   let ultimoErro: unknown
+  let ultimaResposta: Response | undefined
   for (let i = 0; i < tentativas; i++) {
     try {
       const res = await fetch(url, init)
@@ -420,8 +421,10 @@ async function fetchComRetry(url: string, init: RequestInit, tentativas = 4): Pr
       if (res.status === 429 && corpo.includes('PerDay')) {
         return new Response(corpo, { status: res.status, statusText: res.statusText, headers: res.headers })
       }
+      ultimaResposta = new Response(corpo, { status: res.status, statusText: res.statusText, headers: res.headers })
       ultimoErro = new Error(`HTTP ${res.status}: ${corpo}`)
     } catch (err) {
+      ultimaResposta = undefined
       ultimoErro = err
     }
     if (i < tentativas - 1) {
@@ -429,6 +432,16 @@ async function fetchComRetry(url: string, init: RequestInit, tentativas = 4): Pr
       await new Promise((r) => setTimeout(r, 1500 * 2 ** i))
     }
   }
+  // Esgotadas as tentativas: se a última falha veio de uma resposta HTTP (ex:
+  // 503 persistente de sobrecarga do Gemini, "model is currently experiencing
+  // high demand"), devolve essa Response em vez de lançar exceção — assim
+  // quem chamou trata como mais um caso de "esta chave não deu conta agora"
+  // e cascateia pra 2ª chave/Mistral, igual já fazia só pra cota diária
+  // esgotada. Sem isso, um Gemini sobrecarregado por minutos derrubava a
+  // análise inteira mesmo com Mistral configurado e disponível. Erro de rede
+  // de verdade (sem resposta HTTP nenhuma) continua sendo lançado, já que não
+  // há status pra repassar adiante.
+  if (ultimaResposta) return ultimaResposta
   throw ultimoErro instanceof Error ? ultimoErro : new Error(String(ultimoErro))
 }
 
@@ -549,27 +562,31 @@ async function processarAnalise(supabase: Supa, analysisRowId: string, edital: A
     let genRes = await tentarAnaliseComGemini(supabase, docs, GEMINI_API_KEY)
     let provedor: 'gemini' | 'gemini-2' | 'mistral' = 'gemini'
 
-    // 2º nível: se a 1ª chave bateu a cota diária e existe uma 2ª chave
-    // configurada, tenta de novo com ela antes de partir pro Mistral.
-    if (genRes.status === 429 && GEMINI_API_KEY_2) {
-      console.warn('[Analisar-oportunidade] Cota diária da 1ª chave do Gemini esgotada — tentando 2ª chave (projeto Google Cloud separado)...')
+    // 2º nível: se a 1ª chave bateu a cota diária OU o Gemini está
+    // sobrecarregado (503 persistente mesmo após as tentativas de retry), e
+    // existe uma 2ª chave configurada, tenta de novo com ela antes de
+    // partir pro Mistral.
+    if ((genRes.status === 429 || genRes.status >= 500) && GEMINI_API_KEY_2) {
+      console.warn('[Analisar-oportunidade] 1ª chave do Gemini indisponível (cota esgotada ou sobrecarga) — tentando 2ª chave (projeto Google Cloud separado)...')
       genRes = await tentarAnaliseComGemini(supabase, docs, GEMINI_API_KEY_2)
       provedor = 'gemini-2'
     }
 
     let analise: AnaliseResultado
 
-    // Chegar aqui ainda com status 429 significa: acabou a cota gratuita
-    // de hoje em TODAS as chaves do Gemini configuradas — 3º nível, tenta
-    // o mesmo edital via Mistral Document AI antes de desistir de vez.
-    if (genRes.status === 429) {
-      console.warn('[Analisar-oportunidade] Cota diária do Gemini esgotada em todas as chaves configuradas — tentando fallback via Mistral Document AI...')
+    // Chegar aqui ainda com 429/5xx significa: nenhuma chave do Gemini
+    // configurada deu conta agora (cota esgotada ou sobrecarga persistente)
+    // — 3º nível, tenta o mesmo edital via Mistral Document AI antes de
+    // desistir de vez. É o que garante que as 3 alternativas configuradas
+    // são de fato tentadas antes do erro subir pro usuário.
+    if (genRes.status === 429 || genRes.status >= 500) {
+      console.warn('[Analisar-oportunidade] Gemini indisponível (cota esgotada ou sobrecarga) em todas as chaves configuradas — tentando fallback via Mistral Document AI...')
       try {
         analise = await tentarFallbackMistral(supabase, edital)
         provedor = 'mistral'
       } catch (fallbackErr) {
         const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
-        throw new Error(`Cota diária do Gemini esgotada (todas as chaves) e o fallback via Mistral também falhou: ${fallbackMsg}`, { cause: fallbackErr })
+        throw new Error(`Gemini indisponível (cota esgotada ou sobrecarga) em todas as chaves configuradas, e o fallback via Mistral também falhou: ${fallbackMsg}`, { cause: fallbackErr })
       }
     } else if (!genRes.ok) {
       throw new Error(`Falha ao analisar com Gemini: ${await genRes.text()}`)
