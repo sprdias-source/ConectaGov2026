@@ -11,8 +11,17 @@
 // Perguntar-edital: uma pergunta pontual processa rápido o bastante pra
 // caber no limite de execução síncrona.
 //
+// FALLBACK EM 3 NÍVEIS (mesmo padrão de Analisar-edital-juridico): quando a
+// cota diária do Gemini estoura (HTTP 429 com "PerDay" no corpo), tenta de
+// novo com uma 2ª chave (2º projeto Google Cloud, cota separada) antes de
+// cair pro Mistral Document AI como último recurso, usando um schema
+// mínimo { resposta: string } e olhando só o Edital nesse caminho (a OCR da
+// Mistral processa um documento por chamada).
+//
 // VARIÁVEIS DE AMBIENTE NECESSÁRIAS (Supabase → Edge Functions → Secrets):
 // - GEMINI_API_KEY: a mesma chave já usada pelas outras functions de IA.
+// - GEMINI_API_KEY_2: opcional — 2º nível de fallback.
+// - MISTRAL_API_KEY: opcional — 3º nível de fallback.
 // - SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY já vêm injetadas
 //   automaticamente pelo Supabase em toda Edge Function.
 
@@ -21,6 +30,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!
+const GEMINI_API_KEY_2 = Deno.env.get('GEMINI_API_KEY_2')
 // Ver o mesmo comentário em Analisar-edital/index.ts sobre por que é fixo
 // (não 'gemini-flash-latest') e por que já trocou uma vez de 2.5 pra 3.5.
 const GEMINI_MODEL = 'gemini-3.5-flash'
@@ -28,6 +38,7 @@ const GOOGLE_CLIENT_ID = Deno.env.get('GOOGLE_DRIVE_CLIENT_ID')
 const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_DRIVE_CLIENT_SECRET')
 const GOOGLE_REFRESH_TOKEN = Deno.env.get('GOOGLE_DRIVE_REFRESH_TOKEN')
 const DRIVE_PREFIX = 'gdrive:'
+const MISTRAL_API_KEY = Deno.env.get('MISTRAL_API_KEY')
 
 // Embutido aqui em vez de importado de ../_shared/googleDrive.ts: essa
 // function é colada manualmente no Dashboard do Supabase (um arquivo por
@@ -88,8 +99,12 @@ function json(body: unknown, status = 200) {
 type Supa = ReturnType<typeof createClient>
 type Anexo = { id: string; name: string; storage_path: string; mime_type: string | null; size_bytes: number | null; category: string }
 
-async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeBytes: number, mimeType: string, displayName: string) {
-  const startRes = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${GEMINI_API_KEY}`, {
+// Upload em streaming pro Gemini Files API — recebe a chave como parâmetro
+// pra poder ser chamada de novo com uma SEGUNDA chave se a 1ª bater a cota
+// diária (arquivos enviados ficam vinculados ao projeto dono da chave que
+// fez o upload, então trocar de chave exige reenviar os documentos).
+async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeBytes: number, mimeType: string, displayName: string, apiKey: string) {
+  const startRes = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`, {
     method: 'POST',
     headers: {
       'X-Goog-Upload-Protocol': 'resumable',
@@ -125,7 +140,7 @@ async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeByte
   let tentativas = 0
   while (file.state === 'PROCESSING' && tentativas < 50) {
     await new Promise((r) => setTimeout(r, 2000))
-    const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${file.name}?key=${GEMINI_API_KEY}`)
+    const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${file.name}?key=${apiKey}`)
     file = await checkRes.json()
     tentativas++
   }
@@ -135,7 +150,7 @@ async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeByte
     // nunca seria apagado — quem chama uploadParaGemini só recebe o
     // file.name em caso de sucesso, então sem isso o arquivo ficava órfão
     // até expirar sozinho em 48h.
-    await apagarArquivoGemini(file.name)
+    await apagarArquivoGemini(file.name, apiKey)
     throw new Error(`"${displayName}" não ficou pronto no Gemini (estado: ${file.state})`)
   }
 
@@ -164,15 +179,15 @@ async function fetchComRetry(url: string, init: RequestInit, tentativas = 4): Pr
   throw ultimoErro instanceof Error ? ultimoErro : new Error(String(ultimoErro))
 }
 
-async function apagarArquivoGemini(fileName: string) {
+async function apagarArquivoGemini(fileName: string, apiKey: string) {
   try {
-    await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${GEMINI_API_KEY}`, { method: 'DELETE' })
+    await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${apiKey}`, { method: 'DELETE' })
   } catch {
     // best-effort — o Gemini expira arquivos sozinho depois de um tempo
   }
 }
 
-async function processarDocumento(supabase: Supa, doc: Anexo, arquivosGeminiParaApagar: string[]) {
+async function processarDocumento(supabase: Supa, doc: Anexo, apiKey: string, arquivosGeminiParaApagar: string[]) {
   const downloadRes = await baixarAnexo(supabase, doc.storage_path)
   if (!downloadRes.ok || !downloadRes.body) throw new Error(`Falha ao baixar "${doc.name}" do Storage/Drive`)
 
@@ -180,7 +195,7 @@ async function processarDocumento(supabase: Supa, doc: Anexo, arquivosGeminiPara
   const sizeBytes = doc.size_bytes ?? Number(downloadRes.headers.get('content-length') ?? 0)
   if (!sizeBytes) throw new Error(`Não foi possível determinar o tamanho de "${doc.name}"`)
 
-  const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, doc.name)
+  const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, doc.name, apiKey)
   // Registra ANTES de retornar — se outro documento do MESMO lote (ver
   // Promise.all abaixo) falhar depois deste já ter subido com sucesso, o
   // Promise.all rejeita sem nunca rodar o .forEach que populava esta lista
@@ -192,11 +207,97 @@ async function processarDocumento(supabase: Supa, doc: Anexo, arquivosGeminiPara
   }
 }
 
+// Envia os documentos + pergunta com UMA chave/projeto específico do
+// Gemini — extraído à parte pra poder ser chamado de novo com uma SEGUNDA
+// chave se a 1ª bater a cota diária. Cada chamada tem sua própria lista de
+// arquivos a apagar, já que um arquivo enviado com uma chave só pode ser
+// apagado com a MESMA chave.
+async function perguntarComGemini(supabase: Supa, docs: Anexo[], prompt: string, apiKey: string): Promise<Response> {
+  const arquivosGeminiParaApagar: string[] = []
+  try {
+    const resultados = await Promise.all(docs.map((doc) => processarDocumento(supabase, doc, apiKey, arquivosGeminiParaApagar)))
+    const partesArquivos = resultados.map((r) => r.fileData)
+
+    return await fetchComRetry(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [...partesArquivos, { text: prompt }] }],
+          generationConfig: { maxOutputTokens: 8192 },
+        }),
+      }
+    )
+  } finally {
+    // Sempre limpa os arquivos enviados com ESTA chave, mesmo se o upload
+    // de algum documento do lote falhar antes de chegar no generateContent
+    // — sem isso, um arquivo que subiu com sucesso antes da falha ficava
+    // órfão no Gemini até expirar sozinho em 48h.
+    for (const nome of arquivosGeminiParaApagar) apagarArquivoGemini(nome, apiKey) // não precisa esperar terminar
+  }
+}
+
+function bytesParaBase64(bytes: Uint8Array): string {
+  let binario = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binario += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(binario)
+}
+
+async function baixarBytes(supabase: Supa, anexo: Anexo): Promise<Uint8Array> {
+  const downloadRes = await baixarAnexo(supabase, anexo.storage_path)
+  if (!downloadRes.ok || !downloadRes.body) throw new Error(`Falha ao baixar "${anexo.name}" do Storage/Drive`)
+  return new Uint8Array(await downloadRes.arrayBuffer())
+}
+
+// Schema mínimo pro fallback via Mistral — a OCR da Mistral é feita pra
+// extração estruturada por schema, não pra bate-papo livre, então o "chat"
+// aqui é simulado pedindo um objeto só com o campo "resposta".
+const PERGUNTA_SCHEMA_MISTRAL = {
+  type: 'object',
+  properties: { resposta: { type: 'string' } },
+  required: ['resposta'],
+  additionalProperties: false,
+}
+
+// Fallback via Mistral Document AI — só olha o Edital (não o TR): a OCR da
+// Mistral processa um documento por chamada, e o edital sozinho já cobre a
+// grande maioria das perguntas feitas nesta tela.
+async function tentarFallbackMistral(supabase: Supa, edital: Anexo, pergunta: string): Promise<string> {
+  if (!MISTRAL_API_KEY) {
+    throw new Error('MISTRAL_API_KEY não configurada nesta function — sem fallback disponível.')
+  }
+  const bytes = await baixarBytes(supabase, edital)
+  const base64 = bytesParaBase64(bytes)
+  const promptAnotacao = `Você é um assistente que responde perguntas objetivas sobre um edital de licitação pública brasileira anexado. Responda à pergunta abaixo de forma direta, em português, citando o trecho ou cláusula do edital que embasa a resposta sempre que possível, no campo "resposta". Se a informação não estiver no documento, diga claramente que não encontrou essa informação no edital — nunca invente uma resposta.\n\nPERGUNTA: ${pergunta}`
+
+  const res = await fetch('https://api.mistral.ai/v1/ocr', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MISTRAL_API_KEY}` },
+    body: JSON.stringify({
+      model: 'mistral-ocr-latest',
+      document: { type: 'document_url', document_url: `data:application/pdf;base64,${base64}` },
+      document_annotation_format: {
+        type: 'json_schema',
+        json_schema: { name: 'pergunta_oportunidade', schema: PERGUNTA_SCHEMA_MISTRAL, strict: true },
+      },
+      document_annotation_prompt: promptAnotacao,
+    }),
+  })
+  if (!res.ok) throw new Error(`Falha ao perguntar via Mistral: ${await res.text()}`)
+  const data = await res.json()
+  if (!data.document_annotation) throw new Error('Mistral não retornou document_annotation')
+  const anotacao = JSON.parse(data.document_annotation) as { resposta: string }
+  return anotacao.resposta
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
-  const arquivosGeminiParaApagar: string[] = []
 
   try {
     const { opportunityId, pergunta } = await req.json()
@@ -239,38 +340,52 @@ Deno.serve(async (req: Request) => {
     if (!edital) return json({ error: 'Nenhum edital enviado para esta oportunidade' }, 400)
 
     const docs = [edital, tr].filter((d): d is Anexo => !!d)
-    const resultados = await Promise.all(docs.map((doc) => processarDocumento(supabase, doc, arquivosGeminiParaApagar)))
-    const partesArquivos = resultados.map((r) => r.fileData)
+    const perguntaTexto = String(pergunta).trim()
+    const prompt = `Você é um assistente que responde perguntas objetivas sobre um edital de licitação pública brasileira anexado (e o termo de referência, se estiver junto). Responda À PERGUNTA ABAIXO de forma direta, em português, citando o trecho ou cláusula do edital que embasa a resposta sempre que possível. Se a informação não estiver no documento, diga claramente que não encontrou essa informação no edital — nunca invente uma resposta.\n\nPERGUNTA: ${perguntaTexto}`
 
-    const prompt = `Você é um assistente que responde perguntas objetivas sobre um edital de licitação pública brasileira anexado (e o termo de referência, se estiver junto). Responda À PERGUNTA ABAIXO de forma direta, em português, citando o trecho ou cláusula do edital que embasa a resposta sempre que possível. Se a informação não estiver no documento, diga claramente que não encontrou essa informação no edital — nunca invente uma resposta.\n\nPERGUNTA: ${String(pergunta).trim()}`
+    let genRes = await perguntarComGemini(supabase, docs, prompt, GEMINI_API_KEY)
+    let provedor: 'gemini' | 'gemini-2' | 'mistral' = 'gemini'
 
-    const genRes = await fetchComRetry(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [...partesArquivos, { text: prompt }] }],
-          generationConfig: { maxOutputTokens: 8192 },
-        }),
-      }
-    )
-
-    for (const nome of arquivosGeminiParaApagar) apagarArquivoGemini(nome) // não precisa esperar terminar
-
-    if (!genRes.ok) throw new Error(`Falha ao perguntar ao Gemini: ${await genRes.text()}`)
-    const genData = await genRes.json()
-    const resposta = genData.candidates?.[0]?.content?.parts?.[0]?.text
-    if (!resposta) {
-      if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
-        throw new Error('A resposta do Gemini foi cortada por exceder o limite de tamanho — tente fazer uma pergunta mais específica')
-      }
-      throw new Error('Gemini não retornou resposta')
+    // 2º nível: se a 1ª chave bateu a cota diária e existe uma 2ª chave
+    // configurada, tenta de novo com ela antes de partir pro Mistral.
+    if (genRes.status === 429 && GEMINI_API_KEY_2) {
+      console.warn('[Perguntar-oportunidade] Cota diária da 1ª chave do Gemini esgotada — tentando 2ª chave (projeto Google Cloud separado)...')
+      genRes = await perguntarComGemini(supabase, docs, prompt, GEMINI_API_KEY_2)
+      provedor = 'gemini-2'
     }
+
+    let resposta: string
+
+    // Chegar aqui ainda com status 429 significa: acabou a cota gratuita
+    // de hoje em TODAS as chaves do Gemini configuradas — 3º nível, tenta
+    // a mesma pergunta via Mistral Document AI antes de desistir de vez.
+    if (genRes.status === 429) {
+      console.warn('[Perguntar-oportunidade] Cota diária do Gemini esgotada em todas as chaves configuradas — tentando fallback via Mistral Document AI...')
+      try {
+        resposta = await tentarFallbackMistral(supabase, edital, perguntaTexto)
+        provedor = 'mistral'
+      } catch (fallbackErr) {
+        const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
+        throw new Error(`Cota diária do Gemini esgotada (todas as chaves) e o fallback via Mistral também falhou: ${fallbackMsg}`, { cause: fallbackErr })
+      }
+    } else if (!genRes.ok) {
+      throw new Error(`Falha ao perguntar ao Gemini: ${await genRes.text()}`)
+    } else {
+      const genData = await genRes.json()
+      const textoResposta = genData.candidates?.[0]?.content?.parts?.[0]?.text
+      if (!textoResposta) {
+        if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+          throw new Error('A resposta do Gemini foi cortada por exceder o limite de tamanho — tente fazer uma pergunta mais específica')
+        }
+        throw new Error('Gemini não retornou resposta')
+      }
+      resposta = textoResposta
+    }
+
+    console.log(`[Perguntar-oportunidade] Resposta gerada via ${provedor}.`)
 
     return json({ resposta })
   } catch (err) {
-    for (const nome of arquivosGeminiParaApagar) apagarArquivoGemini(nome)
     const mensagem = err instanceof Error ? err.message : String(err)
     console.error('Erro ao perguntar sobre a oportunidade:', mensagem)
     return json({ success: false, error: mensagem }, 500)

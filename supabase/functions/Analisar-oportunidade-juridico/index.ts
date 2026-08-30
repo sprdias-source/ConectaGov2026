@@ -14,8 +14,15 @@
 //
 // Recebe { opportunityId, tipo }, onde tipo é 'esclarecimento' | 'impugnacao' | 'raio_x'.
 //
+// FALLBACK EM 3 NÍVEIS (mesmo padrão de Analisar-edital-juridico): quando a
+// cota diária do Gemini estoura (HTTP 429 com "PerDay" no corpo), tenta de
+// novo com uma 2ª chave (2º projeto Google Cloud, cota separada) antes de
+// cair pro Mistral Document AI como último recurso.
+//
 // VARIÁVEIS DE AMBIENTE NECESSÁRIAS (Supabase → Edge Functions → Secrets):
 // - GEMINI_API_KEY: a mesma chave já usada pelas outras functions de análise.
+// - GEMINI_API_KEY_2: opcional — 2º nível de fallback.
+// - MISTRAL_API_KEY: opcional — 3º nível de fallback.
 // - SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY já vêm injetadas
 //   automaticamente pelo Supabase em toda Edge Function.
 
@@ -24,10 +31,12 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!
+const GEMINI_API_KEY_2 = Deno.env.get('GEMINI_API_KEY_2')
 const GOOGLE_CLIENT_ID = Deno.env.get('GOOGLE_DRIVE_CLIENT_ID')
 const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_DRIVE_CLIENT_SECRET')
 const GOOGLE_REFRESH_TOKEN = Deno.env.get('GOOGLE_DRIVE_REFRESH_TOKEN')
 const DRIVE_PREFIX = 'gdrive:'
+const MISTRAL_API_KEY = Deno.env.get('MISTRAL_API_KEY')
 
 // Embutido aqui em vez de importado de ../_shared/googleDrive.ts: essa
 // function é colada manualmente no Dashboard do Supabase (um arquivo por
@@ -123,6 +132,40 @@ const RESULTADO_SCHEMA = {
     },
   },
   required: ['pontos'],
+}
+
+// Mesmo formato de RESULTADO_SCHEMA, em JSON Schema padrão — usado no
+// fallback via Mistral Document AI (modo "json_schema" estrito, exige TODO
+// campo em "required" e "additionalProperties: false" em todo objeto). Sem
+// enum nos campos que os prompts mandam "deixar vazio" quando não se
+// aplicam — um enum aqui rejeitaria a string vazia que o próprio prompt pede.
+const RESULTADO_SCHEMA_MISTRAL = {
+  type: 'object',
+  properties: {
+    resumoGeral: { type: 'string' },
+    pontos: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          tipoPonto: { type: 'string' },
+          localizacao: { type: 'string' },
+          textoOriginal: { type: 'string' },
+          motivo: { type: 'string' },
+          fundamentoLegal: { type: 'string' },
+          jurisprudencia: { type: 'string' },
+          risco: { type: 'string' },
+          probabilidade: { type: 'string' },
+          prioridade: { type: 'string' },
+          sugestao: { type: 'string' },
+        },
+        required: ['tipoPonto', 'localizacao', 'textoOriginal', 'motivo', 'fundamentoLegal', 'jurisprudencia', 'risco', 'probabilidade', 'prioridade', 'sugestao'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['resumoGeral', 'pontos'],
+  additionalProperties: false,
 }
 
 const INTRO_ESCLARECIMENTO = `Você é um especialista em licitações públicas, com profundo conhecimento da Lei nº 14.133/2021, jurisprudência do TCU, Tribunais de Contas Estaduais e princípios da Administração Pública.
@@ -243,11 +286,12 @@ function montarPrompt(tipo: Tipo): string {
   return `${INTRO_RAIO_X}\n\n${SCHEMA_RAIO_X}`
 }
 
-// Upload em streaming pro Gemini Files API — idêntico ao usado em
-// Analisar-oportunidade (o corpo da resposta do Storage é canalizado direto
-// pro corpo da requisição de upload, sem materializar o arquivo inteiro em memória).
-async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeBytes: number, mimeType: string, displayName: string) {
-  const startRes = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${GEMINI_API_KEY}`, {
+// Upload em streaming pro Gemini Files API — recebe a chave como parâmetro
+// pra poder ser chamada de novo com uma SEGUNDA chave se a 1ª bater a cota
+// diária (arquivos enviados ficam vinculados ao projeto dono da chave que
+// fez o upload, então trocar de chave exige reenviar os documentos).
+async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeBytes: number, mimeType: string, displayName: string, apiKey: string) {
+  const startRes = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`, {
     method: 'POST',
     headers: {
       'X-Goog-Upload-Protocol': 'resumable',
@@ -283,7 +327,7 @@ async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeByte
   let tentativas = 0
   while (file.state === 'PROCESSING' && tentativas < 50) {
     await new Promise((r) => setTimeout(r, 2000))
-    const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${file.name}?key=${GEMINI_API_KEY}`)
+    const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${file.name}?key=${apiKey}`)
     file = await checkRes.json()
     tentativas++
   }
@@ -293,7 +337,7 @@ async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeByte
     // nunca seria apagado — quem chama uploadParaGemini só recebe o
     // file.name em caso de sucesso, então sem isso o arquivo ficava órfão
     // até expirar sozinho em 48h.
-    await apagarArquivoGemini(file.name)
+    await apagarArquivoGemini(file.name, apiKey)
     throw new Error(`Arquivo não ficou pronto no Gemini (estado: ${file.state})`)
   }
 
@@ -339,9 +383,9 @@ async function fetchComRetry(url: string, init: RequestInit, tentativas = 4): Pr
   throw ultimoErro instanceof Error ? ultimoErro : new Error(String(ultimoErro))
 }
 
-async function apagarArquivoGemini(fileName: string) {
+async function apagarArquivoGemini(fileName: string, apiKey: string) {
   try {
-    await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${GEMINI_API_KEY}`, { method: 'DELETE' })
+    await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${apiKey}`, { method: 'DELETE' })
   } catch {
     // best-effort — o Gemini expira arquivos sozinho depois de um tempo
   }
@@ -350,13 +394,82 @@ async function apagarArquivoGemini(fileName: string) {
 type Supa = ReturnType<typeof createClient>
 type Anexo = { id: string; name: string; storage_path: string; mime_type: string | null; size_bytes: number | null }
 
+type PontoJuridico = {
+  tipoPonto: string
+  localizacao: string
+  textoOriginal: string
+  motivo: string
+  fundamentoLegal: string
+  jurisprudencia: string
+  risco: string
+  probabilidade: string
+  prioridade: string
+  sugestao: string
+}
+type ResultadoJuridico = { resumoGeral: string; pontos: PontoJuridico[] }
+
+function bytesParaBase64(bytes: Uint8Array): string {
+  let binario = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binario += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(binario)
+}
+
+async function baixarBytes(supabase: Supa, anexo: Anexo): Promise<Uint8Array> {
+  const downloadRes = await baixarAnexo(supabase, anexo.storage_path)
+  if (!downloadRes.ok || !downloadRes.body) throw new Error(`Falha ao baixar "${anexo.name}" do Storage/Drive`)
+  return new Uint8Array(await downloadRes.arrayBuffer())
+}
+
+// Fallback via Mistral Document AI (OCR endpoint com extração estruturada
+// por schema, modelo Pixtral por trás) — mesmo formato de chamada já
+// confirmado e usado em Analisar-edital-juridico.
+async function chamarMistralAnnotation(pdfBytes: Uint8Array, prompt: string): Promise<ResultadoJuridico> {
+  const base64 = bytesParaBase64(pdfBytes)
+  const res = await fetch('https://api.mistral.ai/v1/ocr', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MISTRAL_API_KEY}` },
+    body: JSON.stringify({
+      model: 'mistral-ocr-latest',
+      document: { type: 'document_url', document_url: `data:application/pdf;base64,${base64}` },
+      document_annotation_format: {
+        type: 'json_schema',
+        json_schema: { name: 'resultado_juridico', schema: RESULTADO_SCHEMA_MISTRAL, strict: true },
+      },
+      document_annotation_prompt: prompt,
+    }),
+  })
+  if (!res.ok) throw new Error(`Falha ao analisar com Mistral: ${await res.text()}`)
+  const data = await res.json()
+  if (!data.document_annotation) throw new Error('Mistral não retornou document_annotation')
+  return JSON.parse(data.document_annotation) as ResultadoJuridico
+}
+
+// A OCR da Mistral processa UM documento por chamada (diferente do Gemini,
+// que aceita edital + TR juntos numa única requisição) — chama uma vez por
+// documento e junta os resultados: "pontos" de todos concatenados,
+// "resumoGeral" de cada um emendado.
+async function tentarFallbackMistral(supabase: Supa, docs: Anexo[], tipo: Tipo): Promise<ResultadoJuridico> {
+  if (!MISTRAL_API_KEY) {
+    throw new Error('MISTRAL_API_KEY não configurada nesta function — sem fallback disponível.')
+  }
+  const prompt = montarPrompt(tipo)
+  const porDocumento = await Promise.all(docs.map(async (doc) => {
+    const bytes = await baixarBytes(supabase, doc)
+    return chamarMistralAnnotation(bytes, prompt)
+  }))
+  return {
+    resumoGeral: porDocumento.map((r) => r.resumoGeral).filter(Boolean).join('\n\n'),
+    pontos: porDocumento.flatMap((r) => r.pontos ?? []),
+  }
+}
+
 // Todo o trabalho pesado — roda depois da resposta HTTP já ter sido
 // devolvida (ver EdgeRuntime.waitUntil lá embaixo), por isso não conta
-// pro limite de tempo de execução síncrona. Mesmo ajuste feito em
-// Analisar-edital-juridico: sem isso, edital grande/escaneado podia
-// estourar o limite de execução síncrona e a análise ficava travada em
-// "processando" pra sempre.
-async function baixarEEnviarAoGemini(supabase: Supa, anexo: Anexo) {
+// pro limite de tempo de execução síncrona.
+async function baixarEEnviarAoGemini(supabase: Supa, anexo: Anexo, apiKey: string) {
   const downloadRes = await baixarAnexo(supabase, anexo.storage_path)
   if (!downloadRes.ok || !downloadRes.body) throw new Error(`Falha ao baixar "${anexo.name}" do Storage/Drive`)
 
@@ -364,8 +477,43 @@ async function baixarEEnviarAoGemini(supabase: Supa, anexo: Anexo) {
   const sizeBytes = anexo.size_bytes ?? Number(downloadRes.headers.get('content-length') ?? 0)
   if (!sizeBytes) throw new Error(`Não foi possível determinar o tamanho de "${anexo.name}"`)
 
-  const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, anexo.name)
+  const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, anexo.name, apiKey)
   return { fileData: { file_data: { mime_type: mimeType, file_uri: geminiFile.uri } }, geminiFileName: geminiFile.name }
+}
+
+// Envia os documentos e gera a análise com UMA chave/projeto específico do
+// Gemini — extraído à parte pra poder ser chamado de novo com uma SEGUNDA
+// chave (2º projeto Google Cloud) se a 1ª bater a cota diária.
+async function tentarAnaliseComGemini(supabase: Supa, docs: Anexo[], tipo: Tipo, apiKey: string): Promise<Response> {
+  const arquivosGeminiParaApagar: string[] = []
+  const resultados = await Promise.all(docs.map(async (doc) => {
+    const r = await baixarEEnviarAoGemini(supabase, doc, apiKey)
+    arquivosGeminiParaApagar.push(r.geminiFileName)
+    return r
+  }))
+  const partesArquivos = resultados.map((r) => r.fileData)
+
+  const genRes = await fetchComRetry(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [...partesArquivos, { text: montarPrompt(tipo) }],
+        }],
+        generationConfig: {
+          response_mime_type: 'application/json',
+          response_schema: RESULTADO_SCHEMA,
+          maxOutputTokens: 8192,
+        },
+      }),
+    }
+  )
+
+  for (const nome of arquivosGeminiParaApagar) apagarArquivoGemini(nome, apiKey) // não precisa esperar terminar
+
+  return genRes
 }
 
 // Antes só lia o Edital — mesmo o prompt instruindo o Gemini a analisar
@@ -374,50 +522,54 @@ async function baixarEEnviarAoGemini(supabase: Supa, anexo: Anexo) {
 // no sistema (só 'Edital' e 'Termo de Referência'), então passa a ler os
 // dois quando o TR também tiver sido enviado.
 async function processarAnaliseJuridica(supabase: Supa, analysisRowId: string, edital: Anexo, tr: Anexo | undefined, tipo: Tipo) {
-  const arquivosGeminiParaApagar: string[] = []
   try {
     const docs = [edital, tr].filter((d): d is Anexo => !!d)
-    const resultados = await Promise.all(docs.map(async (doc) => {
-      const r = await baixarEEnviarAoGemini(supabase, doc)
-      arquivosGeminiParaApagar.push(r.geminiFileName)
-      return r
-    }))
-    const partesArquivos = resultados.map((r) => r.fileData)
 
-    const genRes = await fetchComRetry(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [...partesArquivos, { text: montarPrompt(tipo) }],
-          }],
-          generationConfig: {
-            response_mime_type: 'application/json',
-            response_schema: RESULTADO_SCHEMA,
-            maxOutputTokens: 8192,
-          },
-        }),
-      }
-    )
+    let genRes = await tentarAnaliseComGemini(supabase, docs, tipo, GEMINI_API_KEY)
+    let provedor: 'gemini' | 'gemini-2' | 'mistral' = 'gemini'
 
-    for (const nome of arquivosGeminiParaApagar) apagarArquivoGemini(nome) // não precisa esperar terminar
-
-    if (!genRes.ok) throw new Error(`Falha ao analisar com Gemini: ${await genRes.text()}`)
-    const genData = await genRes.json()
-    const textoResposta = genData.candidates?.[0]?.content?.parts?.[0]?.text
-    if (!textoResposta) {
-      // finishReason 'MAX_TOKENS' é o caso comum de edital com muitos
-      // itens estourando o limite de saída — sem essa checagem, a
-      // mensagem de erro genérica não dava nenhuma pista do motivo real.
-      if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
-        throw new Error('A resposta do Gemini foi cortada por exceder o limite de tamanho (edital com muitos itens) — tente novamente ou reduza os anexos enviados')
-      }
-      throw new Error('Gemini não retornou conteúdo na análise')
+    // 2º nível: se a 1ª chave bateu a cota diária e existe uma 2ª chave
+    // configurada (de um projeto Google Cloud diferente — a cota de 20
+    // req/dia é por projeto, não por conta), tenta de novo com ela antes
+    // de partir pro Mistral.
+    if (genRes.status === 429 && GEMINI_API_KEY_2) {
+      console.warn('[Analisar-oportunidade-juridico] Cota diária da 1ª chave do Gemini esgotada — tentando 2ª chave (projeto Google Cloud separado)...')
+      genRes = await tentarAnaliseComGemini(supabase, docs, tipo, GEMINI_API_KEY_2)
+      provedor = 'gemini-2'
     }
 
-    const resultado = JSON.parse(textoResposta)
+    let resultado: ResultadoJuridico
+
+    // Chegar aqui ainda com status 429 significa: acabou a cota gratuita
+    // de hoje em TODAS as chaves do Gemini configuradas — 3º nível, tenta
+    // o mesmo documento via Mistral Document AI antes de desistir de vez.
+    if (genRes.status === 429) {
+      console.warn('[Analisar-oportunidade-juridico] Cota diária do Gemini esgotada em todas as chaves configuradas — tentando fallback via Mistral Document AI...')
+      try {
+        resultado = await tentarFallbackMistral(supabase, docs, tipo)
+        provedor = 'mistral'
+      } catch (fallbackErr) {
+        const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
+        throw new Error(`Cota diária do Gemini esgotada (todas as chaves) e o fallback via Mistral também falhou: ${fallbackMsg}`, { cause: fallbackErr })
+      }
+    } else if (!genRes.ok) {
+      throw new Error(`Falha ao analisar com Gemini: ${await genRes.text()}`)
+    } else {
+      const genData = await genRes.json()
+      const textoResposta = genData.candidates?.[0]?.content?.parts?.[0]?.text
+      if (!textoResposta) {
+        // finishReason 'MAX_TOKENS' é o caso comum de edital com muitos
+        // itens estourando o limite de saída — sem essa checagem, a
+        // mensagem de erro genérica não dava nenhuma pista do motivo real.
+        if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+          throw new Error('A resposta do Gemini foi cortada por exceder o limite de tamanho (edital com muitos itens) — tente novamente ou reduza os anexos enviados')
+        }
+        throw new Error('Gemini não retornou conteúdo na análise')
+      }
+      resultado = JSON.parse(textoResposta) as ResultadoJuridico
+    }
+
+    console.log(`[Analisar-oportunidade-juridico] Análise concluída via ${provedor}.`)
 
     await supabase.from('opportunity_analysis_juridica').update({ status: 'concluido', resultado, erro_mensagem: null, updated_at: new Date().toISOString() }).eq('id', analysisRowId)
   } catch (err) {
