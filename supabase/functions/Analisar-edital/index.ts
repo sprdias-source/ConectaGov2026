@@ -17,8 +17,19 @@
 // Gemini EM PARALELO, não um depois do outro, pra reduzir ainda mais o
 // tempo total.
 //
+// FALLBACK EM 3 NÍVEIS (mesmo padrão de Analisar-edital-juridico): quando a
+// cota diária do Gemini estoura (HTTP 429 com "PerDay" no corpo), tenta de
+// novo com uma 2ª chave (2º projeto Google Cloud, cota separada) antes de
+// cair pro Mistral Document AI como último recurso. A tela consome o JSON
+// sem saber qual dos três respondeu.
+//
 // VARIÁVEIS DE AMBIENTE NECESSÁRIAS (Supabase → Edge Functions → Secrets):
 // - GEMINI_API_KEY: chave da API do Google AI Studio
+// - GEMINI_API_KEY_2: opcional — 2º nível de fallback (2º projeto Google
+//   Cloud, mesma cota gratuita de 20/dia, mas separada). Sem ela, só existe
+//   a 1ª chave + o fallback do Mistral.
+// - MISTRAL_API_KEY: opcional — 3º nível de fallback. Sem ela, o erro de
+//   cota do Gemini sobe normalmente quando as chaves configuradas esgotarem.
 // - SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY já vêm injetadas
 //   automaticamente pelo Supabase em toda Edge Function.
 
@@ -27,10 +38,19 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!
+// 2º nível de fallback, ANTES do Mistral — mesmo raciocínio de
+// Analisar-edital-juridico: a cota gratuita de 20 req/dia do Gemini é por
+// PROJETO do Google Cloud, não por conta, então uma chave de um 2º projeto
+// dá mais 20/dia de graça.
+const GEMINI_API_KEY_2 = Deno.env.get('GEMINI_API_KEY_2')
 const GOOGLE_CLIENT_ID = Deno.env.get('GOOGLE_DRIVE_CLIENT_ID')
 const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_DRIVE_CLIENT_SECRET')
 const GOOGLE_REFRESH_TOKEN = Deno.env.get('GOOGLE_DRIVE_REFRESH_TOKEN')
 const DRIVE_PREFIX = 'gdrive:'
+// 3º nível de fallback — só entra em ação se as chaves do Gemini
+// configuradas (1 ou 2) esgotarem a cota diária no mesmo dia. Opcional: sem
+// ela, o erro de cota simplesmente sobe, como já era antes desta mudança.
+const MISTRAL_API_KEY = Deno.env.get('MISTRAL_API_KEY')
 
 // Embutido aqui em vez de importado de ../_shared/googleDrive.ts: essa
 // function é colada manualmente no Dashboard do Supabase (um arquivo por
@@ -98,6 +118,25 @@ function json(body: unknown, status = 200) {
 
 type Supa = ReturnType<typeof createClient>
 type Anexo = { id: string; name: string; storage_path: string; mime_type: string | null; size_bytes: number | null; category: string }
+
+type ItemEdital = { numero: string; lote: string; descricao: string; unidade: string; quantidade: number; valorReferencia: number }
+type ChecklistItem = { descricao: string; categoria: string; obrigatorio: boolean }
+type AnaliseResultado = {
+  municipio: string; orgao: string; objeto: string; numeroEdital: string; numeroProcesso: string
+  modalidade: string; srp: boolean; data: string; horario: string; portal: string; intervaloLances: string
+  modoDisputa: {
+    tipo: string; duracaoFaseAberta: string; duracaoFaseFechada: string
+    prorrogacaoAutomatica: string; tempoAleatorio: string; criterioEncerramento: string; observacoes: string
+  }
+  resumoTecnico: string; valorTotalEstimado: number; itens: ItemEdital[]
+  validadeProposta: string; catalogo: string; garantias: string; amostras: string; marcasPreAprovadas: string
+  habilitacao: {
+    habilitacaoJuridica: string; regularidadeFiscalTrabalhista: string
+    qualificacaoEconomicoFinanceira: string; qualificacaoTecnica: string; proposta: string
+  }
+  prazos: string; formaEntrega: string; localEntrega: string; condicoesPagamento: string
+  clausulasRestritivas: string; conclusaoTecnica: string; checklistDocumentacao: ChecklistItem[]
+}
 
 // Schema que obriga o Gemini a devolver exatamente os campos que o
 // frontend (LicitacaoPage.tsx, interface AnaliseEdital) já espera.
@@ -179,6 +218,105 @@ const ANALISE_SCHEMA = {
   },
 }
 
+// Mesmo formato de ANALISE_SCHEMA, em JSON Schema padrão (tipos em
+// minúsculo) — usado no fallback via Mistral Document AI, cujo modo
+// "json_schema" estrito (strict: true) exige TODO campo declarado também em
+// "required" e "additionalProperties: false" em todo objeto. Os campos que
+// o prompt manda deixar vazio quando não encontrar continuam sem problema,
+// já que ficam como string vazia — nunca null (Mistral strict não aceita
+// tipos nullable sem declarar união de tipos).
+const ANALISE_SCHEMA_MISTRAL = {
+  type: 'object',
+  properties: {
+    municipio: { type: 'string' },
+    orgao: { type: 'string' },
+    objeto: { type: 'string' },
+    numeroEdital: { type: 'string' },
+    numeroProcesso: { type: 'string' },
+    modalidade: { type: 'string' },
+    srp: { type: 'boolean' },
+    data: { type: 'string' },
+    horario: { type: 'string' },
+    portal: { type: 'string' },
+    intervaloLances: { type: 'string' },
+    modoDisputa: {
+      type: 'object',
+      properties: {
+        tipo: { type: 'string' },
+        duracaoFaseAberta: { type: 'string' },
+        duracaoFaseFechada: { type: 'string' },
+        prorrogacaoAutomatica: { type: 'string' },
+        tempoAleatorio: { type: 'string' },
+        criterioEncerramento: { type: 'string' },
+        observacoes: { type: 'string' },
+      },
+      required: ['tipo', 'duracaoFaseAberta', 'duracaoFaseFechada', 'prorrogacaoAutomatica', 'tempoAleatorio', 'criterioEncerramento', 'observacoes'],
+      additionalProperties: false,
+    },
+    resumoTecnico: { type: 'string' },
+    valorTotalEstimado: { type: 'number' },
+    itens: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          numero: { type: 'string' },
+          lote: { type: 'string' },
+          descricao: { type: 'string' },
+          unidade: { type: 'string' },
+          quantidade: { type: 'number' },
+          valorReferencia: { type: 'number' },
+        },
+        required: ['numero', 'lote', 'descricao', 'unidade', 'quantidade', 'valorReferencia'],
+        additionalProperties: false,
+      },
+    },
+    validadeProposta: { type: 'string' },
+    catalogo: { type: 'string' },
+    garantias: { type: 'string' },
+    amostras: { type: 'string' },
+    marcasPreAprovadas: { type: 'string' },
+    habilitacao: {
+      type: 'object',
+      properties: {
+        habilitacaoJuridica: { type: 'string' },
+        regularidadeFiscalTrabalhista: { type: 'string' },
+        qualificacaoEconomicoFinanceira: { type: 'string' },
+        qualificacaoTecnica: { type: 'string' },
+        proposta: { type: 'string' },
+      },
+      required: ['habilitacaoJuridica', 'regularidadeFiscalTrabalhista', 'qualificacaoEconomicoFinanceira', 'qualificacaoTecnica', 'proposta'],
+      additionalProperties: false,
+    },
+    prazos: { type: 'string' },
+    formaEntrega: { type: 'string' },
+    localEntrega: { type: 'string' },
+    condicoesPagamento: { type: 'string' },
+    clausulasRestritivas: { type: 'string' },
+    conclusaoTecnica: { type: 'string' },
+    checklistDocumentacao: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          descricao: { type: 'string' },
+          categoria: { type: 'string' },
+          obrigatorio: { type: 'boolean' },
+        },
+        required: ['descricao', 'categoria', 'obrigatorio'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: [
+    'municipio', 'orgao', 'objeto', 'numeroEdital', 'numeroProcesso', 'modalidade', 'srp', 'data', 'horario',
+    'portal', 'intervaloLances', 'modoDisputa', 'resumoTecnico', 'valorTotalEstimado', 'itens', 'validadeProposta',
+    'catalogo', 'garantias', 'amostras', 'marcasPreAprovadas', 'habilitacao', 'prazos', 'formaEntrega',
+    'localEntrega', 'condicoesPagamento', 'clausulasRestritivas', 'conclusaoTecnica', 'checklistDocumentacao',
+  ],
+  additionalProperties: false,
+}
+
 const PROMPT = `Você é um analista de licitações públicas brasileiras, especialista na Lei nº 14.133/2021 e no Decreto nº 10.024/2019 (pregão eletrônico). Analise o edital (e o termo de referência, se estiver junto) em anexo e devolva um JSON com os campos do schema fornecido.
 
 Preencha todos os campos que conseguir identificar no documento; deixe null ou vazio o que não encontrar — nunca invente informação.
@@ -216,9 +354,12 @@ Para os 5 campos de "habilitacao", resuma em texto corrido o que o edital exige 
 // Faz upload de um arquivo pro Gemini Files API em streaming (o corpo da
 // resposta do download do Storage é canalizado direto pro corpo da
 // requisição de upload — o arquivo nunca é materializado inteiro numa
-// variável).
-async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeBytes: number, mimeType: string, displayName: string) {
-  const startRes = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${GEMINI_API_KEY}`, {
+// variável). Recebe a chave como parâmetro (não fixa) pra poder ser chamada
+// de novo com uma 2ª chave/projeto se a 1ª bater a cota diária — os
+// arquivos enviados ficam vinculados ao projeto dono da chave que fez o
+// upload, então trocar de chave exige reenviar os documentos.
+async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeBytes: number, mimeType: string, displayName: string, apiKey: string) {
+  const startRes = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`, {
     method: 'POST',
     headers: {
       'X-Goog-Upload-Protocol': 'resumable',
@@ -254,7 +395,7 @@ async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeByte
   let tentativas = 0
   while (file.state === 'PROCESSING' && tentativas < 50) {
     await new Promise((r) => setTimeout(r, 2000))
-    const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${file.name}?key=${GEMINI_API_KEY}`)
+    const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${file.name}?key=${apiKey}`)
     file = await checkRes.json()
     tentativas++
   }
@@ -264,7 +405,7 @@ async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeByte
     // nunca seria apagado — quem chama uploadParaGemini só recebe o
     // file.name em caso de sucesso, então sem isso o arquivo ficava órfão
     // até expirar sozinho em 48h.
-    await apagarArquivoGemini(file.name)
+    await apagarArquivoGemini(file.name, apiKey)
     throw new Error(`"${displayName}" não ficou pronto no Gemini (estado: ${file.state})`)
   }
 
@@ -310,15 +451,15 @@ async function fetchComRetry(url: string, init: RequestInit, tentativas = 4): Pr
   throw ultimoErro instanceof Error ? ultimoErro : new Error(String(ultimoErro))
 }
 
-async function apagarArquivoGemini(fileName: string) {
+async function apagarArquivoGemini(fileName: string, apiKey: string) {
   try {
-    await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${GEMINI_API_KEY}`, { method: 'DELETE' })
+    await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${apiKey}`, { method: 'DELETE' })
   } catch {
     // best-effort — o Gemini expira arquivos sozinho depois de um tempo
   }
 }
 
-async function processarDocumento(supabase: Supa, doc: Anexo, arquivosGeminiParaApagar: string[]) {
+async function processarDocumento(supabase: Supa, doc: Anexo, apiKey: string, arquivosGeminiParaApagar: string[]) {
   const downloadRes = await baixarAnexo(supabase, doc.storage_path)
   if (!downloadRes.ok || !downloadRes.body) throw new Error(`Falha ao baixar "${doc.name}" do Storage/Drive`)
 
@@ -326,7 +467,7 @@ async function processarDocumento(supabase: Supa, doc: Anexo, arquivosGeminiPara
   const sizeBytes = doc.size_bytes ?? Number(downloadRes.headers.get('content-length') ?? 0)
   if (!sizeBytes) throw new Error(`Não foi possível determinar o tamanho de "${doc.name}"`)
 
-  const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, doc.name)
+  const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, doc.name, apiKey)
   // Registra ANTES de retornar — se outro documento do MESMO lote (ver
   // Promise.all abaixo) falhar depois deste já ter subido com sucesso, o
   // Promise.all rejeita sem nunca rodar o .forEach que populava esta lista
@@ -338,48 +479,141 @@ async function processarDocumento(supabase: Supa, doc: Anexo, arquivosGeminiPara
   }
 }
 
+// Envia os documentos e gera a análise com UMA chave/projeto específico do
+// Gemini — extraído à parte pra poder ser chamado de novo com uma SEGUNDA
+// chave se a 1ª bater a cota diária.
+async function tentarAnaliseComGemini(supabase: Supa, docs: Anexo[], apiKey: string): Promise<Response> {
+  const arquivosGeminiParaApagar: string[] = []
+  const resultados = await Promise.all(docs.map((doc) => processarDocumento(supabase, doc, apiKey, arquivosGeminiParaApagar)))
+  const partesArquivos = resultados.map((r) => r.fileData)
+
+  const genRes = await fetchComRetry(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [...partesArquivos, { text: PROMPT }] }],
+        generationConfig: {
+          response_mime_type: 'application/json',
+          response_schema: ANALISE_SCHEMA,
+          maxOutputTokens: 8192,
+        },
+      }),
+    }
+  )
+
+  for (const nome of arquivosGeminiParaApagar) apagarArquivoGemini(nome, apiKey) // não precisa esperar terminar
+
+  return genRes
+}
+
+function bytesParaBase64(bytes: Uint8Array): string {
+  let binario = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binario += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(binario)
+}
+
+async function baixarBytes(supabase: Supa, anexo: Anexo): Promise<Uint8Array> {
+  const downloadRes = await baixarAnexo(supabase, anexo.storage_path)
+  if (!downloadRes.ok || !downloadRes.body) throw new Error(`Falha ao baixar "${anexo.name}" do Storage/Drive`)
+  return new Uint8Array(await downloadRes.arrayBuffer())
+}
+
+// Fallback via Mistral Document AI (OCR endpoint com extração estruturada
+// por schema, modelo Pixtral por trás) — mesmo formato de chamada já
+// confirmado e usado em Analisar-edital-juridico.
+async function chamarMistralAnnotation(pdfBytes: Uint8Array): Promise<AnaliseResultado> {
+  const base64 = bytesParaBase64(pdfBytes)
+  const res = await fetch('https://api.mistral.ai/v1/ocr', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MISTRAL_API_KEY}` },
+    body: JSON.stringify({
+      model: 'mistral-ocr-latest',
+      document: { type: 'document_url', document_url: `data:application/pdf;base64,${base64}` },
+      document_annotation_format: {
+        type: 'json_schema',
+        json_schema: { name: 'analise_edital', schema: ANALISE_SCHEMA_MISTRAL, strict: true },
+      },
+      document_annotation_prompt: PROMPT,
+    }),
+  })
+  if (!res.ok) throw new Error(`Falha ao analisar com Mistral: ${await res.text()}`)
+  const data = await res.json()
+  if (!data.document_annotation) throw new Error('Mistral não retornou document_annotation')
+  return JSON.parse(data.document_annotation) as AnaliseResultado
+}
+
+// A OCR da Mistral processa UM documento por chamada (diferente do Gemini,
+// que aceita edital + TR juntos numa única requisição). Só o Edital vai pro
+// Mistral no fallback — o TR é complementar e mesclar duas extrações
+// estruturadas completas de forma confiável (campo a campo) foge do escopo
+// razoável aqui; o Edital sozinho já é a fonte primária de quase todo o
+// schema. Itens/checklist continuam vindo só do Edital nesse caminho.
+async function tentarFallbackMistral(supabase: Supa, edital: Anexo): Promise<AnaliseResultado> {
+  if (!MISTRAL_API_KEY) {
+    throw new Error('MISTRAL_API_KEY não configurada nesta function — sem fallback disponível.')
+  }
+  const bytes = await baixarBytes(supabase, edital)
+  return chamarMistralAnnotation(bytes)
+}
+
 // Todo o trabalho pesado — roda depois da resposta HTTP já ter sido
 // devolvida (ver EdgeRuntime.waitUntil lá embaixo), por isso não conta
 // pro limite de tempo de execução síncrona.
 async function processarAnalise(supabase: Supa, analysisRowId: string, edital: Anexo, tr: Anexo | undefined) {
-  const arquivosGeminiParaApagar: string[] = []
   try {
     const docs = [edital, tr].filter((d): d is Anexo => !!d)
-    const resultados = await Promise.all(docs.map((doc) => processarDocumento(supabase, doc, arquivosGeminiParaApagar)))
-    const partesArquivos = resultados.map((r) => r.fileData)
 
-    const genRes = await fetchComRetry(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [...partesArquivos, { text: PROMPT }] }],
-          generationConfig: {
-            response_mime_type: 'application/json',
-            response_schema: ANALISE_SCHEMA,
-            maxOutputTokens: 8192,
-          },
-        }),
-      }
-    )
+    let genRes = await tentarAnaliseComGemini(supabase, docs, GEMINI_API_KEY)
+    let provedor: 'gemini' | 'gemini-2' | 'mistral' = 'gemini'
 
-    for (const nome of arquivosGeminiParaApagar) apagarArquivoGemini(nome) // não precisa esperar terminar
-
-    if (!genRes.ok) throw new Error(`Falha ao analisar com Gemini: ${await genRes.text()}`)
-    const genData = await genRes.json()
-    const textoResposta = genData.candidates?.[0]?.content?.parts?.[0]?.text
-    if (!textoResposta) {
-      // finishReason 'MAX_TOKENS' é o caso comum de edital com muitos
-      // itens estourando o limite de saída — sem essa checagem, a
-      // mensagem de erro genérica não dava nenhuma pista do motivo real.
-      if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
-        throw new Error('A resposta do Gemini foi cortada por exceder o limite de tamanho (edital com muitos itens) — tente novamente ou reduza os anexos enviados')
-      }
-      throw new Error('Gemini não retornou conteúdo na análise')
+    // 2º nível: se a 1ª chave bateu a cota diária e existe uma 2ª chave
+    // configurada, tenta de novo com ela antes de partir pro Mistral.
+    if (genRes.status === 429 && GEMINI_API_KEY_2) {
+      console.warn('[Analisar-edital] Cota diária da 1ª chave do Gemini esgotada — tentando 2ª chave (projeto Google Cloud separado)...')
+      genRes = await tentarAnaliseComGemini(supabase, docs, GEMINI_API_KEY_2)
+      provedor = 'gemini-2'
     }
 
-    const analise = JSON.parse(textoResposta)
+    let analise: AnaliseResultado
+
+    // Chegar aqui ainda com status 429 significa: acabou a cota gratuita
+    // de hoje em TODAS as chaves do Gemini configuradas — 3º nível, tenta
+    // o mesmo edital via Mistral Document AI antes de desistir de vez.
+    if (genRes.status === 429) {
+      console.warn('[Analisar-edital] Cota diária do Gemini esgotada em todas as chaves configuradas — tentando fallback via Mistral Document AI...')
+      try {
+        analise = await tentarFallbackMistral(supabase, edital)
+        provedor = 'mistral'
+      } catch (fallbackErr) {
+        const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
+        throw new Error(`Cota diária do Gemini esgotada (todas as chaves) e o fallback via Mistral também falhou: ${fallbackMsg}`, { cause: fallbackErr })
+      }
+    } else if (!genRes.ok) {
+      throw new Error(`Falha ao analisar com Gemini: ${await genRes.text()}`)
+    } else {
+      const genData = await genRes.json()
+      const textoResposta = genData.candidates?.[0]?.content?.parts?.[0]?.text
+      if (!textoResposta) {
+        // finishReason 'MAX_TOKENS' é o caso comum de edital com muitos
+        // itens estourando o limite de saída — sem essa checagem, a
+        // mensagem de erro genérica não dava nenhuma pista do motivo real.
+        if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+          throw new Error('A resposta do Gemini foi cortada por exceder o limite de tamanho (edital com muitos itens) — tente novamente ou reduza os anexos enviados')
+        }
+        throw new Error('Gemini não retornou conteúdo na análise')
+      }
+      analise = JSON.parse(textoResposta) as AnaliseResultado
+    }
+
+    // Log só pra diagnóstico (qual provedor de fato gerou o resultado) — o
+    // JSON gravado em "analise" continua exatamente no mesmo formato dos
+    // três provedores, então a tela não precisa saber qual respondeu.
+    console.log(`[Analisar-edital] Análise concluída via ${provedor}.`)
 
     await supabase.from('bidding_analysis').update({ status: 'concluido', analise, erro_mensagem: null, updated_at: new Date().toISOString() }).eq('id', analysisRowId)
   } catch (err) {
@@ -447,7 +681,7 @@ Deno.serve(async (req: Request) => {
       analysisRowId = novo.id as string
     }
 
-    // @ts-ignore: EdgeRuntime é global no runtime do Supabase, não existe no lib.dom.d.ts do TypeScript
+    // @ts-expect-error: EdgeRuntime é global no runtime do Supabase, não existe no lib.dom.d.ts do TypeScript
     EdgeRuntime.waitUntil(processarAnalise(supabase, analysisRowId, edital, tr))
 
     // Responde já, sem esperar a análise terminar — é isso que evita
