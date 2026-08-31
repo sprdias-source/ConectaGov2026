@@ -20,6 +20,7 @@ import TopScrollTable from '../components/ui/TopScrollTable'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import PdfViewerModal from '../components/ui/PdfViewerModal'
 import Modal from '../components/ui/Modal'
+import HomologacaoDialog from '../components/cadastros/HomologacaoDialog'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { useAttachedFiles } from '../hooks/useAttachedFiles'
 import { useBiddingChecklist, calcularHabilitacao, statusItemChecklist, arquivoResolvidoDoItem, certidaoDisponivelParaItem, extrairNumeroEdital } from '../hooks/useBiddingChecklist'
@@ -2329,6 +2330,11 @@ export default function LicitacaoPage() {
   // cai no padrão de sempre.
   const abaInicial = ABAS.find((a) => a.key === searchParams.get('aba'))?.key ?? 'visao'
   const [aba, setAba] = useState<AbaKey>(abaInicial)
+  // Mesmo diálogo de Data de Homologação do Kanban (ver HomologacaoDialog),
+  // agora também na esteira de etapas desta página — os dois caminhos pra
+  // mudar de etapa precisam fazer a mesma pergunta, senão só um deles fica
+  // com o cadastro correto.
+  const [pendenteHomologacao, setPendenteHomologacao] = useState<Bidding | null>(null)
   const bidding = biddings.find((b) => b.id === id)
   const clientName = bidding ? (clients.find((c) => c.id === bidding.clientId)?.name ?? 'Cliente removido') : ''
 
@@ -2744,7 +2750,18 @@ export default function LicitacaoPage() {
           <EtapaTrilha
             etapaAtual={bidding.etapa}
             atualizando={updateEtapa.isPending}
-            onMudar={(etapa) => updateEtapa.mutate({ biddingId: bidding.id, etapa })}
+            onMudar={(etapa) => {
+              // "Adjudicada e Homologada" sempre abre o diálogo da Data de
+              // Homologação (ver HomologacaoDialog) em vez de mudar a etapa
+              // direto — mesmo comportamento do Kanban, mesmo se a
+              // licitação já estiver nessa etapa (corrige data errada) ou
+              // já tiver uma data gravada.
+              if (etapa === 'Adjudicada e Homologada') {
+                setPendenteHomologacao(bidding)
+                return
+              }
+              updateEtapa.mutate({ biddingId: bidding.id, etapa })
+            }}
             podeEditar={podeEditar}
           />
         </div>
@@ -3430,6 +3447,13 @@ export default function LicitacaoPage() {
           </div>
         </div>
       </Modal>
+
+      {/* key troca a cada licitação — remonta o diálogo do zero (pré-preenche
+          com a data já gravada daquela licitação, se houver) em vez de
+          sincronizar o estado via useEffect. Mesmo padrão do Kanban. */}
+      {podeEditar && (
+        <HomologacaoDialog key={pendenteHomologacao?.id ?? 'none'} bidding={pendenteHomologacao} onClose={() => setPendenteHomologacao(null)} />
+      )}
 
       <UndoToast toast={toastExclusaoItem} />
     </div>

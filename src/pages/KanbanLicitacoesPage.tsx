@@ -9,6 +9,7 @@ import { PageHeader } from '../components/ui/Primitives'
 import TopScrollTable from '../components/ui/TopScrollTable'
 import { SeloHabilitacaoBadge } from '../components/ui/SeloHabilitacao'
 import BiddingFormModal from '../components/cadastros/BiddingFormModal'
+import HomologacaoDialog from '../components/cadastros/HomologacaoDialog'
 import Modal from '../components/ui/Modal'
 import { Field, Select, Input, Button } from '../components/ui/FormControls'
 import { useBiddings } from '../hooks/useBiddings'
@@ -72,55 +73,6 @@ function EncerrarDialog({ bidding, onClose }: { bidding: Bidding | null; onClose
           <Button variant="secondary" onClick={onClose}>Cancelar</Button>
           <Button variant="danger" onClick={salvar} disabled={marcarResultado.isPending}>
             {marcarResultado.isPending ? 'Salvando...' : 'Encerrar'}
-          </Button>
-        </div>
-      </div>
-    </Modal>
-  )
-}
-
-// Sempre que a etapa "Adjudicada e Homologada" é ativada — entrando nela
-// vindo de outra etapa, ou pelo botão de corrigir num card que já está
-// parado aqui (ver CardLicitacao/onCorrigirHomologacao) — abre esse
-// diálogo, pré-preenchido com a data que já estiver gravada (ou hoje, se
-// ainda não tiver nenhuma). Substitui o preenchimento automático "hoje" de
-// antes (ver tentarPreencherValorGanhoAutomatico em useBiddings.ts), que
-// nunca batia com o dia real da homologação e não dava nenhum jeito de
-// corrigir depois — importante pra quem está lançando ou arrumando
-// licitações antigas.
-function HomologacaoDialog({ bidding, onClose }: { bidding: Bidding | null; onClose: () => void }) {
-  const { updateEtapa } = useBiddings()
-  const { showToast } = useToast()
-  const [data, setData] = useState(() => bidding?.dataHomologacao ?? todayLocalISO())
-
-  if (!bidding) return null
-
-  const jaTinhaData = bidding.dataHomologacao != null
-
-  const salvar = () => {
-    updateEtapa.mutate(
-      { biddingId: bidding.id, etapa: 'Adjudicada e Homologada', dataHomologacao: data },
-      {
-        onSuccess: () => { showToast('Data de Homologação salva.'); onClose() },
-        onError: (err) => showToast(`Erro ao salvar a data: ${err instanceof Error ? err.message : String(err)}`, 'error'),
-      }
-    )
-  }
-
-  return (
-    <Modal open onClose={onClose} title="Data de Homologação" maxWidth="max-w-sm">
-      <div className="flex flex-col gap-4">
-        <p className="text-[12px] text-base-400">{bidding.objeto}</p>
-        {jaTinhaData && (
-          <p className="text-[11px] text-warning-400 font-semibold">⚠ Essa licitação já tinha uma data registrada — corrija se estiver errada.</p>
-        )}
-        <Field label="Data em que o órgão homologou o resultado" required>
-          <Input type="date" value={data} onChange={(e) => setData(e.target.value)} />
-        </Field>
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-          <Button onClick={salvar} disabled={!data || updateEtapa.isPending}>
-            {updateEtapa.isPending ? 'Salvando...' : 'Confirmar'}
           </Button>
         </div>
       </div>
