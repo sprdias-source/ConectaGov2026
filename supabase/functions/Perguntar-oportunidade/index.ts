@@ -276,6 +276,29 @@ const PERGUNTA_SCHEMA_MISTRAL = {
   additionalProperties: false,
 }
 
+// Mistral também pode responder 429 "rate_limited" quando várias perguntas
+// disparam em sequência num curto intervalo — diferente do 429 "PerDay" do
+// Gemini (que só libera bem mais tarde), esse costuma se resolver sozinho
+// em poucos segundos. Tenta de novo (backoff exponencial) antes de contar
+// como "as 3 alternativas falharam" — sem isso, um pico breve de tráfego já
+// derrubava a resposta mesmo com o Mistral configurado e de pé.
+async function fetchMistralComRetry(body: unknown, tentativas = 3): Promise<Response> {
+  let res: Response
+  for (let i = 0; i < tentativas; i++) {
+    res = await fetch('https://api.mistral.ai/v1/ocr', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MISTRAL_API_KEY}` },
+      body: JSON.stringify(body),
+    })
+    if (res.ok || res.status !== 429) return res
+    if (i < tentativas - 1) {
+      console.warn(`[retry] Mistral em rate limit (tentativa ${i + 1}/${tentativas}), tentando de novo em breve...`)
+      await new Promise((r) => setTimeout(r, 2000 * 2 ** i))
+    }
+  }
+  return res!
+}
+
 // Fallback via Mistral Document AI — só olha o Edital (não o TR): a OCR da
 // Mistral processa um documento por chamada, e o edital sozinho já cobre a
 // grande maioria das perguntas feitas nesta tela.
@@ -287,18 +310,14 @@ async function tentarFallbackMistral(supabase: Supa, edital: Anexo, pergunta: st
   const base64 = bytesParaBase64(bytes)
   const promptAnotacao = `Você é um assistente que responde perguntas objetivas sobre um edital de licitação pública brasileira anexado. Responda à pergunta abaixo de forma direta, em português, citando o trecho ou cláusula do edital que embasa a resposta sempre que possível, no campo "resposta". Se a informação não estiver no documento, diga claramente que não encontrou essa informação no edital — nunca invente uma resposta.\n\nPERGUNTA: ${pergunta}`
 
-  const res = await fetch('https://api.mistral.ai/v1/ocr', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MISTRAL_API_KEY}` },
-    body: JSON.stringify({
-      model: 'mistral-ocr-latest',
-      document: { type: 'document_url', document_url: `data:application/pdf;base64,${base64}` },
-      document_annotation_format: {
-        type: 'json_schema',
-        json_schema: { name: 'pergunta_oportunidade', schema: PERGUNTA_SCHEMA_MISTRAL, strict: true },
-      },
-      document_annotation_prompt: promptAnotacao,
-    }),
+  const res = await fetchMistralComRetry({
+    model: 'mistral-ocr-latest',
+    document: { type: 'document_url', document_url: `data:application/pdf;base64,${base64}` },
+    document_annotation_format: {
+      type: 'json_schema',
+      json_schema: { name: 'pergunta_oportunidade', schema: PERGUNTA_SCHEMA_MISTRAL, strict: true },
+    },
+    document_annotation_prompt: promptAnotacao,
   })
   if (!res.ok) throw new Error(`Falha ao perguntar via Mistral: ${await res.text()}`)
   const data = await res.json()

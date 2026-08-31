@@ -36,6 +36,103 @@ function DecrementoView({ item }: { item: ItemDraft }) {
   )
 }
 
+// Redimensiona a altura da textarea pro conteúdo atual — chamado tanto no
+// ref (altura certa já no primeiro render, útil pra itens importados via
+// Excel com descrição longa) quanto a cada tecla digitada. Função de módulo
+// (não fechada sobre nenhum estado do componente) pra não recriar a
+// referência a cada render e disparar o ref de novo à toa.
+function ajustarAlturaTextarea(el: HTMLTextAreaElement | null) {
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight}px`
+}
+
+// Descrição, Marca e Modelo são texto livre de tamanho imprevisível — em
+// vez de esticar a coluna pra caber tudo numa linha só (o que forçava a
+// tabela inteira a ficar enorme), o campo tem uma largura fixa modesta e
+// QUEBRA LINHA quando o texto não cabe, crescendo em altura em vez de em
+// largura.
+function CampoTextoQuebraLinha({
+  value, onChange, placeholder, className = '',
+}: {
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  className?: string
+}) {
+  return (
+    <textarea
+      ref={ajustarAlturaTextarea}
+      rows={1}
+      value={value}
+      onChange={(e) => { ajustarAlturaTextarea(e.currentTarget); onChange(e.target.value) }}
+      placeholder={placeholder}
+      className={`w-full resize-none overflow-hidden bg-base-850 border border-base-700 rounded-lg px-2 py-1 text-[12px] leading-snug text-base-100 placeholder:text-base-500 focus:border-accent-400 focus:ring-1 focus:ring-accent-400/30 outline-none transition ${className}`}
+    />
+  )
+}
+
+// Campo de valor monetário em miniatura, no mesmo estilo "calculadora" do
+// CurrencyInput (dígitos entram pela direita) — só que aceita `null` pra
+// representar "ainda não preenchido" (essencial pro Vl. Unit. Ofertado, que
+// começa vazio até o usuário digitar algo, ver CORREÇÃO DE BUG mais abaixo
+// sobre não confundir "vazio" com "zero"). Sem estado interno: o valor
+// exibido é derivado direto da prop a cada render, então não precisa de
+// useEffect pra ressincronizar quando o item muda por fora (import de
+// Excel, autosave recarregando os itens).
+function CampoValorMonetario({
+  value, onChange, placeholder = 'R$ 0,00',
+}: {
+  value: number | null | undefined
+  onChange: (value: number | undefined) => void
+  placeholder?: string
+}) {
+  const display = value == null ? '' : (value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  const handleInput = (e: React.FormEvent<HTMLInputElement>) => {
+    const digitsOnly = e.currentTarget.value.replace(/\D/g, '')
+    if (digitsOnly === '') { onChange(undefined); return }
+    onChange(parseInt(digitsOnly, 10) / 100)
+  }
+
+  return (
+    <div className="relative">
+      <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9.5px] text-base-500 pointer-events-none">R$</span>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={display}
+        onChange={() => {}}
+        onInput={handleInput}
+        placeholder={placeholder}
+        className="w-full bg-base-850 border border-base-700 rounded-lg pl-6 pr-2 py-1 text-[12px] text-base-100 placeholder:text-base-500 focus:border-accent-400 focus:ring-1 focus:ring-accent-400/30 outline-none transition text-right font-mono tabular-nums"
+      />
+    </div>
+  )
+}
+
+// Quantidade é número, não faz sentido quebrar em duas linhas — em vez
+// disso, tem um tamanho fixo confortável pra 4 dígitos (o caso comum) e só
+// cresce pro lado quando o valor digitado precisar de mais espaço.
+function CampoQuantidade({
+  value, onChange, className = '',
+}: {
+  value: number | undefined
+  onChange: (value: number) => void
+  className?: string
+}) {
+  const largura = Math.max(String(value ?? '').length, 4) + 1
+  return (
+    <input
+      type="number"
+      value={value ?? ''}
+      onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+      style={{ width: `${largura}ch` }}
+      className={`bg-base-850 border border-base-700 rounded-lg px-2 py-1 text-[12px] font-mono text-base-100 focus:border-accent-400 focus:ring-1 focus:ring-accent-400/30 outline-none transition ${className}`}
+    />
+  )
+}
+
 export default function BiddingItemsEditor({
   items, onChange, tipoDisputa, travarValorLicitado, onGerarPrevia, previaGerada,
 }: {
@@ -225,19 +322,19 @@ export default function BiddingItemsEditor({
         </td>
       )}
       <td className="px-2 py-1.5">
-        <Input value={d.descricao ?? ''} onChange={(e) => updateRow(d._key, { descricao: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="Descrição do item" />
+        <CampoTextoQuebraLinha value={d.descricao ?? ''} onChange={(v) => updateRow(d._key, { descricao: v })} placeholder="Descrição do item" />
       </td>
       <td className="px-2 py-1.5">
         <Input value={d.unidade ?? ''} onChange={(e) => updateRow(d._key, { unidade: e.target.value })} className="!py-1 !px-2 text-[12px]" />
       </td>
       <td className="px-2 py-1.5">
-        <Input type="number" value={d.quantidade ?? ''} onChange={(e) => updateRow(d._key, { quantidade: parseFloat(e.target.value) || 0 })} className="!py-1 !px-2 text-[12px]" />
+        <CampoQuantidade value={d.quantidade} onChange={(v) => updateRow(d._key, { quantidade: v })} />
       </td>
       <td className="px-2 py-1.5">
-        <Input value={d.marca ?? ''} onChange={(e) => updateRow(d._key, { marca: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
+        <CampoTextoQuebraLinha value={d.marca ?? ''} onChange={(v) => updateRow(d._key, { marca: v })} placeholder="—" />
       </td>
       <td className="px-2 py-1.5">
-        <Input value={d.referencia ?? ''} onChange={(e) => updateRow(d._key, { referencia: e.target.value })} className="!py-1 !px-2 text-[12px]" placeholder="—" />
+        <CampoTextoQuebraLinha value={d.referencia ?? ''} onChange={(v) => updateRow(d._key, { referencia: v })} placeholder="—" />
       </td>
       <td className="px-2 py-1.5">
         {/* A trava só vale pra item que já existia (veio da análise do
@@ -250,19 +347,14 @@ export default function BiddingItemsEditor({
             {formatBRL(d.valorUnitarioLicitado ?? 0)} <Lock className="w-3 h-3 shrink-0" />
           </span>
         ) : (
-          <Input type="number" step="0.01" value={d.valorUnitarioLicitado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioLicitado: parseFloat(e.target.value) || 0 })} className="!py-1 !px-2 text-[12px]" />
+          <CampoValorMonetario value={d.valorUnitarioLicitado ?? 0} onChange={(v) => updateRow(d._key, { valorUnitarioLicitado: v ?? 0 })} />
         )}
       </td>
       <td className="px-2 py-1.5">
-        <Input type="number" step="0.01" value={d.valorUnitarioOfertado ?? ''} onChange={(e) => {
-          // CORREÇÃO DE BUG: `parseFloat(v) || undefined` trata 0 como
-          // falsy — impedia registrar R$0,00 e apagava o "0" inicial
-          // enquanto o usuário ainda digitava um decimal. Decide pelo
-          // texto digitado, não pelo número já convertido.
-          const raw = e.target.value
-          const parsed = parseFloat(raw)
-          updateRow(d._key, { valorUnitarioOfertado: raw.trim() && !isNaN(parsed) ? parsed : undefined })
-        }} className="!py-1 !px-2 text-[12px]" placeholder="—" />
+        {/* CORREÇÃO DE BUG preservada: `v ?? undefined` só cai em undefined
+            quando o campo está de fato vazio — 0 explícito (R$0,00) nunca é
+            tratado como "não preenchido" (ver CampoValorMonetario). */}
+        <CampoValorMonetario value={d.valorUnitarioOfertado} onChange={(v) => updateRow(d._key, { valorUnitarioOfertado: v })} />
       </td>
       <td className="px-2 py-1.5 text-right font-mono text-[12px] text-base-300">
         {formatBRL((d.quantidade ?? 0) * (d.valorUnitarioOfertado ?? d.valorUnitarioLicitado ?? 0))}
@@ -312,7 +404,7 @@ export default function BiddingItemsEditor({
         )}
         <div className="flex-1">
           <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Descrição</p>
-          <Input value={d.descricao ?? ''} onChange={(e) => updateRow(d._key, { descricao: e.target.value })} className="!py-1.5 !px-2 text-[13px]" placeholder="Descrição do item" />
+          <CampoTextoQuebraLinha value={d.descricao ?? ''} onChange={(v) => updateRow(d._key, { descricao: v })} placeholder="Descrição do item" className="!text-[13px]" />
         </div>
         <button type="button" onClick={() => removeRow(d._key)} className="self-end mb-2 p-1.5 text-base-500 hover:text-negative-400 transition shrink-0">
           <Trash2 className="w-4 h-4" />
@@ -330,27 +422,23 @@ export default function BiddingItemsEditor({
         </div>
         <div>
           <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Marca</p>
-          <Input value={d.marca ?? ''} onChange={(e) => updateRow(d._key, { marca: e.target.value })} className="!py-1.5 !px-2 text-[13px]" placeholder="—" />
+          <CampoTextoQuebraLinha value={d.marca ?? ''} onChange={(v) => updateRow(d._key, { marca: v })} placeholder="—" className="!text-[13px]" />
         </div>
         <div>
           <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Modelo</p>
-          <Input value={d.referencia ?? ''} onChange={(e) => updateRow(d._key, { referencia: e.target.value })} className="!py-1.5 !px-2 text-[13px]" placeholder="—" />
+          <CampoTextoQuebraLinha value={d.referencia ?? ''} onChange={(v) => updateRow(d._key, { referencia: v })} placeholder="—" className="!text-[13px]" />
         </div>
         <div>
           <p className="text-[9px] font-bold uppercase text-base-500 mb-1 flex items-center gap-1">Vl. Unit. Licitado {travarValorLicitado && d.id && <Lock className="w-2.5 h-2.5" />}</p>
           {travarValorLicitado && d.id ? (
             <p className="font-mono text-[13px] text-base-500 py-1.5">{formatBRL(d.valorUnitarioLicitado ?? 0)}</p>
           ) : (
-            <Input type="number" step="0.01" value={d.valorUnitarioLicitado ?? ''} onChange={(e) => updateRow(d._key, { valorUnitarioLicitado: parseFloat(e.target.value) || 0 })} className="!py-1.5 !px-2 text-[13px]" />
+            <CampoValorMonetario value={d.valorUnitarioLicitado ?? 0} onChange={(v) => updateRow(d._key, { valorUnitarioLicitado: v ?? 0 })} />
           )}
         </div>
         <div>
           <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Vl. Unit. Ofertado</p>
-          <Input type="number" step="0.01" value={d.valorUnitarioOfertado ?? ''} onChange={(e) => {
-            const raw = e.target.value
-            const parsed = parseFloat(raw)
-            updateRow(d._key, { valorUnitarioOfertado: raw.trim() && !isNaN(parsed) ? parsed : undefined })
-          }} className="!py-1.5 !px-2 text-[13px]" placeholder="—" />
+          <CampoValorMonetario value={d.valorUnitarioOfertado} onChange={(v) => updateRow(d._key, { valorUnitarioOfertado: v })} />
         </div>
         <div>
           <p className="text-[9px] font-bold uppercase text-base-500 mb-1">Vl. Total</p>
@@ -429,18 +517,18 @@ export default function BiddingItemsEditor({
             <table className="w-full text-[12px]">
               <thead>
                 <tr className="bg-base-850 text-left">
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-16">Nº</th>
-                  {tipoDisputa === 'Lote' && <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-20">Lote</th>}
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500">Descrição</th>
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-20">Unid.</th>
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-20">Qtd.</th>
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Marca</th>
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Modelo</th>
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-10">Nº</th>
+                  {tipoDisputa === 'Lote' && <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-11">Lote</th>}
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-56">Descrição</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-14">Unid.</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500">Qtd.</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Marca</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Modelo</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-32">
                     <span className="flex items-center gap-1">Vl. Unit. Licitado {travarValorLicitado && <Lock className="w-3 h-3 text-base-600" />}</span>
                   </th>
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Vl. Unit. Ofertado</th>
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Vl. Total</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-32">Vl. Unit. Ofertado</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Vl. Total</th>
                   <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Decremento</th>
                   <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-16 text-center">Ganhou?</th>
                   <th className="px-2 py-2 w-8" />

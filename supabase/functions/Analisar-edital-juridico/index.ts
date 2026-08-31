@@ -470,20 +470,39 @@ async function baixarBytes(supabase: Supa, anexo: Anexo): Promise<Uint8Array> {
 // "json_schema" + um "document_annotation_prompt" com as instruções, e a
 // resposta vem em "document_annotation" como uma STRING json (precisa de
 // JSON.parse, não vem já como objeto).
+// Mistral também pode responder 429 "rate_limited" quando várias análises
+// disparam em sequência num curto intervalo — diferente do 429 "PerDay" do
+// Gemini (que só libera bem mais tarde), esse costuma se resolver sozinho
+// em poucos segundos. Tenta de novo (backoff exponencial) antes de contar
+// como "as 3 alternativas falharam" — sem isso, um pico breve de tráfego já
+// derrubava a análise mesmo com o Mistral configurado e de pé.
+async function fetchMistralComRetry(body: unknown, tentativas = 3): Promise<Response> {
+  let res: Response
+  for (let i = 0; i < tentativas; i++) {
+    res = await fetch('https://api.mistral.ai/v1/ocr', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MISTRAL_API_KEY}` },
+      body: JSON.stringify(body),
+    })
+    if (res.ok || res.status !== 429) return res
+    if (i < tentativas - 1) {
+      console.warn(`[retry] Mistral em rate limit (tentativa ${i + 1}/${tentativas}), tentando de novo em breve...`)
+      await new Promise((r) => setTimeout(r, 2000 * 2 ** i))
+    }
+  }
+  return res!
+}
+
 async function chamarMistralAnnotation(pdfBytes: Uint8Array, prompt: string): Promise<ResultadoJuridico> {
   const base64 = bytesParaBase64(pdfBytes)
-  const res = await fetch('https://api.mistral.ai/v1/ocr', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MISTRAL_API_KEY}` },
-    body: JSON.stringify({
-      model: 'mistral-ocr-latest',
-      document: { type: 'document_url', document_url: `data:application/pdf;base64,${base64}` },
-      document_annotation_format: {
-        type: 'json_schema',
-        json_schema: { name: 'resultado_juridico', schema: RESULTADO_SCHEMA_MISTRAL, strict: true },
-      },
-      document_annotation_prompt: prompt,
-    }),
+  const res = await fetchMistralComRetry({
+    model: 'mistral-ocr-latest',
+    document: { type: 'document_url', document_url: `data:application/pdf;base64,${base64}` },
+    document_annotation_format: {
+      type: 'json_schema',
+      json_schema: { name: 'resultado_juridico', schema: RESULTADO_SCHEMA_MISTRAL, strict: true },
+    },
+    document_annotation_prompt: prompt,
   })
   if (!res.ok) throw new Error(`Falha ao analisar com Mistral: ${await res.text()}`)
   const data = await res.json()
