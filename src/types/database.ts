@@ -1344,11 +1344,13 @@ export type Database = {
           client_id: string
           created_at: string
           data_empenho: string
+          grupo_recorrencia_id: string | null
           id: string
           is_active: boolean
           modo_parcelamento: string
-          numero_empenho: string
+          numero_empenho: string | null
           numero_nota_fiscal: string | null
+          numero_ordem_recorrencia: number | null
           observacao: string | null
           percentual_comissao: number
           periodicidade: string | null
@@ -1366,11 +1368,13 @@ export type Database = {
           client_id: string
           created_at?: string
           data_empenho: string
+          grupo_recorrencia_id?: string | null
           id?: string
           is_active?: boolean
           modo_parcelamento?: string
-          numero_empenho: string
+          numero_empenho?: string | null
           numero_nota_fiscal?: string | null
+          numero_ordem_recorrencia?: number | null
           observacao?: string | null
           percentual_comissao?: number
           periodicidade?: string | null
@@ -1388,11 +1392,13 @@ export type Database = {
           client_id?: string
           created_at?: string
           data_empenho?: string
+          grupo_recorrencia_id?: string | null
           id?: string
           is_active?: boolean
           modo_parcelamento?: string
-          numero_empenho?: string
+          numero_empenho?: string | null
           numero_nota_fiscal?: string | null
+          numero_ordem_recorrencia?: number | null
           observacao?: string | null
           percentual_comissao?: number
           periodicidade?: string | null

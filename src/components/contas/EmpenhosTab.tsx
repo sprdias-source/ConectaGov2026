@@ -3,7 +3,7 @@ import { Plus, Pencil, Trash2, FileSpreadsheet, Ban, CheckCircle2, Repeat, Power
 import { Button, Field, Select } from '../ui/FormControls'
 import { EmptyState, StatusBadge } from '../ui/Primitives'
 import { formatBRL } from '../../hooks/useAccountBalances'
-import { useEmpenhos } from '../../hooks/useEmpenhos'
+import { useEmpenhos, type EmpenhoRecorrenteItem } from '../../hooks/useEmpenhos'
 import { useClients } from '../../hooks/useClients'
 import { useBiddings } from '../../hooks/useBiddings'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
@@ -22,7 +22,7 @@ const MODO_LABELS: Record<string, string> = {
 
 export default function EmpenhosTab() {
   const {
-    empenhos, isLoading, addEmpenho, updateEmpenho, updateEmpenhoStatus, deleteEmpenho,
+    empenhos, isLoading, addEmpenho, addSerieEmpenhos, updateEmpenho, updateEmpenhoStatus, deleteEmpenho,
     toggleEmpenhoActive, checkEmpenhoHasFinancialHistory,
   } = useEmpenhos()
   const { clients } = useClients()
@@ -76,6 +76,22 @@ export default function EmpenhosTab() {
       addEmpenho.mutate(data, { onSuccess: () => setModalOpen(false) })
     }
   }
+
+  const handleSaveSerie = (base: Partial<Empenho>, itens: EmpenhoRecorrenteItem[]) => {
+    addSerieEmpenhos.mutate({ base, itens }, { onSuccess: () => setModalOpen(false) })
+  }
+
+  // Pra mostrar "🔁 i/N" ao lado do número — N é só a contagem de empenhos
+  // com o mesmo grupoRecorrenciaId, nunca guardado à parte (evita ficar
+  // dessincronizado se um empenho da série for excluído depois).
+  const totalPorGrupoRecorrencia = useMemo(() => {
+    const mapa = new Map<string, number>()
+    for (const e of empenhos) {
+      if (!e.grupoRecorrenciaId) continue
+      mapa.set(e.grupoRecorrenciaId, (mapa.get(e.grupoRecorrenciaId) ?? 0) + 1)
+    }
+    return mapa
+  }, [empenhos])
 
   return (
     <div>
@@ -151,7 +167,15 @@ export default function EmpenhosTab() {
                   <tr key={e.id} className={`border-b border-base-800/60 hover:bg-base-850/40 transition ${!e.isActive ? 'opacity-50' : ''}`}>
                     <td className="px-4 py-3 font-semibold text-base-100">
                       <span className="flex items-center gap-2">
-                        {e.numeroEmpenho}
+                        {e.numeroEmpenho ?? <span className="italic font-normal text-warning-400">A definir</span>}
+                        {e.grupoRecorrenciaId && (
+                          <span
+                            title="Faz parte de uma série de empenhos recorrentes"
+                            className="flex items-center gap-1 text-[9px] font-bold text-accent-300 bg-accent-500/10 border border-accent-500/25 rounded px-1.5 py-0.5 whitespace-nowrap"
+                          >
+                            <Repeat className="w-2.5 h-2.5" /> {e.numeroOrdemRecorrencia}/{totalPorGrupoRecorrencia.get(e.grupoRecorrenciaId) ?? '?'}
+                          </span>
+                        )}
                         {!e.isActive && <span className="px-1.5 py-0.5 rounded bg-base-700 text-base-400 text-[10px] font-bold">Inativo</span>}
                       </span>
                     </td>
@@ -225,17 +249,18 @@ export default function EmpenhosTab() {
             open={modalOpen}
             onClose={() => { setModalOpen(false); setEditing(null) }}
             onSave={handleSave}
+            onSaveSerie={handleSaveSerie}
             initial={editing}
             clients={clients}
             biddings={biddings}
-            isSaving={addEmpenho.isPending || updateEmpenho.isPending}
-            error={addEmpenho.error || updateEmpenho.error}
+            isSaving={addEmpenho.isPending || addSerieEmpenhos.isPending || updateEmpenho.isPending}
+            error={addEmpenho.error || addSerieEmpenhos.error || updateEmpenho.error}
           />
 
           <DeleteWithPasswordDialog
             open={!!deleting}
             title="Excluir Empenho Definitivamente"
-            entityLabel={`O empenho "${deleting?.numeroEmpenho}"`}
+            entityLabel={`O empenho "${deleting?.numeroEmpenho ?? 'a definir'}"`}
             entityId={deleting?.id ?? ''}
             financialWarning={financialWarning}
             onCancel={() => setDeleting(null)}

@@ -8,6 +8,18 @@ import { useAuditLog } from './useAuditLog'
 
 const QUERY_KEY = ['empenhos']
 
+// Um mês da Série Recorrente (ver EmpenhoFormModal.tsx e addSerieEmpenhos
+// abaixo) — cada item vira um EMPENHO PRÓPRIO (não uma parcela de comissão
+// de um único empenho, que é o que modoParcelamento='recorrente' já fazia).
+// numeroEmpenho/numeroNotaFiscal ficam null quando a prefeitura ainda não
+// emitiu o número daquele mês ("a definir").
+export type EmpenhoRecorrenteItem = {
+  dataEmpenho: string
+  numeroEmpenho: string | null
+  numeroNotaFiscal: string | null
+  valorEmpenhada: number
+}
+
 function statusForDate(dueDate: string): Transaction['status'] {
   const todayStr = todayLocalISO()
   return dueDate < todayStr ? 'Atrasado' : dueDate === todayStr ? 'Vence Hoje' : 'Pendente'
@@ -20,7 +32,7 @@ function statusForDate(dueDate: string): Transaction['status'] {
 // na mesma data de março. Esta versão verifica se o overflow aconteceu e,
 // se sim, ajusta para o ÚLTIMO DIA do mês de destino (ex: 28 ou 29/02),
 // que é o comportamento esperado por qualquer usuário.
-function addMonths(dateStr: string, months: number): string {
+export function addMonths(dateStr: string, months: number): string {
   const d = new Date(dateStr + 'T12:00:00')
   const originalDay = d.getDate()
   const targetMonth = d.getMonth() + months
@@ -51,7 +63,7 @@ export function buildCommissionTransactions(emp: Empenho): Partial<Transaction>[
   // parcela faz sentido nesse caso.
   if (!emp.valorComissaoTotal || emp.valorComissaoTotal <= 0) return []
 
-  const baseDescription = `Comissão s/ Empenho ${emp.numeroEmpenho} (${emp.percentualComissao}% de R$ ${emp.valorEmpenhada.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`
+  const baseDescription = `Comissão s/ Empenho ${emp.numeroEmpenho ?? 'a definir'} (${emp.percentualComissao}% de R$ ${emp.valorEmpenhada.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`
 
   if (emp.modoParcelamento === 'quantidade_fixa' && emp.quantidadeParcelas && emp.quantidadeParcelas > 1) {
     const total = emp.quantidadeParcelas
@@ -170,7 +182,79 @@ export function useEmpenhos() {
     },
     onSuccess: (created) => {
       invalidate()
-      logEvent('Criou Empenho', `Registrou empenho nº ${created.numeroEmpenho} vinculado à licitação e gerou as parcelas de comissão correspondentes`)
+      logEvent('Criou Empenho', `Registrou empenho nº ${created.numeroEmpenho ?? 'a definir'} vinculado à licitação e gerou as parcelas de comissão correspondentes`)
+    },
+  })
+
+  // "Tipo de Lançamento: Recorrente" — gera N EMPENHOS PRÓPRIOS de uma vez
+  // (um por mês), cada um com seu número/nota fiscal editável, em vez de um
+  // único empenho com a comissão repetida em N parcelas (isso continua
+  // existindo à parte, via modoParcelamento='recorrente' em addEmpenho/
+  // updateEmpenho — não é o que esta mutation faz). Todos os empenhos
+  // gerados aqui usam modoParcelamento='integral': cada um representa um
+  // evento de comissão próprio e imediato, já que cada mês É um empenho
+  // separado — não faz sentido reparcelar a comissão de cada um deles.
+  //
+  // Cria um por um (não num insert em lote) porque cada linha depende do
+  // resultado da anterior só pra compor o grupo_recorrencia_id e a ordem —
+  // se qualquer uma falhar no meio, desfaz TODAS as já criadas nesta
+  // chamada, pra nunca deixar uma série "pela metade" (ex: mês 3 de 12
+  // criado, mas 4 a 12 não, sem nenhum jeito fácil de saber que a série
+  // ficou incompleta).
+  const addSerieEmpenhos = useMutation({
+    mutationFn: async ({ base, itens }: { base: Partial<Empenho>; itens: EmpenhoRecorrenteItem[] }) => {
+      if (!user) throw new Error('Usuário não autenticado')
+      const grupoRecorrenciaId = crypto.randomUUID()
+      const criados: Empenho[] = []
+
+      const desfazerTudo = async () => {
+        if (criados.length === 0) return
+        await supabase.from('empenhos').delete().in('id', criados.map((c) => c.id))
+      }
+
+      try {
+        for (let i = 0; i < itens.length; i++) {
+          const item = itens[i]
+          const valorComissaoTotal = Math.round(item.valorEmpenhada * ((base.percentualComissao ?? 0) / 100) * 100) / 100
+          const draft: Partial<Empenho> = {
+            ...base,
+            dataEmpenho: item.dataEmpenho,
+            numeroEmpenho: item.numeroEmpenho,
+            numeroNotaFiscal: item.numeroNotaFiscal,
+            valorEmpenhada: item.valorEmpenhada,
+            valorComissaoTotal,
+            modoParcelamento: 'integral',
+            quantidadeParcelas: null,
+            periodicidade: null,
+            grupoRecorrenciaId,
+            numeroOrdemRecorrencia: i + 1,
+          }
+          const { data: empData, error: empError } = await supabase
+            .from('empenhos')
+            .insert(toEmpenhoInsert(draft, user.id))
+            .select()
+            .single()
+          if (empError) throw empError
+          const created = fromEmpenhoRow(empData)
+          criados.push(created)
+
+          const txs = buildCommissionTransactions(created)
+          if (txs.length > 0) {
+            const { error: txError } = await supabase
+              .from('transactions')
+              .insert(txs.map((t) => toTransactionInsert(t, user.id)))
+            if (txError) throw txError
+          }
+        }
+      } catch (err) {
+        await desfazerTudo()
+        throw err
+      }
+      return criados
+    },
+    onSuccess: (criados) => {
+      invalidate()
+      logEvent('Gerou Série de Empenhos Recorrentes', `Gerou ${criados.length} empenhos recorrentes (um por mês), a partir do empenho nº ${criados[0]?.numeroEmpenho ?? 'a definir'}`)
     },
   })
 
@@ -263,7 +347,7 @@ export function useEmpenhos() {
     },
     onSuccess: (updated) => {
       invalidate()
-      logEvent('Editou Empenho', `Atualizou o empenho nº ${updated.numeroEmpenho} e recalculou as parcelas pendentes`)
+      logEvent('Editou Empenho', `Atualizou o empenho nº ${updated.numeroEmpenho ?? 'a definir'} e recalculou as parcelas pendentes`)
     },
   })
 
@@ -288,7 +372,7 @@ export function useEmpenhos() {
     },
     onSuccess: (updated) => {
       invalidate()
-      logEvent('Mudou Status do Empenho', `Alterou o status do empenho "${updated.numeroEmpenho}" para ${updated.status}`)
+      logEvent('Mudou Status do Empenho', `Alterou o status do empenho "${updated.numeroEmpenho ?? 'a definir'}" para ${updated.status}`)
     },
   })
 
@@ -301,7 +385,7 @@ export function useEmpenhos() {
     },
     onSuccess: (deleted) => {
       invalidate()
-      logEvent('Excluiu Empenho', `Removeu empenho nº ${deleted.numeroEmpenho} e suas parcelas pendentes`)
+      logEvent('Excluiu Empenho', `Removeu empenho nº ${deleted.numeroEmpenho ?? 'a definir'} e suas parcelas pendentes`)
     },
   })
 
@@ -320,7 +404,7 @@ export function useEmpenhos() {
       invalidate()
       logEvent(
         updated.isActive ? 'Reativou Empenho' : 'Inativou Empenho',
-        `${updated.isActive ? 'Reativou' : 'Inativou'} o empenho nº ${updated.numeroEmpenho}`
+        `${updated.isActive ? 'Reativou' : 'Inativou'} o empenho nº ${updated.numeroEmpenho ?? 'a definir'}`
       )
     },
   })
@@ -343,6 +427,7 @@ export function useEmpenhos() {
     isLoading: query.isLoading,
     error: query.error,
     addEmpenho,
+    addSerieEmpenhos,
     updateEmpenho,
     updateEmpenhoStatus,
     deleteEmpenho,
