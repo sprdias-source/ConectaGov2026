@@ -522,11 +522,11 @@ export default function BiddingItemsEditor({
                 aqui. "min-width" é um piso de verdade: a coluna nunca fica
                 menor que isso, e a tabela cresce (rolando pro lado, ver
                 TopScrollTable) em vez de espremer o conteúdo. */}
-            <table className={`w-full text-[12px] ${tipoDisputa === 'Lote' ? 'min-w-[1250px]' : 'min-w-[1200px]'}`}>
+            <table className={`w-full text-[12px] ${tipoDisputa === 'Lote' ? 'min-w-[1280px]' : 'min-w-[1230px]'}`}>
               <thead>
                 <tr className="bg-base-850 text-left">
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-10">Nº</th>
-                  {tipoDisputa === 'Lote' && <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-11">Lote</th>}
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-14">Nº</th>
+                  {tipoDisputa === 'Lote' && <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-14">Lote</th>}
                   <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-56">Descrição</th>
                   <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-14">Unid.</th>
                   <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-16">Qtd.</th>
