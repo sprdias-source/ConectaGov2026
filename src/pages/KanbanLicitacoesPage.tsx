@@ -381,6 +381,13 @@ function CardLicitacaoConcluida({
   onCorrigirHomologacao?: () => void
 }) {
   const ganhou = b.status === 'Ganhou'
+  // Homologação é um ato do órgão sobre o processo inteiro — acontece
+  // independente de quem venceu. "Perdeu" só existe DEPOIS que o órgão
+  // homologou o resultado (declarando outro vencedor), então também tem
+  // Data de Homologação pra mostrar/corrigir. Já "Cancelada"/"Desistiu" em
+  // geral terminam ANTES dessa etapa (edital cancelado ou cliente desistiu
+  // no meio do processo), por isso não entram aqui.
+  const mostrarHomologacao = b.status === 'Ganhou' || b.status === 'Perdeu'
   // "Ganhou" nunca cai mais pro valor total do edital — mesmo fallback pro
   // valor de participação usado em CardLicitacaoGanha (ver comentário lá).
   const valorExibido = ganhou ? (b.valorOfertadoReal ?? valorGanhoCalculado ?? (b.valorParticipacao ?? 0)) : valorExibicaoEdital(b)
@@ -405,7 +412,7 @@ function CardLicitacaoConcluida({
         </span>
         <span className="text-[10px] text-base-500">Pregão em {new Date(b.dataAbertura + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
       </div>
-      {ganhou && (
+      {mostrarHomologacao && (
         <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-base-800">
           {b.dataHomologacao ? (
             <span className="text-[10px] text-base-500">Homologada em {new Date(b.dataHomologacao + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
@@ -896,7 +903,14 @@ export default function KanbanLicitacoesPage() {
                     {perdeuFiltradas.length === 0 ? (
                       <p className="text-[11px] text-base-600 italic text-center py-6">Nenhuma licitação aqui</p>
                     ) : (
-                      perdeuFiltradas.map((b) => <CardLicitacaoConcluida key={b.id} b={b} clienteNome={clientName(b.clientId)} />)
+                      perdeuFiltradas.map((b) => (
+                        <CardLicitacaoConcluida
+                          key={b.id}
+                          b={b}
+                          clienteNome={clientName(b.clientId)}
+                          onCorrigirHomologacao={podeEditar ? () => setPendenteHomologacao(b) : undefined}
+                        />
+                      ))
                     )}
                   </ColunaKanban>
                 )}
