@@ -210,7 +210,11 @@ export type Periodicidade = 'mensal' | 'trimestral' | 'semestral' | 'anual'
 export interface Empenho {
   id: string
   userId: string
-  numeroEmpenho: string
+  // Opcional desde a "Série Recorrente" (ver useEmpenhos.ts,
+  // addSerieEmpenhos): a prefeitura normalmente só emite o número oficial
+  // dos meses futuros mais perto da data, então um empenho gerado como parte
+  // de uma série pode nascer sem número ("a definir") e ser completado depois.
+  numeroEmpenho: string | null
   numeroNotaFiscal: string | null
   clientId: string
   biddingId: string | null
@@ -222,6 +226,13 @@ export interface Empenho {
   modoParcelamento: ModoParcelamento
   quantidadeParcelas: number | null
   periodicidade: Periodicidade | null
+  // Agrupa os empenhos gerados numa mesma "leva" pela Série Recorrente — não
+  // é FK pra outra tabela, só uma chave de agrupamento compartilhada entre
+  // eles. null pra empenhos avulsos/parcelados (a grande maioria).
+  // numeroOrdemRecorrencia é a posição (1, 2, 3...) dentro dessa série; o
+  // total (N) não é guardado, é só a contagem de empenhos com o mesmo grupo.
+  grupoRecorrenciaId: string | null
+  numeroOrdemRecorrencia: number | null
   status: EmpenhoStatus
   observacao: string | null
   isActive: boolean

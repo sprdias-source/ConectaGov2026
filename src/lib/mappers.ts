@@ -277,6 +277,8 @@ export const fromEmpenhoRow = (r: Row<'empenhos'>): Empenho => ({
   modoParcelamento: r.modo_parcelamento as Empenho['modoParcelamento'],
   quantidadeParcelas: r.quantidade_parcelas,
   periodicidade: r.periodicidade as Empenho['periodicidade'],
+  grupoRecorrenciaId: r.grupo_recorrencia_id,
+  numeroOrdemRecorrencia: r.numero_ordem_recorrencia,
   status: r.status as Empenho['status'],
   observacao: r.observacao,
   isActive: r.is_active,
@@ -286,7 +288,7 @@ export const fromEmpenhoRow = (r: Row<'empenhos'>): Empenho => ({
 
 export const toEmpenhoInsert = (e: Partial<Empenho>, userId: string): Database['public']['Tables']['empenhos']['Insert'] => ({
   user_id: userId,
-  numero_empenho: e.numeroEmpenho ?? '',
+  numero_empenho: e.numeroEmpenho ?? null,
   numero_nota_fiscal: e.numeroNotaFiscal ?? null,
   client_id: e.clientId ?? '',
   bidding_id: e.biddingId ?? null,
@@ -298,6 +300,8 @@ export const toEmpenhoInsert = (e: Partial<Empenho>, userId: string): Database['
   modo_parcelamento: e.modoParcelamento ?? 'integral',
   quantidade_parcelas: e.quantidadeParcelas ?? null,
   periodicidade: e.periodicidade ?? null,
+  grupo_recorrencia_id: e.grupoRecorrenciaId ?? null,
+  numero_ordem_recorrencia: e.numeroOrdemRecorrencia ?? null,
   status: e.status ?? 'Pendente',
   observacao: e.observacao ?? null,
   is_active: e.isActive ?? true,
