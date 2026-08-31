@@ -81,7 +81,7 @@ function CampoTextoQuebraLinha({
 // useEffect pra ressincronizar quando o item muda por fora (import de
 // Excel, autosave recarregando os itens).
 function CampoValorMonetario({
-  value, onChange, placeholder = 'R$ 0,00',
+  value, onChange, placeholder = '0,00',
 }: {
   value: number | null | undefined
   onChange: (value: number | undefined) => void
@@ -514,24 +514,32 @@ export default function BiddingItemsEditor({
               cortado" nesta tela), por isso o layout troca pra cards abaixo. */}
           <div className="hidden md:block">
             <TopScrollTable className="border border-base-700/50 rounded-lg">
-            <table className="w-full text-[12px]">
+            {/* min-w em vez de w: com table-layout:auto (o padrão), um "width"
+                normal é só uma sugestão que o navegador ignora sempre que
+                está tentando encaixar tudo nos 100% da tabela — foi
+                exatamente isso que voltou a espremer Descrição, Marca e
+                Modelo na prática, mesmo já tendo uma largura "definida"
+                aqui. "min-width" é um piso de verdade: a coluna nunca fica
+                menor que isso, e a tabela cresce (rolando pro lado, ver
+                TopScrollTable) em vez de espremer o conteúdo. */}
+            <table className={`w-full text-[12px] ${tipoDisputa === 'Lote' ? 'min-w-[1250px]' : 'min-w-[1200px]'}`}>
               <thead>
                 <tr className="bg-base-850 text-left">
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-10">Nº</th>
-                  {tipoDisputa === 'Lote' && <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-11">Lote</th>}
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-56">Descrição</th>
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-14">Unid.</th>
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500">Qtd.</th>
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Marca</th>
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Modelo</th>
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-32">
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-10">Nº</th>
+                  {tipoDisputa === 'Lote' && <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-11">Lote</th>}
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-56">Descrição</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-14">Unid.</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-16">Qtd.</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-28">Marca</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-28">Modelo</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-32">
                     <span className="flex items-center gap-1">Vl. Unit. Licitado {travarValorLicitado && <Lock className="w-3 h-3 text-base-600" />}</span>
                   </th>
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-32">Vl. Unit. Ofertado</th>
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-28">Vl. Total</th>
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-24">Decremento</th>
-                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 w-16 text-center">Ganhou?</th>
-                  <th className="px-2 py-2 w-8" />
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-32">Vl. Unit. Ofertado</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-28">Vl. Total</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-24">Decremento</th>
+                  <th className="px-2 py-2 text-[10px] font-bold uppercase text-base-500 min-w-16 text-center">Ganhou?</th>
+                  <th className="px-2 py-2 min-w-8" />
                 </tr>
               </thead>
               <tbody>
