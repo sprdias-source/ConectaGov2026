@@ -14,11 +14,14 @@ import RelatorioLicitacoesCliente from '../components/relatorios/RelatorioLicita
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 
 export default function RelatoriosPage() {
-  const [aba, setAba] = useState<'faturamento' | 'licitacoes'>('faturamento')
+  const [aba, setAba] = useState<'faturamento' | 'despesas' | 'licitacoes'>('faturamento')
   const { transactions } = useTransactions()
   const { clients } = useClients()
-  const { categoriesReceber } = useCategories()
+  const { categoriesReceber, categoriesPagar } = useCategories()
   const { biddings } = useBiddings()
+
+  const tipo = aba === 'despesas' ? 'Pagar' : 'Receber'
+  const categorias = aba === 'despesas' ? categoriesPagar : categoriesReceber
 
   const currentYear = new Date().getFullYear()
   const [monthFilter, setMonthFilter] = useState('todos')
@@ -38,13 +41,13 @@ export default function RelatoriosPage() {
 
   const filtered = useMemo(() => {
     return transactions
-      .filter((t) => t.type === 'Receber')
+      .filter((t) => t.type === tipo)
       .filter((t) => monthFilter === 'todos' || t.dueDate.slice(5, 7) === monthFilter)
       .filter((t) => yearFilter === 'todos' || t.dueDate.slice(0, 4) === yearFilter)
-      .filter((t) => clientFilter === 'todos' || t.clientId === clientFilter)
+      .filter((t) => tipo === 'Pagar' || clientFilter === 'todos' || t.clientId === clientFilter)
       .filter((t) => categoryFilter === 'todas' || t.category === categoryFilter)
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
-  }, [transactions, monthFilter, yearFilter, clientFilter, categoryFilter])
+  }, [transactions, tipo, monthFilter, yearFilter, clientFilter, categoryFilter])
 
   const total = filtered.reduce((s, t) => s + t.value, 0)
   const totalQuitado = filtered.filter((t) => t.status === 'Pago').reduce((s, t) => s + t.value, 0)
@@ -53,19 +56,31 @@ export default function RelatoriosPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [monthFilter, yearFilter, clientFilter, categoryFilter, setPage])
+  }, [aba, monthFilter, yearFilter, clientFilter, categoryFilter, setPage])
+
+  // Troca de aba resetando filtros que n\u00e3o fazem sentido na outra (Cliente
+  // n\u00e3o existe em despesas, Categoria muda de lista).
+  const selecionarAba = (nova: typeof aba) => {
+    setAba(nova)
+    setClientFilter('todos')
+    setCategoryFilter('todas')
+  }
 
   const exportCsv = () => {
-    const header = 'Data Venc.,Cliente,Categoria,Descricao,Status,Valor\n'
+    const header = tipo === 'Pagar'
+      ? 'Data Venc.,Categoria,Descricao,Status,Valor\n'
+      : 'Data Venc.,Cliente,Categoria,Descricao,Status,Valor\n'
     const rows = filtered.map((t) =>
-      [t.dueDate, clientName(t.clientId), t.category, t.description, t.status, t.value]
+      (tipo === 'Pagar'
+        ? [t.dueDate, t.category, t.description, t.status, t.value]
+        : [t.dueDate, clientName(t.clientId), t.category, t.description, t.status, t.value])
         .map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')
     ).join('\n')
     const blob = new Blob(['\ufeff' + header + rows], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'relatorio-faturamento.csv'
+    a.download = tipo === 'Pagar' ? 'relatorio-despesas.csv' : 'relatorio-faturamento.csv'
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -74,10 +89,10 @@ export default function RelatoriosPage() {
     <div className="pb-10">
       <PageHeader
         title="Relatórios"
-        subtitle="Vendas detalhadas, auditoria de faturamento e relatório de oportunidades por cliente"
+        subtitle="Vendas detalhadas, despesas por categoria e relatório de oportunidades por cliente"
         icon={FileBarChart}
         actions={
-          aba === 'faturamento' && (
+          aba !== 'licitacoes' && (
             <>
               <button onClick={() => window.print()} className="flex items-center gap-1.5 text-[12px] font-semibold text-base-300 hover:text-base-100 bg-base-850 border border-base-700 rounded-lg px-3 py-1.5 transition">
                 <Printer className="w-3.5 h-3.5" /> Imprimir / PDF
@@ -93,13 +108,19 @@ export default function RelatoriosPage() {
       <div className="px-6 mt-4">
         <div className="flex gap-1 mb-4 bg-base-900 border border-base-800 rounded-lg p-1 w-fit screen-only">
           <button
-            onClick={() => setAba('faturamento')}
+            onClick={() => selecionarAba('faturamento')}
             className={`px-3 py-1.5 rounded-md text-[12px] font-semibold transition ${aba === 'faturamento' ? 'bg-accent-500 text-base-950' : 'text-base-400 hover:text-base-100'}`}
           >
             Faturamento
           </button>
           <button
-            onClick={() => setAba('licitacoes')}
+            onClick={() => selecionarAba('despesas')}
+            className={`px-3 py-1.5 rounded-md text-[12px] font-semibold transition ${aba === 'despesas' ? 'bg-accent-500 text-base-950' : 'text-base-400 hover:text-base-100'}`}
+          >
+            Despesas
+          </button>
+          <button
+            onClick={() => selecionarAba('licitacoes')}
             className={`px-3 py-1.5 rounded-md text-[12px] font-semibold transition ${aba === 'licitacoes' ? 'bg-accent-500 text-base-950' : 'text-base-400 hover:text-base-100'}`}
           >
             Oportunidades por Cliente
@@ -108,7 +129,7 @@ export default function RelatoriosPage() {
 
         {aba === 'licitacoes' && <RelatorioLicitacoesCliente clients={clients} biddings={biddings} />}
 
-        {aba === 'faturamento' && <>
+        {(aba === 'faturamento' || aba === 'despesas') && <>
         <Card className="p-4 mb-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-44">
@@ -125,23 +146,25 @@ export default function RelatoriosPage() {
                 {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
               </Select>
             </div>
-            <div className="w-56">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-base-500 block mb-1">Cliente</label>
-              <Select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)}>
-                <option value="todos">Todos os Clientes</option>
-                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </Select>
-            </div>
+            {tipo === 'Receber' && (
+              <div className="w-56">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-base-500 block mb-1">Cliente</label>
+                <Select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)}>
+                  <option value="todos">Todos os Clientes</option>
+                  {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </Select>
+              </div>
+            )}
             <div className="w-56">
               <label className="text-[10px] font-bold uppercase tracking-wider text-base-500 block mb-1">Categoria</label>
               <Select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-                <option value="todas">Todas as Receitas</option>
-                {categoriesReceber.map((c) => <option key={c} value={c}>{c}</option>)}
+                <option value="todas">{tipo === 'Pagar' ? 'Todas as Despesas' : 'Todas as Receitas'}</option>
+                {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
               </Select>
             </div>
-            <div className="ml-auto bg-accent-500/10 border border-accent-500/25 rounded-lg px-4 py-2 text-right">
+            <div className={`ml-auto rounded-lg px-4 py-2 text-right ${tipo === 'Pagar' ? 'bg-negative-500/10 border border-negative-500/25' : 'bg-accent-500/10 border border-accent-500/25'}`}>
               <p className="text-[10px] uppercase tracking-wider text-base-400 font-bold">Consolidado Filtrado</p>
-              <p className="text-lg font-extrabold font-mono text-accent-300">{formatBRL(total)}</p>
+              <p className={`text-lg font-extrabold font-mono ${tipo === 'Pagar' ? 'text-negative-400' : 'text-accent-300'}`}>{formatBRL(total)}</p>
               <p className="text-[10px] text-base-500">Quitado: {formatBRL(totalQuitado)}</p>
             </div>
           </div>
@@ -158,7 +181,7 @@ export default function RelatoriosPage() {
                     <tr className="border-b border-base-800 text-left">
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Nº</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Data Venc.</th>
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Cliente</th>
+                      {tipo === 'Receber' && <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Cliente</th>}
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Categoria</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Descrição</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Status</th>
@@ -170,18 +193,18 @@ export default function RelatoriosPage() {
                       <tr key={t.id} className="border-b border-base-800/60 hover:bg-base-850/40 transition">
                         <td className="px-4 py-2.5 text-base-500 text-[12px]">{(page - 1) * pageSize + idx + 1}</td>
                         <td className="px-4 py-2.5 text-base-300 text-[12px] whitespace-nowrap">{new Date(t.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
-                        <td className="px-4 py-2.5 font-semibold text-base-200 text-[12px]">{clientName(t.clientId)}</td>
+                        {tipo === 'Receber' && <td className="px-4 py-2.5 font-semibold text-base-200 text-[12px]">{clientName(t.clientId)}</td>}
                         <td className="px-4 py-2.5 text-base-400 text-[12px]">{t.category}</td>
                         <td className="px-4 py-2.5 text-base-400 text-[12px] max-w-[220px] truncate">{t.description}</td>
                         <td className="px-4 py-2.5"><StatusBadge status={t.status} /></td>
-                        <td className="px-4 py-2.5 text-right font-mono font-bold text-positive-400 text-[12px] bg-base-850/25">{formatBRL(t.value)}</td>
+                        <td className={`px-4 py-2.5 text-right font-mono font-bold text-[12px] bg-base-850/25 ${tipo === 'Pagar' ? 'text-negative-400' : 'text-positive-400'}`}>{formatBRL(t.value)}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 border-base-700">
-                      <td colSpan={6} className="px-4 py-3 text-right text-[12px] font-bold text-base-300">Total Geral Consolidado:</td>
-                      <td className="px-4 py-3 text-right font-mono font-extrabold text-accent-300 text-[13px]">{formatBRL(total)}</td>
+                      <td colSpan={tipo === 'Receber' ? 6 : 5} className="px-4 py-3 text-right text-[12px] font-bold text-base-300">Total Geral Consolidado:</td>
+                      <td className={`px-4 py-3 text-right font-mono font-extrabold text-[13px] ${tipo === 'Pagar' ? 'text-negative-400' : 'text-accent-300'}`}>{formatBRL(total)}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -196,14 +219,14 @@ export default function RelatoriosPage() {
             registros filtrados, não só a página atual. */}
         {filtered.length > 0 && (
           <div className="print-only bg-white text-slate-900 rounded-lg p-6" style={{ display: 'none' }}>
-            <h2 className="text-center font-bold text-lg uppercase mb-1">Relatório de Faturamento</h2>
+            <h2 className="text-center font-bold text-lg uppercase mb-1">{tipo === 'Pagar' ? 'Relatório de Despesas' : 'Relatório de Faturamento'}</h2>
             <p className="text-center text-sm mb-4">Gerado em {new Date().toLocaleDateString('pt-BR')}</p>
             <table className="w-full text-[12px]">
               <thead>
                 <tr className="border-b border-slate-400 text-left">
                   <th className="py-1.5 pr-2">Nº</th>
                   <th className="py-1.5 pr-2">Venc.</th>
-                  <th className="py-1.5 pr-2">Cliente</th>
+                  {tipo === 'Receber' && <th className="py-1.5 pr-2">Cliente</th>}
                   <th className="py-1.5 pr-2">Categoria</th>
                   <th className="py-1.5 pr-2">Status</th>
                   <th className="py-1.5 text-right">Valor</th>
@@ -214,7 +237,7 @@ export default function RelatoriosPage() {
                   <tr key={t.id} className="border-b border-slate-200">
                     <td className="py-1 pr-2">{idx + 1}</td>
                     <td className="py-1 pr-2">{new Date(t.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
-                    <td className="py-1 pr-2">{clientName(t.clientId)}</td>
+                    {tipo === 'Receber' && <td className="py-1 pr-2">{clientName(t.clientId)}</td>}
                     <td className="py-1 pr-2">{t.category}</td>
                     <td className="py-1 pr-2">{t.status}</td>
                     <td className="py-1 text-right">{formatBRL(t.value)}</td>
@@ -223,7 +246,7 @@ export default function RelatoriosPage() {
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-slate-800">
-                  <td colSpan={5} className="py-2 text-right font-bold">Total Geral:</td>
+                  <td colSpan={tipo === 'Receber' ? 5 : 4} className="py-2 text-right font-bold">Total Geral:</td>
                   <td className="py-2 text-right font-bold">{formatBRL(total)}</td>
                 </tr>
               </tfoot>
