@@ -4,7 +4,7 @@ import {
   DndContext, DragOverlay, PointerSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors,
   type DragEndEvent, type DragStartEvent,
 } from '@dnd-kit/core'
-import { LayoutGrid, ChevronLeft, ChevronRight, ClipboardList, Pencil, GripVertical, Ban, Filter, ChevronDown } from 'lucide-react'
+import { LayoutGrid, ChevronLeft, ChevronRight, ClipboardList, Pencil, GripVertical, Ban, Filter, ChevronDown, CalendarCheck } from 'lucide-react'
 import { PageHeader } from '../components/ui/Primitives'
 import TopScrollTable from '../components/ui/TopScrollTable'
 import { SeloHabilitacaoBadge } from '../components/ui/SeloHabilitacao'
@@ -79,27 +79,30 @@ function EncerrarDialog({ bidding, onClose }: { bidding: Bidding | null; onClose
   )
 }
 
-// Ao invés de deixar o sistema preencher a Data de Homologação sozinho com
-// "hoje" (comportamento antigo, só disparava quando a licitação também já
-// estivesse "Ganhou" — ver tentarPreencherValorGanhoAutomatico em
-// useBiddings.ts), pede a data certa assim que o card entra na última etapa
-// do funil, direto no Kanban — raramente o card é movido no dia exato em
-// que o órgão de fato homologou. Só pergunta se ainda não tem data
-// guardada (ver irParaEtapa) — mover o card de novo depois não pergunta de
-// novo, já que a data já está registrada.
+// Sempre que a etapa "Adjudicada e Homologada" é ativada — entrando nela
+// vindo de outra etapa, ou pelo botão de corrigir num card que já está
+// parado aqui (ver CardLicitacao/onCorrigirHomologacao) — abre esse
+// diálogo, pré-preenchido com a data que já estiver gravada (ou hoje, se
+// ainda não tiver nenhuma). Substitui o preenchimento automático "hoje" de
+// antes (ver tentarPreencherValorGanhoAutomatico em useBiddings.ts), que
+// nunca batia com o dia real da homologação e não dava nenhum jeito de
+// corrigir depois — importante pra quem está lançando ou arrumando
+// licitações antigas.
 function HomologacaoDialog({ bidding, onClose }: { bidding: Bidding | null; onClose: () => void }) {
   const { updateEtapa } = useBiddings()
   const { showToast } = useToast()
-  const [data, setData] = useState(() => todayLocalISO())
+  const [data, setData] = useState(() => bidding?.dataHomologacao ?? todayLocalISO())
 
   if (!bidding) return null
+
+  const jaTinhaData = bidding.dataHomologacao != null
 
   const salvar = () => {
     updateEtapa.mutate(
       { biddingId: bidding.id, etapa: 'Adjudicada e Homologada', dataHomologacao: data },
       {
-        onSuccess: () => { showToast('Licitação movida para Adjudicada e Homologada.'); onClose() },
-        onError: (err) => showToast(`Erro ao mudar a etapa: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+        onSuccess: () => { showToast('Data de Homologação salva.'); onClose() },
+        onError: (err) => showToast(`Erro ao salvar a data: ${err instanceof Error ? err.message : String(err)}`, 'error'),
       }
     )
   }
@@ -108,6 +111,9 @@ function HomologacaoDialog({ bidding, onClose }: { bidding: Bidding | null; onCl
     <Modal open onClose={onClose} title="Data de Homologação" maxWidth="max-w-sm">
       <div className="flex flex-col gap-4">
         <p className="text-[12px] text-base-400">{bidding.objeto}</p>
+        {jaTinhaData && (
+          <p className="text-[11px] text-warning-400 font-semibold">⚠ Essa licitação já tinha uma data registrada — corrija se estiver errada.</p>
+        )}
         <Field label="Data em que o órgão homologou o resultado" required>
           <Input type="date" value={data} onChange={(e) => setData(e.target.value)} />
         </Field>
@@ -186,7 +192,7 @@ const valorExibicaoEdital = (b: Bidding) => (b.valorLicitado > 0 ? b.valorLicita
 // arrastável e o drag ficaria instável.
 function CardLicitacao({
   b, clienteNome, podeEditar, podeRetroceder, podeAvancar, desabilitado, statusHabilitacao,
-  onMoverAnterior, onMoverProxima, onEditar, onEncerrar,
+  onMoverAnterior, onMoverProxima, onEditar, onEncerrar, onCorrigirHomologacao,
 }: {
   b: Bidding
   clienteNome: string
@@ -199,7 +205,13 @@ function CardLicitacao({
   onMoverProxima: () => void
   onEditar: () => void
   onEncerrar: () => void
+  onCorrigirHomologacao: () => void
 }) {
+  // Na última etapa do funil, "próxima etapa" não existe mais — o espaço da
+  // seta vira o botão de corrigir a Data de Homologação, já que é exatamente
+  // ali que faz falta um jeito de reabrir aquele diálogo sem precisar
+  // arrastar o card pra lugar nenhum (comum ao arrumar licitações antigas).
+  const naUltimaEtapa = b.etapa === 'Adjudicada e Homologada'
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: b.id, disabled: !podeEditar || desabilitado })
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 10 } : undefined
 
@@ -250,14 +262,25 @@ function CardLicitacao({
           >
             <Pencil className="w-3.5 h-3.5" />
           </button>
-          <button
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onMoverProxima() }}
-            disabled={!podeAvancar || desabilitado}
-            className="p-1 text-base-500 hover:text-accent-300 disabled:opacity-30 disabled:cursor-not-allowed transition"
-            title="Próxima etapa"
-          >
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
+          {naUltimaEtapa ? (
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onCorrigirHomologacao() }}
+              disabled={desabilitado}
+              className="p-1 text-warning-400 hover:text-warning-300 disabled:opacity-30 disabled:cursor-not-allowed transition"
+              title="Corrigir Data de Homologação"
+            >
+              <CalendarCheck className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onMoverProxima() }}
+              disabled={!podeAvancar || desabilitado}
+              className="p-1 text-base-500 hover:text-accent-300 disabled:opacity-30 disabled:cursor-not-allowed transition"
+              title="Próxima etapa"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEncerrar() }}
             className="p-1 text-base-500 hover:text-negative-400 transition"
@@ -570,15 +593,18 @@ export default function KanbanLicitacoesPage() {
     desistiuFiltradas.length
 
   const irParaEtapa = (bidding: Bidding, etapa: BiddingEtapa | null) => {
-    if (bidding.etapa === etapa) return
-    // Entrando na última etapa do funil pela primeira vez (ainda sem Data
-    // de Homologação registrada) — abre o diálogo pra pedir a data em vez
-    // de mudar a etapa direto; quem confirma o diálogo é que efetivamente
-    // chama updateEtapa (ver HomologacaoDialog acima).
-    if (etapa === 'Adjudicada e Homologada' && bidding.dataHomologacao == null) {
+    // "Adjudicada e Homologada" sempre abre o diálogo da Data de
+    // Homologação — mesmo se a licitação já estiver nessa etapa (botão de
+    // corrigir do próprio card) ou já tiver uma data gravada (pra corrigir
+    // uma data errada/antiga, comum ao lançar licitações antigas). Quem
+    // confirma o diálogo é que efetivamente chama updateEtapa (ver
+    // HomologacaoDialog acima) — por isso sai daqui antes de checar se a
+    // etapa já é a mesma.
+    if (etapa === 'Adjudicada e Homologada') {
       setPendenteHomologacao(bidding)
       return
     }
+    if (bidding.etapa === etapa) return
     updateEtapa.mutate({ biddingId: bidding.id, etapa }, {
       onError: (err) => showToast(`Erro ao mudar a etapa: ${err instanceof Error ? err.message : String(err)}`, 'error'),
     })
@@ -627,6 +653,7 @@ export default function KanbanLicitacoesPage() {
         onMoverProxima={() => mover(b, 1)}
         onEditar={() => setEditando(b)}
         onEncerrar={() => setEncerrando(b)}
+        onCorrigirHomologacao={() => irParaEtapa(b, 'Adjudicada e Homologada')}
       />
     )
   }
@@ -913,8 +940,9 @@ export default function KanbanLicitacoesPage() {
       )}
 
       {podeEditar && <EncerrarDialog bidding={encerrando} onClose={() => setEncerrando(null)} />}
-      {/* key troca a cada licitação — remonta o diálogo do zero (data volta
-          pra hoje) em vez de sincronizar o estado via useEffect */}
+      {/* key troca a cada licitação — remonta o diálogo do zero (pré-preenche
+          com a data já gravada daquela licitação, se houver) em vez de
+          sincronizar o estado via useEffect */}
       {podeEditar && (
         <HomologacaoDialog key={pendenteHomologacao?.id ?? 'none'} bidding={pendenteHomologacao} onClose={() => setPendenteHomologacao(null)} />
       )}
