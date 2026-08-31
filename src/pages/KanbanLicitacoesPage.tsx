@@ -299,8 +299,20 @@ function CardLicitacao({
 // que falta fechar pra ela sumir de vista de vez.
 type BadgePendencia = { label: string; bloqueante: boolean }
 
-function CardLicitacaoGanha({ b, clienteNome, badges, valorGanhoCalculado }: { b: Bidding; clienteNome: string; badges: BadgePendencia[]; valorGanhoCalculado?: number }) {
-  const valorExibido = b.valorOfertadoReal ?? valorGanhoCalculado ?? valorExibicaoEdital(b)
+function CardLicitacaoGanha({
+  b, clienteNome, badges, valorGanhoCalculado, onCorrigirHomologacao,
+}: {
+  b: Bidding
+  clienteNome: string
+  badges: BadgePendencia[]
+  valorGanhoCalculado?: number
+  onCorrigirHomologacao?: () => void
+}) {
+  // "Ganhou" nunca cai mais pro valor total do edital (valorExibicaoEdital) —
+  // o fallback correto aqui é o valor de participação, já que é o que de
+  // fato descreve o que ganhamos quando ainda não tem Valor Ganho de Fato
+  // nem itens marcados "Ganhou" preenchidos.
+  const valorExibido = b.valorOfertadoReal ?? valorGanhoCalculado ?? (b.valorParticipacao ?? 0)
   // Só quando o valor não veio nem do campo manual nem dos itens (aí sim é
   // o valor de participação, uma aproximação mais fraca) mostra o aviso —
   // sem isso, um valor já correto (calculado pelos itens) ficava com a
@@ -311,14 +323,17 @@ function CardLicitacaoGanha({ b, clienteNome, badges, valorGanhoCalculado }: { b
       to={`/licitacoes/${b.id}`}
       className="relative bg-base-900 border border-positive-500/25 rounded-lg p-3 flex flex-col gap-1.5 transition hover:border-positive-500/50"
     >
-      <p className="text-[12px] font-semibold text-base-100 line-clamp-2">{b.objeto}</p>
-      <p className="text-[11px] text-base-500 truncate">{clienteNome} — {b.orgao}</p>
-      <span
-        className="text-[11px] font-mono font-semibold text-positive-400 mt-1"
-        title={ehAproximado ? 'Nem o Valor Ganho de Fato nem os itens desta licitação foram preenchidos ainda — mostrando o valor de participação como aproximação' : undefined}
-      >
-        {formatBRL(valorExibido)}{ehAproximado && '*'}
-      </span>
+      <p className="text-[12px] font-semibold text-base-100">{b.objeto}</p>
+      <p className="text-[11px] text-base-500">{clienteNome} — {b.orgao}</p>
+      <div className="flex items-center justify-between mt-1">
+        <span
+          className="text-[11px] font-mono font-semibold text-positive-400"
+          title={ehAproximado ? 'Nem o Valor Ganho de Fato nem os itens desta licitação foram preenchidos ainda — mostrando o valor de participação como aproximação' : undefined}
+        >
+          {formatBRL(valorExibido)}{ehAproximado && '*'}
+        </span>
+        <span className="text-[10px] text-base-500">Pregão em {new Date(b.dataAbertura + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+      </div>
       <div className="flex flex-wrap gap-1 mt-1">
         {badges.map((bd) => (
           <span
@@ -330,6 +345,22 @@ function CardLicitacaoGanha({ b, clienteNome, badges, valorGanhoCalculado }: { b
           </span>
         ))}
       </div>
+      <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-positive-500/15">
+        {b.dataHomologacao ? (
+          <span className="text-[10px] text-base-500">Homologada em {new Date(b.dataHomologacao + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+        ) : (
+          <span className="text-[10px] text-warning-400 font-semibold">Homologação pendente</span>
+        )}
+        {onCorrigirHomologacao && (
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onCorrigirHomologacao() }}
+            className="p-1 text-warning-400 hover:text-warning-300 transition"
+            title="Corrigir Data de Homologação"
+          >
+            <CalendarCheck className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
     </Link>
   )
 }
@@ -337,36 +368,62 @@ function CardLicitacaoGanha({ b, clienteNome, badges, valorGanhoCalculado }: { b
 // Card de uma licitação já encerrada — só leitura, sem arrastar nem botões
 // de mudar etapa, já que o processo terminou. Mostra até qual etapa ela
 // chegou (congelada desde então, ver marcarResultado em useBiddings.ts, que
-// nunca mexe em `etapa`) como registro de análise. Pra "Ganhou", mostra a
-// Data de Homologação (campo próprio, ver tentarPreencherValorGanhoAutomatico
-// em useBiddings.ts) como data principal de conclusão, com a última
-// atualização do cadastro como informação secundária — as duas podem ser
-// bem diferentes, já que updatedAt muda a cada edição, mesmo meses depois.
-function CardLicitacaoConcluida({ b, clienteNome, valorGanhoCalculado }: { b: Bidding; clienteNome: string; valorGanhoCalculado?: number }) {
+// nunca mexe em `etapa`) como registro de análise. Pra "Ganhou", mostra
+// sempre a Data de Homologação (mesmo quando ainda não preenchida, com o
+// botão de corrigir) em vez de depender do card já ter passado por ela —
+// importante pra quem está lançando ou arrumando licitações antigas.
+function CardLicitacaoConcluida({
+  b, clienteNome, valorGanhoCalculado, onCorrigirHomologacao,
+}: {
+  b: Bidding
+  clienteNome: string
+  valorGanhoCalculado?: number
+  onCorrigirHomologacao?: () => void
+}) {
   const ganhou = b.status === 'Ganhou'
-  const valorExibido = ganhou ? (b.valorOfertadoReal ?? valorGanhoCalculado ?? valorExibicaoEdital(b)) : valorExibicaoEdital(b)
+  // "Ganhou" nunca cai mais pro valor total do edital — mesmo fallback pro
+  // valor de participação usado em CardLicitacaoGanha (ver comentário lá).
+  const valorExibido = ganhou ? (b.valorOfertadoReal ?? valorGanhoCalculado ?? (b.valorParticipacao ?? 0)) : valorExibicaoEdital(b)
+  const ehAproximado = ganhou && b.valorOfertadoReal == null && valorGanhoCalculado == null
   const corValor = ganhou ? 'text-positive-400' : 'text-base-500'
   return (
     <Link
       to={`/licitacoes/${b.id}`}
       className="bg-base-900 border border-base-800 rounded-lg p-3 flex flex-col gap-1.5 transition hover:border-base-700"
     >
-      <p className="text-[12px] font-semibold text-base-100 line-clamp-2">{b.objeto}</p>
-      <p className="text-[11px] text-base-500 truncate">{clienteNome} — {b.orgao}</p>
+      <p className="text-[12px] font-semibold text-base-100">{b.objeto}</p>
+      <p className="text-[11px] text-base-500">{clienteNome} — {b.orgao}</p>
       <span className="self-start text-[9.5px] font-bold px-1.5 py-0.5 rounded-full bg-base-700/40 text-base-500">
         Chegou até: {b.etapa ?? 'Sem Etapa'}
       </span>
       <div className="flex items-center justify-between mt-1">
-        <span className={`text-[11px] font-mono font-semibold ${corValor}`}>{formatBRL(valorExibido)}</span>
-        {ganhou && b.dataHomologacao ? (
-          <div className="text-right">
-            <span className="block text-[10px] text-base-500">Homologada em {new Date(b.dataHomologacao + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
-            <span className="block text-[9px] text-base-600">atualizado {new Date(b.updatedAt).toLocaleDateString('pt-BR')}</span>
-          </div>
-        ) : (
-          <span className="text-[10px] text-base-500">Concluída em {new Date(b.updatedAt).toLocaleDateString('pt-BR')}</span>
-        )}
+        <span
+          className={`text-[11px] font-mono font-semibold ${corValor}`}
+          title={ehAproximado ? 'Nem o Valor Ganho de Fato nem os itens desta licitação foram preenchidos ainda — mostrando o valor de participação como aproximação' : undefined}
+        >
+          {formatBRL(valorExibido)}{ehAproximado && '*'}
+        </span>
+        <span className="text-[10px] text-base-500">Pregão em {new Date(b.dataAbertura + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
       </div>
+      {ganhou && (
+        <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-base-800">
+          {b.dataHomologacao ? (
+            <span className="text-[10px] text-base-500">Homologada em {new Date(b.dataHomologacao + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+          ) : (
+            <span className="text-[10px] text-warning-400 font-semibold">Homologação pendente</span>
+          )}
+          {onCorrigirHomologacao && (
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onCorrigirHomologacao() }}
+              className="p-1 text-warning-400 hover:text-warning-300 transition"
+              title="Corrigir Data de Homologação"
+            >
+              <CalendarCheck className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+      <span className="text-[9px] text-base-600">Atualizada em {new Date(b.updatedAt).toLocaleDateString('pt-BR')}</span>
     </Link>
   )
 }
@@ -803,7 +860,14 @@ export default function KanbanLicitacoesPage() {
                       <p className="text-[11px] text-base-600 italic text-center py-6">Nenhuma licitação aqui</p>
                     ) : (
                       ganhasComPendenciaFiltradas.map(({ bidding, badges }) => (
-                        <CardLicitacaoGanha key={bidding.id} b={bidding} clienteNome={clientName(bidding.clientId)} badges={badges} valorGanhoCalculado={valorGanhoPorLicitacao.get(bidding.id)} />
+                        <CardLicitacaoGanha
+                          key={bidding.id}
+                          b={bidding}
+                          clienteNome={clientName(bidding.clientId)}
+                          badges={badges}
+                          valorGanhoCalculado={valorGanhoPorLicitacao.get(bidding.id)}
+                          onCorrigirHomologacao={podeEditar ? () => setPendenteHomologacao(bidding) : undefined}
+                        />
                       ))
                     )}
                   </ColunaKanban>
@@ -815,7 +879,13 @@ export default function KanbanLicitacoesPage() {
                       <p className="text-[11px] text-base-600 italic text-center py-6">Nenhuma licitação aqui</p>
                     ) : (
                       ganhasSemPendenciaFiltradas.map((b) => (
-                        <CardLicitacaoConcluida key={b.id} b={b} clienteNome={clientName(b.clientId)} valorGanhoCalculado={valorGanhoPorLicitacao.get(b.id)} />
+                        <CardLicitacaoConcluida
+                          key={b.id}
+                          b={b}
+                          clienteNome={clientName(b.clientId)}
+                          valorGanhoCalculado={valorGanhoPorLicitacao.get(b.id)}
+                          onCorrigirHomologacao={podeEditar ? () => setPendenteHomologacao(b) : undefined}
+                        />
                       ))
                     )}
                   </ColunaKanban>
