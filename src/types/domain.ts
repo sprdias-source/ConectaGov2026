@@ -264,9 +264,17 @@ export interface Transaction {
   isRecurring: boolean
   recurringParentId: string | null
   recurringDay: number | null
+  tipoServicoId: string | null
+  valorBruto: number | null
+  valorIssRetido: number | null
+  valorInssRetido: number | null
+  valorFederalRetido: number | null
+  naturezaSaidaSocio: NaturezaSaidaSocio | null
   createdAt: string
   updatedAt: string
 }
+
+export type NaturezaSaidaSocio = 'pro_labore' | 'distribuicao_lucro' | 'retirada_socio'
 
 export type PaymentType = 'CLT' | 'PJ' | 'Autônomo' | 'Estágio' | 'Sócio/Pró-labore'
 
@@ -483,6 +491,19 @@ export interface Category {
   userId: string
   type: 'Pagar' | 'Receber'
   name: string
+  grupoId: string | null
+  createdAt: string
+}
+
+export interface GrupoContabil {
+  id: string
+  userId: string
+  type: 'Pagar' | 'Receber'
+  nome: string
+  ordem: number
+  // Grupos como "Distribuição de Lucros" ou "Retirada de Sócio" ficam fora
+  // da DRE (afetam Balanço/Fluxo de Caixa, mas não o resultado do exercício).
+  entraDre: boolean
   createdAt: string
 }
 
@@ -794,4 +815,98 @@ export const CERT_CONFIG: Record<Exclude<DocumentTipo, 'manual'>, {
     alertaDias: 15,
     portal: 'solucoes.receita.fazenda.gov.br',
   },
+}
+
+// ============================================================================
+// Módulo Contabilidade
+// ============================================================================
+
+export interface EmpresaPerfil {
+  id: string
+  userId: string
+  razaoSocial: string | null
+  cnpj: string | null
+  endereco: string | null
+  capitalSocial: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type RegimeTributario = 'mei' | 'simples_nacional' | 'lucro_presumido' | 'lucro_real'
+export type AnexoSimples = 'I' | 'II' | 'III' | 'IV' | 'V'
+
+export interface RegimeTributarioHistorico {
+  id: string
+  userId: string
+  regime: RegimeTributario
+  anexoSimples: AnexoSimples | null
+  vigenciaInicio: string
+  vigenciaFim: string | null
+  observacao: string | null
+  createdAt: string
+}
+
+export interface SimplesNacionalFaixa {
+  id: string
+  userId: string
+  anexo: 'III' | 'V'
+  faixa: number
+  rbt12Min: number
+  rbt12Max: number
+  aliquotaNominal: number
+  parcelaDeduzir: number
+  vigenciaInicio: string
+  vigenciaFim: string | null
+  // false = valor preenchido de memória, ainda não conferido contra a
+  // Resolução CGSN 140/2018 ou um documento real — só a Faixa 1 do Anexo
+  // III nasce conferida (validada contra um DAS real da empresa).
+  conferido: boolean
+  createdAt: string
+}
+
+export type TributoPartilha = 'IRPJ' | 'CSLL' | 'COFINS' | 'PIS' | 'CPP' | 'ISS'
+
+export interface SimplesNacionalPartilha {
+  id: string
+  userId: string
+  anexo: 'III' | 'V'
+  faixa: number
+  tributo: TributoPartilha
+  percentual: number
+  vigenciaInicio: string
+  vigenciaFim: string | null
+  conferido: boolean
+  createdAt: string
+}
+
+export interface TipoServico {
+  id: string
+  userId: string
+  nome: string
+  retemIss: boolean
+  retemInss: boolean
+  retemIrPisCofinsCsll: boolean
+  aliquotaIssRetido: number | null
+  aliquotaInssRetido: number | null
+  aliquotaFederalRetido: number | null
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type NotaFiscalStatus = 'rascunho' | 'confirmada'
+
+export interface NotaFiscalEmitida {
+  id: string
+  userId: string
+  numero: string | null
+  clientId: string | null
+  dataEmissao: string
+  competencia: string
+  valor: number
+  descricao: string | null
+  transactionId: string | null
+  status: NotaFiscalStatus
+  createdAt: string
+  updatedAt: string
 }

@@ -9,6 +9,7 @@ import type {
   Employee, Contract, Receipt, AttachedFile, AuditLog, Category, PaymentMethod, ClientDocument, BiddingChecklistItem, AtestadoTecnico, ModeloDocumento, ContractMarco, PersonalEvent,
   Platform, ClientPlatform, Opportunity, LicitaiEdital, LicitaiEditalStatus, LicitaiBusca, LicitaiBuscaFiltros,
   PricingProfile, PricingProfileLine, DeclaracaoAnexo,
+  RegimeTributarioHistorico, SimplesNacionalFaixa, SimplesNacionalPartilha, TipoServico, NotaFiscalEmitida, GrupoContabil, EmpresaPerfil,
 } from '../types/domain'
 import { todayLocalISO } from './dateUtils'
 
@@ -328,6 +329,12 @@ export const fromTransactionRow = (r: Row<'transactions'>): Transaction => ({
   isRecurring: r.is_recurring,
   recurringParentId: r.recurring_parent_id,
   recurringDay: r.recurring_day,
+  tipoServicoId: r.tipo_servico_id,
+  valorBruto: r.valor_bruto !== null ? toNumber(r.valor_bruto) : null,
+  valorIssRetido: r.valor_iss_retido !== null ? toNumber(r.valor_iss_retido) : null,
+  valorInssRetido: r.valor_inss_retido !== null ? toNumber(r.valor_inss_retido) : null,
+  valorFederalRetido: r.valor_federal_retido !== null ? toNumber(r.valor_federal_retido) : null,
+  naturezaSaidaSocio: r.natureza_saida_socio as Transaction['naturezaSaidaSocio'],
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 })
@@ -352,6 +359,12 @@ export const toTransactionInsert = (t: Partial<Transaction>, userId: string): Da
   is_recurring: t.isRecurring ?? false,
   recurring_parent_id: t.recurringParentId ?? null,
   recurring_day: t.recurringDay ?? null,
+  tipo_servico_id: t.tipoServicoId ?? null,
+  valor_bruto: t.valorBruto ?? null,
+  valor_iss_retido: t.valorIssRetido ?? null,
+  valor_inss_retido: t.valorInssRetido ?? null,
+  valor_federal_retido: t.valorFederalRetido ?? null,
+  natureza_saida_socio: t.naturezaSaidaSocio ?? null,
 })
 
 export const fromEmployeeRow = (r: Row<'employees'>): Employee => ({
@@ -570,7 +583,122 @@ export const fromCategoryRow = (r: Row<'categories'>): Category => ({
   userId: r.user_id,
   type: r.type as Category['type'],
   name: r.name,
+  grupoId: r.grupo_id,
   createdAt: r.created_at,
+})
+
+export const fromEmpresaPerfilRow = (r: Row<'empresa_perfil'>): EmpresaPerfil => ({
+  id: r.id,
+  userId: r.user_id,
+  razaoSocial: r.razao_social,
+  cnpj: r.cnpj,
+  endereco: r.endereco,
+  capitalSocial: r.capital_social !== null ? toNumber(r.capital_social) : null,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+})
+
+export const fromGrupoContabilRow = (r: Row<'grupos_contabeis'>): GrupoContabil => ({
+  id: r.id,
+  userId: r.user_id,
+  type: r.type as GrupoContabil['type'],
+  nome: r.nome,
+  ordem: r.ordem,
+  entraDre: r.entra_dre,
+  createdAt: r.created_at,
+})
+
+export const fromRegimeTributarioRow = (r: Row<'regime_tributario_historico'>): RegimeTributarioHistorico => ({
+  id: r.id,
+  userId: r.user_id,
+  regime: r.regime as RegimeTributarioHistorico['regime'],
+  anexoSimples: r.anexo_simples as RegimeTributarioHistorico['anexoSimples'],
+  vigenciaInicio: r.vigencia_inicio,
+  vigenciaFim: r.vigencia_fim,
+  observacao: r.observacao,
+  createdAt: r.created_at,
+})
+
+export const fromSimplesNacionalFaixaRow = (r: Row<'simples_nacional_faixas'>): SimplesNacionalFaixa => ({
+  id: r.id,
+  userId: r.user_id,
+  anexo: r.anexo as SimplesNacionalFaixa['anexo'],
+  faixa: r.faixa,
+  rbt12Min: toNumber(r.rbt12_min),
+  rbt12Max: toNumber(r.rbt12_max),
+  aliquotaNominal: toNumber(r.aliquota_nominal),
+  parcelaDeduzir: toNumber(r.parcela_deduzir),
+  vigenciaInicio: r.vigencia_inicio,
+  vigenciaFim: r.vigencia_fim,
+  conferido: r.conferido,
+  createdAt: r.created_at,
+})
+
+export const fromSimplesNacionalPartilhaRow = (r: Row<'simples_nacional_partilha'>): SimplesNacionalPartilha => ({
+  id: r.id,
+  userId: r.user_id,
+  anexo: r.anexo as SimplesNacionalPartilha['anexo'],
+  faixa: r.faixa,
+  tributo: r.tributo as SimplesNacionalPartilha['tributo'],
+  percentual: toNumber(r.percentual),
+  vigenciaInicio: r.vigencia_inicio,
+  vigenciaFim: r.vigencia_fim,
+  conferido: r.conferido,
+  createdAt: r.created_at,
+})
+
+export const fromTipoServicoRow = (r: Row<'tipos_servico'>): TipoServico => ({
+  id: r.id,
+  userId: r.user_id,
+  nome: r.nome,
+  retemIss: r.retem_iss,
+  retemInss: r.retem_inss,
+  retemIrPisCofinsCsll: r.retem_ir_pis_cofins_csll,
+  aliquotaIssRetido: r.aliquota_iss_retido !== null ? toNumber(r.aliquota_iss_retido) : null,
+  aliquotaInssRetido: r.aliquota_inss_retido !== null ? toNumber(r.aliquota_inss_retido) : null,
+  aliquotaFederalRetido: r.aliquota_federal_retido !== null ? toNumber(r.aliquota_federal_retido) : null,
+  isActive: r.is_active,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+})
+
+export const toTipoServicoInsert = (t: Partial<TipoServico>, userId: string): Database['public']['Tables']['tipos_servico']['Insert'] => ({
+  user_id: userId,
+  nome: t.nome ?? '',
+  retem_iss: t.retemIss ?? false,
+  retem_inss: t.retemInss ?? false,
+  retem_ir_pis_cofins_csll: t.retemIrPisCofinsCsll ?? false,
+  aliquota_iss_retido: t.aliquotaIssRetido ?? null,
+  aliquota_inss_retido: t.aliquotaInssRetido ?? null,
+  aliquota_federal_retido: t.aliquotaFederalRetido ?? null,
+  is_active: t.isActive ?? true,
+})
+
+export const fromNotaFiscalRow = (r: Row<'notas_fiscais_emitidas'>): NotaFiscalEmitida => ({
+  id: r.id,
+  userId: r.user_id,
+  numero: r.numero,
+  clientId: r.client_id,
+  dataEmissao: r.data_emissao,
+  competencia: r.competencia,
+  valor: toNumber(r.valor),
+  descricao: r.descricao,
+  transactionId: r.transaction_id,
+  status: r.status as NotaFiscalEmitida['status'],
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+})
+
+export const toNotaFiscalInsert = (n: Partial<NotaFiscalEmitida>, userId: string): Database['public']['Tables']['notas_fiscais_emitidas']['Insert'] => ({
+  user_id: userId,
+  numero: n.numero ?? null,
+  client_id: n.clientId ?? null,
+  data_emissao: n.dataEmissao ?? todayLocalISO(),
+  competencia: n.competencia ?? todayLocalISO().slice(0, 7),
+  valor: n.valor ?? 0,
+  descricao: n.descricao ?? null,
+  transaction_id: n.transactionId ?? null,
+  status: n.status ?? 'confirmada',
 })
 
 export const fromPaymentMethodRow = (r: Row<'payment_methods'>): PaymentMethod => ({

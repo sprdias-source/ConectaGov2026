@@ -14,9 +14,15 @@ import { fromTransactionRow } from '../lib/mappers'
 import EmployeeFormModal from '../components/funcionarios/EmployeeFormModal'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import ErrorAlert from '../components/ui/ErrorAlert'
-import type { Employee, Transaction } from '../types/domain'
+import type { Employee, Transaction, NaturezaSaidaSocio } from '../types/domain'
 
 type Tab = 'folha' | 'quadro'
+
+const CATEGORIA_SAIDA_SOCIO: Record<NaturezaSaidaSocio, string> = {
+  pro_labore: 'Pró-Labore',
+  distribuicao_lucro: 'Distribuição de Lucros',
+  retirada_socio: 'Retirada de Sócio',
+}
 
 // Vencimento legal de GPS (INSS), DARF (IRRF) e FGTS Digital: dia 20 do
 // mês SEGUINTE ao da competência (ex: competência 2026-06 vence em
@@ -43,14 +49,17 @@ interface FechamentoFolha {
 // lugares: se uma regra mudasse (teto do FGTS, nova categoria de vínculo,
 // ajuste no INSS/IRRF) e só uma cópia fosse atualizada, o valor mostrado no
 // preview divergia do valor realmente lançado no financeiro.
-function calcularFechamentoFolha(employee: Employee, bonus: number): FechamentoFolha {
+function calcularFechamentoFolha(employee: Employee, bonus: number, tipoSaidaSocio: NaturezaSaidaSocio = 'pro_labore'): FechamentoFolha {
   const isProLabore = employee.paymentType === 'Sócio/Pró-labore'
   const isCLT = employee.paymentType === 'CLT'
 
-  // INSS e IRRF se aplicam a qualquer vínculo com retenção na fonte
-  // (Sócio/Pró-labore e CLT) — antes, só calculava para Sócio/Pró-labore,
-  // deixando o CLT sem nenhuma retenção, o que não reflete a realidade.
-  const temRetencao = isProLabore || isCLT
+  // Distribuição de Lucro e Retirada de Sócio são isentas de INSS/IRRF (não
+  // são remuneração pelo trabalho, são movimentação de patrimônio líquido)
+  // — só o Pró-labore de verdade retém. INSS e IRRF se aplicam a qualquer
+  // vínculo com retenção na fonte (Sócio/Pró-labore e CLT) — antes, só
+  // calculava para Sócio/Pró-labore, deixando o CLT sem nenhuma retenção,
+  // o que não reflete a realidade.
+  const temRetencao = (isProLabore && tipoSaidaSocio === 'pro_labore') || isCLT
   const inssValor = temRetencao ? employee.salaryBase * (employee.inssPercentual / 100) : 0
   const irrfValor = temRetencao ? employee.salaryBase * (employee.irrfPercentual / 100) : 0
   // FGTS é encargo PATRONAL (a empresa deposita, não desconta do
@@ -81,13 +90,17 @@ export default function FuncionariosPage() {
   const [competencia, setCompetencia] = useState(todayLocalISO().slice(0, 7))
   const [bonus, setBonus] = useState(0)
   const [descricao, setDescricao] = useState('Salário Mensal Ref. Competência')
+  // Só relevante pra Sócio/Pró-labore — Pró-labore de verdade continua
+  // exatamente como sempre foi (com retenção); Distribuição de Lucro e
+  // Retirada de Sócio são isentas e não é despesa (grupo "fora da DRE").
+  const [tipoSaidaSocio, setTipoSaidaSocio] = useState<NaturezaSaidaSocio>('pro_labore')
 
   const activeEmployees = employees.filter((e) => e.isActive)
   const folhaBase = activeEmployees.reduce((s, e) => s + e.salaryBase, 0)
 
   const competenciaPrefix = competencia
   const payrollTxs = useMemo(
-    () => transactions.filter((t) => t.category === 'Folha de Pagamento' || t.category === 'Pró-Labore'),
+    () => transactions.filter((t) => ['Folha de Pagamento', ...Object.values(CATEGORIA_SAIDA_SOCIO)].includes(t.category)),
     [transactions]
   )
   const totalPagoCompetencia = payrollTxs
@@ -114,18 +127,21 @@ export default function FuncionariosPage() {
 
   const handleClosePayroll = () => {
     if (!selectedEmployee) return
-    const { isProLabore, inssValor, irrfValor, fgtsValor, liquido } = calcularFechamentoFolha(selectedEmployee, bonus)
+    const isProLabore = selectedEmployee.paymentType === 'Sócio/Pró-labore'
+    const tipoSaida = isProLabore ? tipoSaidaSocio : null
+    const { inssValor, irrfValor, fgtsValor, liquido } = calcularFechamentoFolha(selectedEmployee, bonus, tipoSaida ?? undefined)
     const dueDate = `${competencia}-05`
     const guiasDueDate = nextMonthDay20(competencia)
 
     const novosLancamentos: Partial<Transaction>[] = [{
       type: 'Pagar',
-      category: isProLabore ? 'Pró-Labore' : 'Folha de Pagamento',
+      category: isProLabore ? CATEGORIA_SAIDA_SOCIO[tipoSaidaSocio] : 'Folha de Pagamento',
       description: `${descricao} — ${selectedEmployee.name} (${competencia})`,
       value: liquido,
       dueDate,
       paymentMethod: 'PIX',
       status: 'Pendente',
+      naturezaSaidaSocio: tipoSaida,
     }]
 
     addTransactions.mutate(novosLancamentos, {
@@ -242,6 +258,15 @@ export default function FuncionariosPage() {
                     {activeEmployees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
                   </Select>
                 </Field>
+                {selectedEmployee?.paymentType === 'Sócio/Pró-labore' && (
+                  <Field label="Tipo de Saída">
+                    <Select value={tipoSaidaSocio} onChange={(e) => setTipoSaidaSocio(e.target.value as NaturezaSaidaSocio)}>
+                      <option value="pro_labore">Pró-labore (retém INSS/IRRF)</option>
+                      <option value="distribuicao_lucro">Distribuição de Lucro (isenta)</option>
+                      <option value="retirada_socio">Retirada de Sócio (isenta)</option>
+                    </Select>
+                  </Field>
+                )}
                 <div className="grid grid-cols-2 gap-4">
                   <Field label="Competência" required>
                     <Input type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)} />
@@ -254,7 +279,7 @@ export default function FuncionariosPage() {
                   <Input value={descricao} onChange={(e) => setDescricao(e.target.value)} />
                 </Field>
                 {selectedEmployee && (() => {
-                  const { inssValor, irrfValor, fgtsValor, liquido } = calcularFechamentoFolha(selectedEmployee, bonus)
+                  const { inssValor, irrfValor, fgtsValor, liquido } = calcularFechamentoFolha(selectedEmployee, bonus, tipoSaidaSocio)
                   const guiasDueDate = nextMonthDay20(competencia)
 
                   return (
