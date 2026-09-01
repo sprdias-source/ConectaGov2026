@@ -826,6 +826,7 @@ export type Database = {
       categories: {
         Row: {
           created_at: string
+          grupo_id: string | null
           id: string
           name: string
           type: string
@@ -833,6 +834,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          grupo_id?: string | null
           id?: string
           name: string
           type: string
@@ -840,12 +842,21 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          grupo_id?: string | null
           id?: string
           name?: string
           type?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "categories_grupo_id_fkey"
+            columns: ["grupo_id"]
+            isOneToOne: false
+            referencedRelation: "grupos_contabeis"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       client_documents: {
         Row: {
@@ -2189,6 +2200,7 @@ export type Database = {
           id: string
           is_projected: boolean
           is_recurring: boolean
+          natureza_saida_socio: string | null
           payment_date: string | null
           payment_method: string | null
           projection_month_number: number | null
@@ -2196,9 +2208,14 @@ export type Database = {
           recurring_day: number | null
           recurring_parent_id: string | null
           status: string
+          tipo_servico_id: string | null
           type: string
           updated_at: string
           user_id: string
+          valor_bruto: number | null
+          valor_federal_retido: number | null
+          valor_inss_retido: number | null
+          valor_iss_retido: number | null
           value: number
         }
         Insert: {
@@ -2213,6 +2230,7 @@ export type Database = {
           id?: string
           is_projected?: boolean
           is_recurring?: boolean
+          natureza_saida_socio?: string | null
           payment_date?: string | null
           payment_method?: string | null
           projection_month_number?: number | null
@@ -2220,9 +2238,14 @@ export type Database = {
           recurring_day?: number | null
           recurring_parent_id?: string | null
           status?: string
+          tipo_servico_id?: string | null
           type: string
           updated_at?: string
           user_id: string
+          valor_bruto?: number | null
+          valor_federal_retido?: number | null
+          valor_inss_retido?: number | null
+          valor_iss_retido?: number | null
           value?: number
         }
         Update: {
@@ -2237,6 +2260,7 @@ export type Database = {
           id?: string
           is_projected?: boolean
           is_recurring?: boolean
+          natureza_saida_socio?: string | null
           payment_date?: string | null
           payment_method?: string | null
           projection_month_number?: number | null
@@ -2244,9 +2268,14 @@ export type Database = {
           recurring_day?: number | null
           recurring_parent_id?: string | null
           status?: string
+          tipo_servico_id?: string | null
           type?: string
           updated_at?: string
           user_id?: string
+          valor_bruto?: number | null
+          valor_federal_retido?: number | null
+          valor_inss_retido?: number | null
+          valor_iss_retido?: number | null
           value?: number
         }
         Relationships: [
@@ -2285,7 +2314,299 @@ export type Database = {
             referencedRelation: "transactions"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "transactions_tipo_servico_id_fkey"
+            columns: ["tipo_servico_id"]
+            isOneToOne: false
+            referencedRelation: "tipos_servico"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      empresa_perfil: {
+        Row: {
+          capital_social: number | null
+          cnpj: string | null
+          created_at: string
+          endereco: string | null
+          id: string
+          razao_social: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          capital_social?: number | null
+          cnpj?: string | null
+          created_at?: string
+          endereco?: string | null
+          id?: string
+          razao_social?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          capital_social?: number | null
+          cnpj?: string | null
+          created_at?: string
+          endereco?: string | null
+          id?: string
+          razao_social?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      regime_tributario_historico: {
+        Row: {
+          anexo_simples: string | null
+          created_at: string
+          id: string
+          observacao: string | null
+          regime: string
+          user_id: string
+          vigencia_fim: string | null
+          vigencia_inicio: string
+        }
+        Insert: {
+          anexo_simples?: string | null
+          created_at?: string
+          id?: string
+          observacao?: string | null
+          regime: string
+          user_id: string
+          vigencia_fim?: string | null
+          vigencia_inicio: string
+        }
+        Update: {
+          anexo_simples?: string | null
+          created_at?: string
+          id?: string
+          observacao?: string | null
+          regime?: string
+          user_id?: string
+          vigencia_fim?: string | null
+          vigencia_inicio?: string
+        }
+        Relationships: []
+      }
+      simples_nacional_faixas: {
+        Row: {
+          aliquota_nominal: number
+          anexo: string
+          conferido: boolean
+          created_at: string
+          faixa: number
+          id: string
+          parcela_deduzir: number
+          rbt12_max: number
+          rbt12_min: number
+          user_id: string
+          vigencia_fim: string | null
+          vigencia_inicio: string
+        }
+        Insert: {
+          aliquota_nominal: number
+          anexo: string
+          conferido?: boolean
+          created_at?: string
+          faixa: number
+          id?: string
+          parcela_deduzir?: number
+          rbt12_max: number
+          rbt12_min: number
+          user_id: string
+          vigencia_fim?: string | null
+          vigencia_inicio?: string
+        }
+        Update: {
+          aliquota_nominal?: number
+          anexo?: string
+          conferido?: boolean
+          created_at?: string
+          faixa?: number
+          id?: string
+          parcela_deduzir?: number
+          rbt12_max?: number
+          rbt12_min?: number
+          user_id?: string
+          vigencia_fim?: string | null
+          vigencia_inicio?: string
+        }
+        Relationships: []
+      }
+      simples_nacional_partilha: {
+        Row: {
+          anexo: string
+          conferido: boolean
+          created_at: string
+          faixa: number
+          id: string
+          percentual: number
+          tributo: string
+          user_id: string
+          vigencia_fim: string | null
+          vigencia_inicio: string
+        }
+        Insert: {
+          anexo: string
+          conferido?: boolean
+          created_at?: string
+          faixa: number
+          id?: string
+          percentual: number
+          tributo: string
+          user_id: string
+          vigencia_fim?: string | null
+          vigencia_inicio?: string
+        }
+        Update: {
+          anexo?: string
+          conferido?: boolean
+          created_at?: string
+          faixa?: number
+          id?: string
+          percentual?: number
+          tributo?: string
+          user_id?: string
+          vigencia_fim?: string | null
+          vigencia_inicio?: string
+        }
+        Relationships: []
+      }
+      tipos_servico: {
+        Row: {
+          aliquota_federal_retido: number | null
+          aliquota_inss_retido: number | null
+          aliquota_iss_retido: number | null
+          created_at: string
+          id: string
+          is_active: boolean
+          nome: string
+          retem_inss: boolean
+          retem_ir_pis_cofins_csll: boolean
+          retem_iss: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          aliquota_federal_retido?: number | null
+          aliquota_inss_retido?: number | null
+          aliquota_iss_retido?: number | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          nome: string
+          retem_inss?: boolean
+          retem_ir_pis_cofins_csll?: boolean
+          retem_iss?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          aliquota_federal_retido?: number | null
+          aliquota_inss_retido?: number | null
+          aliquota_iss_retido?: number | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          nome?: string
+          retem_inss?: boolean
+          retem_ir_pis_cofins_csll?: boolean
+          retem_iss?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      notas_fiscais_emitidas: {
+        Row: {
+          client_id: string | null
+          competencia: string
+          created_at: string
+          data_emissao: string
+          descricao: string | null
+          id: string
+          numero: string | null
+          status: string
+          transaction_id: string | null
+          updated_at: string
+          user_id: string
+          valor: number
+        }
+        Insert: {
+          client_id?: string | null
+          competencia: string
+          created_at?: string
+          data_emissao: string
+          descricao?: string | null
+          id?: string
+          numero?: string | null
+          status?: string
+          transaction_id?: string | null
+          updated_at?: string
+          user_id: string
+          valor: number
+        }
+        Update: {
+          client_id?: string | null
+          competencia?: string
+          created_at?: string
+          data_emissao?: string
+          descricao?: string | null
+          id?: string
+          numero?: string | null
+          status?: string
+          transaction_id?: string | null
+          updated_at?: string
+          user_id?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notas_fiscais_emitidas_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notas_fiscais_emitidas_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      grupos_contabeis: {
+        Row: {
+          created_at: string
+          entra_dre: boolean
+          id: string
+          nome: string
+          ordem: number
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          entra_dre?: boolean
+          id?: string
+          nome: string
+          ordem?: number
+          type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          entra_dre?: boolean
+          id?: string
+          nome?: string
+          ordem?: number
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       personal_events: {
         Row: {

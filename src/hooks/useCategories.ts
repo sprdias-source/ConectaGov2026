@@ -66,9 +66,9 @@ export function useCategories() {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['categories'] })
 
   const addCategory = useMutation({
-    mutationFn: async ({ type, name }: { type: 'Pagar' | 'Receber'; name: string }) => {
+    mutationFn: async ({ type, name, grupoId }: { type: 'Pagar' | 'Receber'; name: string; grupoId: string }) => {
       if (!user) throw new Error('Usuário não autenticado')
-      const { error } = await supabase.from('categories').insert({ user_id: user.id, type, name })
+      const { error } = await supabase.from('categories').insert({ user_id: user.id, type, name, grupo_id: grupoId })
       if (error) throw error
     },
     onSuccess: invalidate,

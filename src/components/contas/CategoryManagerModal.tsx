@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { Plus, Pencil, Trash2, Check, X } from 'lucide-react'
 import Modal from '../ui/Modal'
-import { Input, Button } from '../ui/FormControls'
+import { Input, Select, Button } from '../ui/FormControls'
 import ErrorAlert from '../ui/ErrorAlert'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import { useCategories } from '../../hooks/useCategories'
+import { useGruposContabeis } from '../../hooks/useGruposContabeis'
 import type { Category } from '../../types/domain'
 
 export default function CategoryManagerModal({
@@ -14,21 +15,34 @@ export default function CategoryManagerModal({
   onClose: () => void
 }) {
   const { allCategories, addCategory, deleteCategory, renameCategory } = useCategories()
+  const { gruposPagar, gruposReceber } = useGruposContabeis()
   const [tab, setTab] = useState<'Pagar' | 'Receber'>('Receber')
   const [newName, setNewName] = useState('')
+  // null = "segue o padrão" (grupo "Outras X" daquela aba) — assim não
+  // precisa de um efeito só pra resincronizar ao trocar de aba; o usuário
+  // só passa a ter uma escolha própria se selecionar algo manualmente.
+  const [newGrupoIdManual, setNewGrupoIdManual] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
   const [deleting, setDeleting] = useState<Category | null>(null)
 
   const list = allCategories.filter((c) => c.type === tab).sort((a, b) => a.name.localeCompare(b.name))
+  const grupos = tab === 'Pagar' ? gruposPagar : gruposReceber
+  const grupoPadrao = grupos.find((g) => g.nome.startsWith('Outras')) ?? grupos[0]
+  const newGrupoId = newGrupoIdManual ?? grupoPadrao?.id ?? ''
+
+  const selecionarTab = (novaTab: 'Pagar' | 'Receber') => {
+    setTab(novaTab)
+    setNewGrupoIdManual(null)
+  }
 
   const handleAdd = () => {
     const name = newName.trim()
-    if (!name) return
+    if (!name || !newGrupoId) return
     if (list.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
       return
     }
-    addCategory.mutate({ type: tab, name }, { onSuccess: () => setNewName('') })
+    addCategory.mutate({ type: tab, name, grupoId: newGrupoId }, { onSuccess: () => setNewName('') })
   }
 
   const startEdit = (cat: Category) => {
@@ -63,7 +77,7 @@ export default function CategoryManagerModal({
             <button
               key={t}
               type="button"
-              onClick={() => setTab(t)}
+              onClick={() => selecionarTab(t)}
               className={`flex-1 py-2 text-sm font-bold rounded-md transition ${
                 tab === t
                   ? t === 'Receber' ? 'bg-positive-500/20 text-positive-400' : 'bg-negative-500/20 text-negative-300'
@@ -75,16 +89,21 @@ export default function CategoryManagerModal({
           ))}
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2">
           <Input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder={`Nova categoria de ${tab === 'Receber' ? 'receita' : 'despesa'}...`}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAdd() } }}
           />
-          <Button onClick={handleAdd} disabled={!newName.trim() || isDuplicate || addCategory.isPending}>
-            <Plus className="w-4 h-4" />
-          </Button>
+          <div className="flex gap-2">
+            <Select value={newGrupoId} onChange={(e) => setNewGrupoIdManual(e.target.value)} className="flex-1 !py-2 text-[13px]">
+              {grupos.map((g) => <option key={g.id} value={g.id}>{g.nome}</option>)}
+            </Select>
+            <Button onClick={handleAdd} disabled={!newName.trim() || isDuplicate || addCategory.isPending}>
+              <Plus className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
         {isDuplicate && <p className="text-[11px] text-warning-400 -mt-2">Já existe uma categoria com esse nome.</p>}
 
