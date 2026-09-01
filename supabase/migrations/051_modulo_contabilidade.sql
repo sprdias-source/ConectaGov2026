@@ -258,6 +258,11 @@ begin
   loop
     execute format('alter table %1$s enable row level security', t);
 
+    execute format('drop policy if exists "select_team_%1$s" on %1$s', t);
+    execute format('drop policy if exists "insert_team_%1$s" on %1$s', t);
+    execute format('drop policy if exists "update_team_%1$s" on %1$s', t);
+    execute format('drop policy if exists "delete_team_%1$s" on %1$s', t);
+
     execute format($f$
       create policy "select_team_%1$s" on %1$s for select
       using (
