@@ -270,6 +270,14 @@ export interface Transaction {
   valorInssRetido: number | null
   valorFederalRetido: number | null
   naturezaSaidaSocio: NaturezaSaidaSocio | null
+  // valorOriginal é o valor cobrado/lançado, imutável. `value` é sempre o
+  // valor real movimentado — recalculado (valorOriginal − desconto + juros
+  // + multa) no momento de dar baixa, se houver ajuste. Antes de dar baixa,
+  // value === valorOriginal.
+  valorOriginal: number | null
+  desconto: number | null
+  juros: number | null
+  multa: number | null
   createdAt: string
   updatedAt: string
 }

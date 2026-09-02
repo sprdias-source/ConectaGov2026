@@ -122,10 +122,10 @@ export default function ContasLancamentosTab() {
     }
   }
 
-  const confirmPayment = (paymentDate: string) => {
+  const confirmPayment = (paymentDate: string, ajuste?: { desconto: number; juros: number; multa: number }) => {
     if (!payingTx) return
     updateTransactionStatus.mutate(
-      { tx: payingTx, newStatus: 'Pago', paymentDate },
+      { tx: payingTx, newStatus: 'Pago', paymentDate, ...ajuste },
       { onSuccess: () => setPayingTx(null) }
     )
   }
@@ -246,6 +246,14 @@ export default function ContasLancamentosTab() {
                     </td>
                     <td className={`px-4 py-3 text-right font-mono font-bold text-[13px] bg-base-850/25 ${t.type === 'Receber' ? 'text-positive-400' : 'text-negative-300'}`}>
                       {t.type === 'Receber' ? '+' : '−'}{formatBRL(t.value)}
+                      {t.valorOriginal != null && t.valorOriginal !== t.value && (
+                        <span
+                          title={`Original: ${formatBRL(t.valorOriginal)}${t.desconto ? ` · Desconto: ${formatBRL(t.desconto)}` : ''}${t.juros ? ` · Juros: ${formatBRL(t.juros)}` : ''}${t.multa ? ` · Multa: ${formatBRL(t.multa)}` : ''}`}
+                          className="block text-[10px] font-normal text-base-500 cursor-help"
+                        >
+                          orig. {formatBRL(t.valorOriginal)}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
                     {podeEditar && (

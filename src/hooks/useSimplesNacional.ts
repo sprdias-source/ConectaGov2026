@@ -154,7 +154,11 @@ export function useSimplesNacional() {
         const dMesInicio = new Date(d.getFullYear(), d.getMonth(), 1)
         return dMesInicio >= inicio && dMesInicio < fim
       })
-      .reduce((s, t) => s + t.value, 0)
+      // Juros e multa recebidos por atraso são receita financeira, não
+      // integram a receita bruta que forma a base do Simples Nacional —
+      // sem excluir isso, um cliente que paga atrasado infla o RBT12 e
+      // pode empurrar a empresa pra uma faixa mais cara indevidamente.
+      .reduce((s, t) => s + t.value - (t.juros ?? 0) - (t.multa ?? 0), 0)
   }
 
   const encontrarFaixa = (anexo: 'III' | 'V', rbt12: number): SimplesNacionalFaixa | null =>
@@ -186,7 +190,9 @@ export function useSimplesNacional() {
       const aliquotaEfetiva = calcularAliquotaEfetiva(faixaAtual, rbt12)
       const receitaMes = transactions
         .filter((t) => t.type === 'Receber' && t.dueDate.slice(0, 7) === competenciaRef)
-        .reduce((s, t) => s + t.value, 0)
+        // Mesma exclusão do RBT12: juros/multa recebidos não são receita
+        // operacional sujeita ao Simples Nacional.
+        .reduce((s, t) => s + t.value - (t.juros ?? 0) - (t.multa ?? 0), 0)
       const dasEstimado = receitaMes * (aliquotaEfetiva / 100)
 
       const breakdown = partilha

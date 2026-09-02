@@ -2195,11 +2195,14 @@ export type Database = {
           client_id: string | null
           created_at: string
           description: string
+          desconto: number | null
           due_date: string
           empenho_id: string | null
           id: string
           is_projected: boolean
           is_recurring: boolean
+          juros: number | null
+          multa: number | null
           natureza_saida_socio: string | null
           payment_date: string | null
           payment_method: string | null
@@ -2216,6 +2219,7 @@ export type Database = {
           valor_federal_retido: number | null
           valor_inss_retido: number | null
           valor_iss_retido: number | null
+          valor_original: number | null
           value: number
         }
         Insert: {
@@ -2225,11 +2229,14 @@ export type Database = {
           client_id?: string | null
           created_at?: string
           description: string
+          desconto?: number | null
           due_date: string
           empenho_id?: string | null
           id?: string
           is_projected?: boolean
           is_recurring?: boolean
+          juros?: number | null
+          multa?: number | null
           natureza_saida_socio?: string | null
           payment_date?: string | null
           payment_method?: string | null
@@ -2246,6 +2253,7 @@ export type Database = {
           valor_federal_retido?: number | null
           valor_inss_retido?: number | null
           valor_iss_retido?: number | null
+          valor_original?: number | null
           value?: number
         }
         Update: {
@@ -2255,11 +2263,14 @@ export type Database = {
           client_id?: string | null
           created_at?: string
           description?: string
+          desconto?: number | null
           due_date?: string
           empenho_id?: string | null
           id?: string
           is_projected?: boolean
           is_recurring?: boolean
+          juros?: number | null
+          multa?: number | null
           natureza_saida_socio?: string | null
           payment_date?: string | null
           payment_method?: string | null
@@ -2276,6 +2287,7 @@ export type Database = {
           valor_federal_retido?: number | null
           valor_inss_retido?: number | null
           valor_iss_retido?: number | null
+          valor_original?: number | null
           value?: number
         }
         Relationships: [

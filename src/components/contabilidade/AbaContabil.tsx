@@ -65,7 +65,11 @@ export default function AbaContabil() {
       const grupoId = grupoIdPorCategoria.get(`${t.type}::${t.category}`)
       if (!grupoId) continue
       const chave = `${grupoId}::${t.category}`
-      totalPorChave.set(chave, (totalPorChave.get(chave) ?? 0) + t.value)
+      // Juros e multa embutidos no "value" do lançamento vão pro Resultado
+      // Financeiro (abaixo), não pro grupo operacional da categoria — senão
+      // um DAS pago com multa infla "Despesas Tributárias" indevidamente.
+      const valorOperacional = t.value - (t.juros ?? 0) - (t.multa ?? 0)
+      totalPorChave.set(chave, (totalPorChave.get(chave) ?? 0) + valorOperacional)
     }
     const montarLado = (tipo: 'Receber' | 'Pagar'): GrupoDre[] =>
       grupos
@@ -84,7 +88,20 @@ export default function AbaContabil() {
     const despesa = montarLado('Pagar')
     const receitaTotal = receita.reduce((s, g) => s + g.total, 0)
     const despesaTotal = despesa.reduce((s, g) => s + g.total, 0)
-    return { receita, despesa, receitaTotal, despesaTotal, resultado: receitaTotal - despesaTotal }
+    const resultadoOperacional = receitaTotal - despesaTotal
+
+    // Resultado Financeiro: juros/multa recebidos de clientes (ganho) menos
+    // juros/multa pagos por atraso próprio (custo) — fora do resultado
+    // operacional, mesmo critério já aplicado no RBT12/DAS.
+    const receitasFinanceiras = pagas.filter((t) => t.type === 'Receber').reduce((s, t) => s + (t.juros ?? 0) + (t.multa ?? 0), 0)
+    const despesasFinanceiras = pagas.filter((t) => t.type === 'Pagar').reduce((s, t) => s + (t.juros ?? 0) + (t.multa ?? 0), 0)
+    const resultadoFinanceiro = receitasFinanceiras - despesasFinanceiras
+
+    return {
+      receita, despesa, receitaTotal, despesaTotal, resultadoOperacional,
+      receitasFinanceiras, despesasFinanceiras, resultadoFinanceiro,
+      resultado: resultadoOperacional + resultadoFinanceiro,
+    }
   }
 
   const dre = useMemo(
@@ -238,6 +255,39 @@ export default function AbaContabil() {
                 <td className="py-2 text-right tabular-nums font-bold text-[11.5px]">{fmtPct(dre.despesaTotal, dre.receitaTotal, true)}</td>
                 {dreAnterior && <td className="py-2 text-right tabular-nums font-bold">{fmtParen(dreAnterior.despesaTotal, true)}</td>}
               </tr>
+
+              <tr className="border-t border-slate-300">
+                <td className="py-2 font-bold text-[12.5px]">Resultado Operacional</td>
+                <td className="py-2 text-right tabular-nums font-bold">{formatBRL(dre.resultadoOperacional)}</td>
+                <td className="py-2 text-right tabular-nums font-bold text-[11.5px]">{fmtPct(dre.resultadoOperacional, dre.receitaTotal, false)}</td>
+                {dreAnterior && <td className="py-2 text-right tabular-nums font-bold">{formatBRL(dreAnterior.resultadoOperacional)}</td>}
+              </tr>
+
+              {(dre.receitasFinanceiras !== 0 || dre.despesasFinanceiras !== 0) && (
+                <>
+                  <tr>
+                    <td className="pt-5 font-bold uppercase text-[11.5px] tracking-wide" colSpan={dreAnterior ? 4 : 3}>Resultado Financeiro</td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 pl-5 text-slate-600 text-[12.5px]">Juros e Multas Recebidos</td>
+                    <td className="py-1 text-right tabular-nums">{formatBRL(dre.receitasFinanceiras)}</td>
+                    <td className="py-1 text-right tabular-nums text-[11.5px] text-slate-500">{fmtPct(dre.receitasFinanceiras, dre.receitaTotal, false)}</td>
+                    {dreAnterior && <td className="py-1 text-right tabular-nums text-slate-500">{formatBRL(dreAnterior.receitasFinanceiras)}</td>}
+                  </tr>
+                  <tr>
+                    <td className="py-1 pl-5 text-slate-600 text-[12.5px]">Juros e Multas Pagos</td>
+                    <td className="py-1 text-right tabular-nums text-[#7a2d2d]">{fmtParen(dre.despesasFinanceiras, true)}</td>
+                    <td className="py-1 text-right tabular-nums text-[11.5px] text-slate-500">{fmtPct(dre.despesasFinanceiras, dre.receitaTotal, true)}</td>
+                    {dreAnterior && <td className="py-1 text-right tabular-nums text-slate-500">{fmtParen(dreAnterior.despesasFinanceiras, true)}</td>}
+                  </tr>
+                  <tr className="border-t border-slate-300">
+                    <td className="py-2 font-bold text-[12.5px]">Total do Resultado Financeiro</td>
+                    <td className="py-2 text-right tabular-nums font-bold">{formatBRL(dre.resultadoFinanceiro)}</td>
+                    <td className="py-2 text-right tabular-nums font-bold text-[11.5px]">{fmtPct(dre.resultadoFinanceiro, dre.receitaTotal, false)}</td>
+                    {dreAnterior && <td className="py-2 text-right tabular-nums font-bold">{formatBRL(dreAnterior.resultadoFinanceiro)}</td>}
+                  </tr>
+                </>
+              )}
 
               <tr className="border-t-2 border-[#1c1c1a]" style={{ borderBottom: '4px double #1c1c1a' }}>
                 <td className="py-3 font-bold uppercase tracking-wide text-[14px]">Resultado Líquido do Exercício</td>

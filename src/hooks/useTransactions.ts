@@ -117,12 +117,31 @@ export function useTransactions() {
   })
 
   const updateTransactionStatus = useMutation({
-    mutationFn: async ({ tx, newStatus, paymentDate }: { tx: Transaction; newStatus: 'Pendente' | 'Pago'; paymentDate?: string }) => {
+    mutationFn: async ({ tx, newStatus, paymentDate, desconto, juros, multa }: {
+      tx: Transaction; newStatus: 'Pendente' | 'Pago'; paymentDate?: string
+      desconto?: number; juros?: number; multa?: number
+    }) => {
+      // valorOriginal é o valor cobrado, nunca muda. Ao dar baixa com
+      // desconto/juros/multa, `value` (o campo usado em todo o resto do
+      // sistema — Fluxo de Caixa, Relatórios, DRE, RBT12) é recalculado pra
+      // já refletir o valor realmente movimentado, sem precisar tocar em
+      // nenhum outro lugar que soma esse campo. Desfazer a baixa (voltar
+      // pra Pendente) restaura value = valorOriginal e limpa os ajustes.
+      const valorOriginal = tx.valorOriginal ?? tx.value
+      const valorFinal = newStatus === 'Pago'
+        ? valorOriginal - (desconto ?? 0) + (juros ?? 0) + (multa ?? 0)
+        : valorOriginal
+
       const { data, error } = await supabase
         .from('transactions')
         .update({
           status: newStatus,
           payment_date: newStatus === 'Pago' ? paymentDate ?? todayLocalISO() : null,
+          valor_original: valorOriginal,
+          value: valorFinal,
+          desconto: newStatus === 'Pago' ? (desconto ?? 0) : null,
+          juros: newStatus === 'Pago' ? (juros ?? 0) : null,
+          multa: newStatus === 'Pago' ? (multa ?? 0) : null,
         })
         .eq('id', tx.id)
         .select()
