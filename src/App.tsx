@@ -37,6 +37,7 @@ const AgendaPage = lazy(() => import('./pages/AgendaPage'))
 const KanbanLicitacoesPage = lazy(() => import('./pages/KanbanLicitacoesPage'))
 const LicitacaoPage = lazy(() => import('./pages/LicitacaoPage'))
 const HojePage = lazy(() => import('./pages/HojePage'))
+const PoliticaPrivacidadePage = lazy(() => import('./pages/PoliticaPrivacidadePage'))
 
 function CarregandoRota() {
   return (
@@ -46,7 +47,20 @@ function CarregandoRota() {
   )
 }
 
-export default function App() {
+// Página pública, acessível sem login — precisa ficar fora de <RequireAuth>
+// (ver comentário no topo de PoliticaPrivacidadePage.tsx pro motivo).
+function RotasPublicas() {
+  return (
+    <Suspense fallback={<CarregandoRota />}>
+      <Routes>
+        <Route path="/politica-de-privacidade" element={<PoliticaPrivacidadePage />} />
+        <Route path="/*" element={<RotasAutenticadas />} />
+      </Routes>
+    </Suspense>
+  )
+}
+
+function RotasAutenticadas() {
   const { lastError } = useRecurringEngine()
   const [dismissed, setDismissed] = useState(false)
   const isOnline = useOnlineStatus()
@@ -105,4 +119,8 @@ export default function App() {
       </AppShell>
     </RequireAuth>
   )
+}
+
+export default function App() {
+  return <RotasPublicas />
 }
