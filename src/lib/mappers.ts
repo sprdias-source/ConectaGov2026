@@ -335,6 +335,10 @@ export const fromTransactionRow = (r: Row<'transactions'>): Transaction => ({
   valorInssRetido: r.valor_inss_retido !== null ? toNumber(r.valor_inss_retido) : null,
   valorFederalRetido: r.valor_federal_retido !== null ? toNumber(r.valor_federal_retido) : null,
   naturezaSaidaSocio: r.natureza_saida_socio as Transaction['naturezaSaidaSocio'],
+  valorOriginal: r.valor_original !== null ? toNumber(r.valor_original) : null,
+  desconto: r.desconto !== null ? toNumber(r.desconto) : null,
+  juros: r.juros !== null ? toNumber(r.juros) : null,
+  multa: r.multa !== null ? toNumber(r.multa) : null,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 })
@@ -365,6 +369,14 @@ export const toTransactionInsert = (t: Partial<Transaction>, userId: string): Da
   valor_inss_retido: t.valorInssRetido ?? null,
   valor_federal_retido: t.valorFederalRetido ?? null,
   natureza_saida_socio: t.naturezaSaidaSocio ?? null,
+  // Todo lançamento novo (ou reenviado por um update completo) nasce com
+  // valorOriginal = value, a menos que já venha explícito — garante que a
+  // coluna nunca fique vazia daqui pra frente, mesmo sem passar pelo fluxo
+  // de "dar baixa com ajuste".
+  valor_original: t.valorOriginal ?? t.value ?? 0,
+  desconto: t.desconto ?? null,
+  juros: t.juros ?? null,
+  multa: t.multa ?? null,
 })
 
 export const fromEmployeeRow = (r: Row<'employees'>): Employee => ({
