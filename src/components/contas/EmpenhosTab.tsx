@@ -20,6 +20,8 @@ const MODO_LABELS: Record<string, string> = {
   recorrente: 'Recorrente',
 }
 
+const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+
 export default function EmpenhosTab() {
   const {
     empenhos, isLoading, addEmpenho, addSerieEmpenhos, updateEmpenho, updateEmpenhoStatus, deleteEmpenho,
@@ -39,6 +41,13 @@ export default function EmpenhosTab() {
   // independente do filtro da lista de empenhos abaixo, só serve pra
   // achar rápido o portal onde confirmar se o empenho já saiu.
   const [consultaClientIdEscolhido, setConsultaClientIdEscolhido] = useState('')
+
+  // Filtro da tabela de empenhos — sem relação com o cliente escolhido
+  // acima (esse é só pra consulta de portal). Default "todos" pra não
+  // esconder nada até o usuário filtrar de propósito.
+  const [filtroClientId, setFiltroClientId] = useState('todos')
+  const [filtroMes, setFiltroMes] = useState('todos')
+  const [filtroAno, setFiltroAno] = useState('todos')
 
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? 'Cliente removido'
   const biddingName = (id: string | null) => biddings.find((b) => b.id === id)?.objeto ?? '—'
@@ -64,9 +73,25 @@ export default function EmpenhosTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deleting?.id])
 
-  const visibleEmpenhos = useMemo(
+  const availableYears = useMemo(() => {
+    const years = new Set(empenhos.map((e) => e.dataEmpenho.slice(0, 4)))
+    return Array.from(years).sort((a, b) => Number(b) - Number(a))
+  }, [empenhos])
+
+  const filtrosAtivos = filtroClientId !== 'todos' || filtroMes !== 'todos' || filtroAno !== 'todos'
+  const limparFiltros = () => { setFiltroClientId('todos'); setFiltroMes('todos'); setFiltroAno('todos') }
+
+  const empenhosAtivosInativos = useMemo(
     () => empenhos.filter((e) => showInactive || e.isActive),
     [empenhos, showInactive]
+  )
+
+  const visibleEmpenhos = useMemo(
+    () => empenhosAtivosInativos
+      .filter((e) => filtroClientId === 'todos' || e.clientId === filtroClientId)
+      .filter((e) => filtroMes === 'todos' || e.dataEmpenho.slice(5, 7) === filtroMes)
+      .filter((e) => filtroAno === 'todos' || e.dataEmpenho.slice(0, 4) === filtroAno),
+    [empenhosAtivosInativos, filtroClientId, filtroMes, filtroAno]
   )
 
   const handleSave = (data: Partial<Empenho>) => {
@@ -126,6 +151,43 @@ export default function EmpenhosTab() {
           <ClientPrefeiturasPanel key={consultaClientId} clientId={consultaClientId} podeEditar={podeEditar} />
         </div>
       )}
+
+      <div className="bg-base-900/60 border border-base-700/50 rounded-xl p-4 mb-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="w-52">
+            <Field label="Cliente">
+              <Select value={filtroClientId} onChange={(e) => setFiltroClientId(e.target.value)}>
+                <option value="todos">Todos os Clientes</option>
+                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select>
+            </Field>
+          </div>
+          <div className="w-40">
+            <Field label="Mês">
+              <Select value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)}>
+                <option value="todos">Todos os Meses</option>
+                {MESES.map((m, i) => <option key={m} value={String(i + 1).padStart(2, '0')}>{m}</option>)}
+              </Select>
+            </Field>
+          </div>
+          <div className="w-32">
+            <Field label="Ano">
+              <Select value={filtroAno} onChange={(e) => setFiltroAno(e.target.value)}>
+                <option value="todos">Todos os Anos</option>
+                {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
+              </Select>
+            </Field>
+          </div>
+          {filtrosAtivos && (
+            <button onClick={limparFiltros} className="text-[12px] font-semibold text-accent-400 hover:text-accent-300 pb-2.5">
+              Limpar filtros
+            </button>
+          )}
+          <span className="ml-auto text-[12px] text-base-500 pb-2.5">
+            <strong className="text-base-300">{visibleEmpenhos.length}</strong> de {empenhosAtivosInativos.length} empenhos
+          </span>
+        </div>
+      </div>
 
       <div className="flex justify-end mb-2">
         <button
