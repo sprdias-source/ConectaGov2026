@@ -162,8 +162,7 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
 
   const getDownloadUrl = async (storagePath: string) => {
     if (ehArquivoDrive(storagePath)) {
-      const mimeType = query.data?.find((f) => f.storagePath === storagePath)?.mimeType
-      return baixarDoDrive('attached_files', storagePath, mimeType)
+      return baixarDoDrive('attached_files', storagePath)
     }
     const { data, error } = await supabase.storage
       .from('client-documents')

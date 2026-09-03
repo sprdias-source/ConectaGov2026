@@ -30,6 +30,7 @@ interface RespostaDriveStorage {
   error?: string
   storagePath?: string
   fileBase64?: string
+  mimeType?: string
   ok?: boolean
 }
 
@@ -64,9 +65,12 @@ export async function enviarParaDrive(file: File, path: string): Promise<string>
 
 // Baixa o conteúdo de um arquivo já no Drive e devolve uma URL local
 // (blob:) pronta pra usar em <a href>, <iframe src\> ou window.open — mesmo
-// uso que uma signed URL do Supabase Storage já tinha.
-export async function baixarDoDrive(table: string, storagePath: string, mimeType?: string | null): Promise<string> {
-  const { fileBase64 } = await chamarDriveStorage({ action: 'download', table, storagePath })
+// uso que uma signed URL do Supabase Storage já tinha. O mimeType vem da
+// própria Edge Function (metadado real do arquivo no Drive) — sem ele, o
+// blob caía sempre em "application/octet-stream" e o navegador forçava
+// download ("Salvar como") em vez de exibir o PDF/imagem direto.
+export async function baixarDoDrive(table: string, storagePath: string): Promise<string> {
+  const { fileBase64, mimeType } = await chamarDriveStorage({ action: 'download', table, storagePath })
   const binario = atob(fileBase64 as string)
   const bytes = new Uint8Array(binario.length)
   for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i)

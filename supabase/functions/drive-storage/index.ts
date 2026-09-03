@@ -18,7 +18,10 @@
 //   - download: { table, storagePath } → confirma que o usuário autenticado
 //     é dono do registro que aponta pra esse storagePath (mesma regra de
 //     posse usada em toda a base: user_id = owner_efetivo(auth.uid())) e
-//     devolve { fileBase64 } com o conteúdo do arquivo.
+//     devolve { fileBase64, mimeType } com o conteúdo do arquivo e o tipo
+//     real armazenado no Drive (usado pelo navegador pra decidir se dá pra
+//     exibir o arquivo direto, ex: PDF num <iframe>, em vez de forçar
+//     download).
 //   - delete:   { table, storagePath } → mesma verificação de posse, depois
 //     apaga o arquivo no Drive (o registro na tabela continua sendo
 //     responsabilidade de quem chamou, igual já era com o Storage).
@@ -289,12 +292,22 @@ Deno.serve(async (req: Request) => {
       const accessToken = await obterAccessTokenDrive()
 
       if (action === 'download') {
-        const res = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        })
-        if (!res.ok) throw new Error(`Falha ao baixar arquivo do Drive: ${await res.text()}`)
-        const bytes = new Uint8Array(await res.arrayBuffer())
-        return json({ fileBase64: bytesParaBase64(bytes) })
+        // Busca o mimeType real do arquivo junto com o conteúdo — sem isso,
+        // o navegador não tinha como saber que o blob era um PDF/imagem e
+        // caía sempre em "application/octet-stream", que o Chrome força a
+        // baixar ("Salvar como") em vez de exibir no visualizador embutido.
+        const [conteudoRes, metadadosRes] = await Promise.all([
+          fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }),
+          fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?fields=mimeType`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }),
+        ])
+        if (!conteudoRes.ok) throw new Error(`Falha ao baixar arquivo do Drive: ${await conteudoRes.text()}`)
+        const bytes = new Uint8Array(await conteudoRes.arrayBuffer())
+        const mimeType = metadadosRes.ok ? ((await metadadosRes.json()).mimeType as string | undefined) : undefined
+        return json({ fileBase64: bytesParaBase64(bytes), mimeType })
       }
 
       // action === 'delete'
