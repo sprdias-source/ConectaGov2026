@@ -69,6 +69,14 @@ export function useBiddingAnalysis(biddingId?: string) {
       const decorrido = Date.now() - new Date(data.updatedAt).getTime()
       return decorrido > LIMITE_PROCESSANDO_MS ? false : 3000
     },
+    // Sem isso, o polling acima pausa sozinho assim que a aba perde o foco
+    // (comportamento padrão do React Query) — como a análise de IA
+    // costuma levar mais de 1 minuto, é comum o usuário trocar de aba
+    // enquanto espera; ao voltar, refetchOnWindowFocus está desligado de
+    // propósito (ver main.tsx), então o resultado só aparecia depois de
+    // alguma ação não relacionada forçar um refetch — parecendo "travado"
+    // mesmo quando a análise já tinha terminado havia tempo.
+    refetchIntervalInBackground: true,
   })
 
   const analysis = query.data ?? null
