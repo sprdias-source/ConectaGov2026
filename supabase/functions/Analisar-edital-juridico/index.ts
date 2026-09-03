@@ -530,6 +530,18 @@ async function tentarFallbackMistral(supabase: Supa, docs: Anexo[], tipo: Tipo):
   }
 }
 
+// Limite pra decidir se o documento vai direto no corpo da requisição
+// (inline_data, sem passar pelo Files API) ou pelo caminho antigo (upload +
+// espera de até ~100s até o Gemini marcar o arquivo como ACTIVE). Essa
+// espera era a maior fonte isolada de demora do pipeline — crítica no plano
+// Free/Hobby do Supabase, cujo teto de wall-clock (~150s) o pipeline
+// completo já chegava perto de estourar. Documentos de até ~15MB (a grande
+// maioria dos editais, mesmo os mais longos, quando não são escaneados em
+// altíssima resolução) cabem tranquilamente inline — só os poucos casos
+// realmente grandes continuam pelo caminho com upload, que segue
+// funcionando como reforço.
+const LIMITE_INLINE_BYTES = 15 * 1024 * 1024
+
 // Todo o trabalho pesado — roda depois da resposta HTTP já ter sido
 // devolvida (ver EdgeRuntime.waitUntil lá embaixo), por isso não conta
 // pro limite de tempo de execução síncrona.
@@ -541,8 +553,13 @@ async function baixarEEnviarAoGemini(supabase: Supa, anexo: Anexo, apiKey: strin
   const sizeBytes = anexo.size_bytes ?? Number(downloadRes.headers.get('content-length') ?? 0)
   if (!sizeBytes) throw new Error(`Não foi possível determinar o tamanho de "${anexo.name}"`)
 
+  if (sizeBytes <= LIMITE_INLINE_BYTES) {
+    const bytes = new Uint8Array(await downloadRes.arrayBuffer())
+    return { fileData: { inline_data: { mime_type: mimeType, data: bytesParaBase64(bytes) } }, geminiFileName: undefined as string | undefined }
+  }
+
   const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, anexo.name, apiKey)
-  return { fileData: { file_data: { mime_type: mimeType, file_uri: geminiFile.uri } }, geminiFileName: geminiFile.name }
+  return { fileData: { file_data: { mime_type: mimeType, file_uri: geminiFile.uri } }, geminiFileName: geminiFile.name as string | undefined }
 }
 
 // Envia os documentos e gera a análise com UMA chave/projeto específico do
@@ -555,7 +572,7 @@ async function tentarAnaliseComGemini(supabase: Supa, docs: Anexo[], tipo: Tipo,
   const arquivosGeminiParaApagar: string[] = []
   const resultados = await Promise.all(docs.map(async (doc) => {
     const r = await baixarEEnviarAoGemini(supabase, doc, apiKey)
-    arquivosGeminiParaApagar.push(r.geminiFileName)
+    if (r.geminiFileName) arquivosGeminiParaApagar.push(r.geminiFileName)
     return r
   }))
   const partesArquivos = resultados.map((r) => r.fileData)

@@ -301,6 +301,18 @@ async function apagarArquivoGemini(fileName: string, apiKey: string) {
   }
 }
 
+// Limite pra decidir se o documento vai direto no corpo da requisição
+// (inline_data, sem passar pelo Files API) ou pelo caminho antigo (upload +
+// espera de até ~100s até o Gemini marcar o arquivo como ACTIVE). Essa
+// espera era a maior fonte isolada de demora do pipeline — crítica no plano
+// Free/Hobby do Supabase, cujo teto de wall-clock (~150s) o pipeline
+// completo já chegava perto de estourar. Documentos de até ~15MB (a grande
+// maioria dos editais, mesmo os mais longos, quando não são escaneados em
+// altíssima resolução) cabem tranquilamente inline — só os poucos casos
+// realmente grandes continuam pelo caminho com upload, que segue
+// funcionando como reforço.
+const LIMITE_INLINE_BYTES = 15 * 1024 * 1024
+
 async function processarDocumento(supabase: Supa, doc: Anexo, apiKey: string, arquivosGeminiParaApagar: string[]) {
   const downloadRes = await baixarAnexo(supabase, doc.storage_path)
   if (!downloadRes.ok || !downloadRes.body) throw new Error(`Falha ao baixar "${doc.name}" do Storage/Drive`)
@@ -309,16 +321,18 @@ async function processarDocumento(supabase: Supa, doc: Anexo, apiKey: string, ar
   const sizeBytes = doc.size_bytes ?? Number(downloadRes.headers.get('content-length') ?? 0)
   if (!sizeBytes) throw new Error(`Não foi possível determinar o tamanho de "${doc.name}"`)
 
+  if (sizeBytes <= LIMITE_INLINE_BYTES) {
+    const bytes = new Uint8Array(await downloadRes.arrayBuffer())
+    return { fileData: { inline_data: { mime_type: mimeType, data: bytesParaBase64(bytes) } } }
+  }
+
   const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, doc.name, apiKey)
   // Registra ANTES de retornar — se outro documento do MESMO lote (ver
   // Promise.all abaixo) falhar depois deste já ter subido com sucesso, o
   // Promise.all rejeita sem nunca rodar o .forEach que populava esta lista
   // só no fim, deixando este arquivo órfão no Gemini até expirar sozinho.
   arquivosGeminiParaApagar.push(geminiFile.name)
-  return {
-    fileData: { file_data: { mime_type: mimeType, file_uri: geminiFile.uri } },
-    geminiFileName: geminiFile.name,
-  }
+  return { fileData: { file_data: { mime_type: mimeType, file_uri: geminiFile.uri } } }
 }
 
 // Envia os documentos + prompt com UMA chave/projeto específico do Gemini —
