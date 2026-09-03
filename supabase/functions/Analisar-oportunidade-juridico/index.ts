@@ -601,7 +601,20 @@ async function processarAnaliseJuridica(supabase: Supa, analysisRowId: string, e
         }
         throw new Error('Gemini não retornou conteúdo na análise')
       }
-      resultado = JSON.parse(textoResposta) as ResultadoJuridico
+      try {
+        resultado = JSON.parse(textoResposta) as ResultadoJuridico
+      } catch (parseErr) {
+        // Mesmo com texto não-vazio, a resposta pode vir com o JSON cortado
+        // no meio (aspas/chave sem fechar) quando o finishReason é
+        // MAX_TOKENS — a checagem acima só cobre o caso de texto totalmente
+        // vazio. Sem isso, o erro que chegava ao usuário era o genérico do
+        // JSON.parse ("Unterminated string..."), sem nenhuma pista real.
+        if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+          throw new Error('A resposta do Gemini foi cortada por exceder o limite de tamanho (edital com muitos itens) — tente novamente ou reduza os anexos enviados')
+        }
+        const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr)
+        throw new Error(`Gemini retornou uma resposta em formato inválido: ${parseMsg}`)
+      }
     }
 
     console.log(`[Analisar-oportunidade-juridico] Análise concluída via ${provedor}.`)
