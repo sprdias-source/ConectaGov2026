@@ -117,6 +117,9 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
       invalidate()
       showToast(`${variables.category} enviado com sucesso.`)
     },
+    onError: (error) => {
+      showToast(error instanceof Error ? error.message : 'Falha ao enviar o arquivo.', 'error')
+    },
   })
 
   const deleteFile = useMutation({
@@ -151,6 +154,9 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
       queryClient.invalidateQueries({ queryKey: ['bidding_checklist_items'] })
       queryClient.invalidateQueries({ queryKey: ['bidding_checklist_pendencias'] })
       showToast(`${file.category} removido.`)
+    },
+    onError: (error) => {
+      showToast(error instanceof Error ? error.message : 'Falha ao remover o arquivo.', 'error')
     },
   })
 
