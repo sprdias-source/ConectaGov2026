@@ -589,73 +589,106 @@ async function tentarAnaliseComGemini(supabase: Supa, docs: Anexo[], tipo: Tipo,
 // no sistema (só 'Edital' e 'Termo de Referência'), então passa a ler os
 // dois quando o TR também tiver sido enviado — mesmo padrão já usado por
 // Analisar-edital (não jurídico).
+// Limite de segurança pra SEMPRE gravar um status final antes do runtime do
+// Supabase matar esta function à força por estourar o tempo máximo de
+// execução (erro visto nos logs: "shutdown"/"WallClockTime", sem nenhum
+// erro da nossa aplicação — a function é encerrada NO MEIO, sem rodar nada
+// do catch abaixo). No plano Free/Hobby esse teto é de ~150s; o pipeline
+// completo (baixar do Drive + subir pro Gemini + esperar processar +
+// gerar a análise, com possíveis fallbacks pra 2ª chave/Mistral) pode
+// chegar perto ou passar disso em editais grandes/escaneados. Sem este
+// limite interno, o registro ficava preso em "processando" pra sempre,
+// até a tela desistir sozinha (timeout de 3min do lado do cliente) e
+// mostrar "travou" sem nenhuma explicação real.
+const LIMITE_EXECUCAO_MS = 110_000
+
+async function comLimiteDeTempo<T>(promise: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(
+      'A análise demorou mais do que o tempo de execução disponível no plano atual do Supabase — tente novamente. Se isso acontecer com frequência (principalmente em editais grandes/escaneados), considere migrar pra um plano com mais tempo de execução por function.'
+    )), LIMITE_EXECUCAO_MS)
+  })
+  try {
+    return await Promise.race([promise, timeout])
+  } finally {
+    clearTimeout(timer!)
+  }
+}
+
+async function realizarAnaliseJuridica(supabase: Supa, edital: Anexo, tr: Anexo | undefined, tipo: Tipo): Promise<{ resultado: ResultadoJuridico; provedor: string }> {
+  const docs = [edital, tr].filter((d): d is Anexo => !!d)
+
+  let genRes = await tentarAnaliseComGemini(supabase, docs, tipo, GEMINI_API_KEY)
+  let provedor: 'gemini' | 'gemini-2' | 'mistral' = 'gemini'
+
+  // fetchComRetry devolve uma Response (em vez de lançar) tanto no caso de
+  // cota DIÁRIA esgotada quanto no de sobrecarga persistente do Gemini
+  // (503 mesmo após as tentativas de retry) — qualquer outro 4xx
+  // não-retentável cai direto no "else" abaixo.
+  //
+  // 2º nível: se a 1ª chave bateu a cota diária OU o Gemini está
+  // sobrecarregado, e existe uma 2ª chave configurada (de um projeto
+  // Google Cloud diferente — a cota de 20 req/dia é por projeto, não por
+  // conta), tenta de novo com ela antes de partir pro Mistral.
+  if ((genRes.status === 429 || genRes.status >= 500) && GEMINI_API_KEY_2) {
+    console.warn('[Analisar-edital-juridico] 1ª chave do Gemini indisponível (cota esgotada ou sobrecarga) — tentando 2ª chave (projeto Google Cloud separado)...')
+    genRes = await tentarAnaliseComGemini(supabase, docs, tipo, GEMINI_API_KEY_2)
+    provedor = 'gemini-2'
+  }
+
+  let resultado: ResultadoJuridico
+
+  // Chegar aqui ainda com 429/5xx significa: nenhuma chave do Gemini
+  // configurada deu conta agora (cota esgotada ou sobrecarga persistente)
+  // — 3º nível, tenta o mesmo documento via Mistral Document AI antes de
+  // desistir de vez. É o que garante que as 3 alternativas configuradas
+  // são de fato tentadas antes do erro subir pro usuário.
+  if (genRes.status === 429 || genRes.status >= 500) {
+    console.warn('[Analisar-edital-juridico] Gemini indisponível (cota esgotada ou sobrecarga) em todas as chaves configuradas — tentando fallback via Mistral Document AI...')
+    try {
+      resultado = await tentarFallbackMistral(supabase, docs, tipo)
+      provedor = 'mistral'
+    } catch (fallbackErr) {
+      const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
+      throw new Error(`Gemini indisponível (cota esgotada ou sobrecarga) em todas as chaves configuradas, e o fallback via Mistral também falhou: ${fallbackMsg}`, { cause: fallbackErr })
+    }
+  } else if (!genRes.ok) {
+    throw new Error(`Falha ao analisar com Gemini: ${await genRes.text()}`)
+  } else {
+    const genData = await genRes.json()
+    const textoResposta = genData.candidates?.[0]?.content?.parts?.[0]?.text
+    if (!textoResposta) {
+      // finishReason 'MAX_TOKENS' é o caso comum de edital com muitos
+      // itens estourando o limite de saída — sem essa checagem, a
+      // mensagem de erro genérica não dava nenhuma pista do motivo real.
+      if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+        throw new Error('A resposta do Gemini foi cortada por exceder o limite de tamanho (edital com muitos itens) — tente novamente ou reduza os anexos enviados')
+      }
+      throw new Error('Gemini não retornou conteúdo na análise')
+    }
+    try {
+      resultado = JSON.parse(textoResposta) as ResultadoJuridico
+    } catch (parseErr) {
+      // Mesmo com texto não-vazio, a resposta pode vir com o JSON cortado
+      // no meio (aspas/chave sem fechar) quando o finishReason é
+      // MAX_TOKENS — a checagem acima só cobre o caso de texto totalmente
+      // vazio. Sem isso, o erro que chegava ao usuário era o genérico do
+      // JSON.parse ("Unterminated string..."), sem nenhuma pista real.
+      if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+        throw new Error('A resposta do Gemini foi cortada por exceder o limite de tamanho (edital com muitos itens) — tente novamente ou reduza os anexos enviados')
+      }
+      const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr)
+      throw new Error(`Gemini retornou uma resposta em formato inválido: ${parseMsg}`)
+    }
+  }
+
+  return { resultado, provedor }
+}
+
 async function processarAnaliseJuridica(supabase: Supa, analysisRowId: string, edital: Anexo, tr: Anexo | undefined, tipo: Tipo) {
   try {
-    const docs = [edital, tr].filter((d): d is Anexo => !!d)
-
-    let genRes = await tentarAnaliseComGemini(supabase, docs, tipo, GEMINI_API_KEY)
-    let provedor: 'gemini' | 'gemini-2' | 'mistral' = 'gemini'
-
-    // fetchComRetry devolve uma Response (em vez de lançar) tanto no caso de
-    // cota DIÁRIA esgotada quanto no de sobrecarga persistente do Gemini
-    // (503 mesmo após as tentativas de retry) — qualquer outro 4xx
-    // não-retentável cai direto no "else" abaixo.
-    //
-    // 2º nível: se a 1ª chave bateu a cota diária OU o Gemini está
-    // sobrecarregado, e existe uma 2ª chave configurada (de um projeto
-    // Google Cloud diferente — a cota de 20 req/dia é por projeto, não por
-    // conta), tenta de novo com ela antes de partir pro Mistral.
-    if ((genRes.status === 429 || genRes.status >= 500) && GEMINI_API_KEY_2) {
-      console.warn('[Analisar-edital-juridico] 1ª chave do Gemini indisponível (cota esgotada ou sobrecarga) — tentando 2ª chave (projeto Google Cloud separado)...')
-      genRes = await tentarAnaliseComGemini(supabase, docs, tipo, GEMINI_API_KEY_2)
-      provedor = 'gemini-2'
-    }
-
-    let resultado: ResultadoJuridico
-
-    // Chegar aqui ainda com 429/5xx significa: nenhuma chave do Gemini
-    // configurada deu conta agora (cota esgotada ou sobrecarga persistente)
-    // — 3º nível, tenta o mesmo documento via Mistral Document AI antes de
-    // desistir de vez. É o que garante que as 3 alternativas configuradas
-    // são de fato tentadas antes do erro subir pro usuário.
-    if (genRes.status === 429 || genRes.status >= 500) {
-      console.warn('[Analisar-edital-juridico] Gemini indisponível (cota esgotada ou sobrecarga) em todas as chaves configuradas — tentando fallback via Mistral Document AI...')
-      try {
-        resultado = await tentarFallbackMistral(supabase, docs, tipo)
-        provedor = 'mistral'
-      } catch (fallbackErr) {
-        const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
-        throw new Error(`Gemini indisponível (cota esgotada ou sobrecarga) em todas as chaves configuradas, e o fallback via Mistral também falhou: ${fallbackMsg}`, { cause: fallbackErr })
-      }
-    } else if (!genRes.ok) {
-      throw new Error(`Falha ao analisar com Gemini: ${await genRes.text()}`)
-    } else {
-      const genData = await genRes.json()
-      const textoResposta = genData.candidates?.[0]?.content?.parts?.[0]?.text
-      if (!textoResposta) {
-        // finishReason 'MAX_TOKENS' é o caso comum de edital com muitos
-        // itens estourando o limite de saída — sem essa checagem, a
-        // mensagem de erro genérica não dava nenhuma pista do motivo real.
-        if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
-          throw new Error('A resposta do Gemini foi cortada por exceder o limite de tamanho (edital com muitos itens) — tente novamente ou reduza os anexos enviados')
-        }
-        throw new Error('Gemini não retornou conteúdo na análise')
-      }
-      try {
-        resultado = JSON.parse(textoResposta) as ResultadoJuridico
-      } catch (parseErr) {
-        // Mesmo com texto não-vazio, a resposta pode vir com o JSON cortado
-        // no meio (aspas/chave sem fechar) quando o finishReason é
-        // MAX_TOKENS — a checagem acima só cobre o caso de texto totalmente
-        // vazio. Sem isso, o erro que chegava ao usuário era o genérico do
-        // JSON.parse ("Unterminated string..."), sem nenhuma pista real.
-        if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
-          throw new Error('A resposta do Gemini foi cortada por exceder o limite de tamanho (edital com muitos itens) — tente novamente ou reduza os anexos enviados')
-        }
-        const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr)
-        throw new Error(`Gemini retornou uma resposta em formato inválido: ${parseMsg}`)
-      }
-    }
+    const { resultado, provedor } = await comLimiteDeTempo(realizarAnaliseJuridica(supabase, edital, tr, tipo))
 
     // Log só pra diagnóstico (qual provedor de fato gerou o resultado) — o
     // JSON gravado em "resultado" continua exatamente no mesmo formato dos
