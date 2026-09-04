@@ -135,3 +135,18 @@ export function mensagemAmigavelErroAnalise(erroBruto?: string | null): string {
   }
   return 'Não foi possível concluir a análise deste edital. Tente novamente — se persistir, o arquivo pode estar corrompido, escaneado sem texto legível, ou grande demais.'
 }
+
+// Decide se vale tentar a análise de novo automaticamente, sem o usuário
+// precisar clicar em "Analisar novamente" — só faz sentido pros erros que
+// costumam se resolver sozinhos em segundos a poucos minutos (sobrecarga
+// temporária do provedor de IA, ou o timeout interno de execução da
+// function). NUNCA pra cota diária esgotada (só reseta depois de ~24h — um
+// retry imediato é desperdício) nem pra problema no próprio arquivo
+// (corrompido/tamanho/leitura), onde repetir a mesma chamada só repete o
+// mesmo erro.
+export function erroEhTemporario(erroBruto?: string | null): boolean {
+  const texto = erroBruto ?? ''
+  if (!texto) return false
+  if (/upload|Storage|baixar|tamanho|corrompido/i.test(texto)) return false
+  return /sobrecarregado|UNAVAILABLE|high demand|demorou mais do que o tempo de execução|rate.?limit/i.test(texto)
+}

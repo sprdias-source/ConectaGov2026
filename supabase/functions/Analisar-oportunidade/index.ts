@@ -47,7 +47,7 @@ const MISTRAL_API_KEY = Deno.env.get('MISTRAL_API_KEY')
 // vez), e o bundler do editor não enxerga pastas irmãs fora da function —
 // só o deploy via CLI/git, que envia o repositório inteiro de uma vez, é que
 // consegue resolver esse import. Fica autossuficiente de propósito.
-async function obterAccessTokenDrive(): Promise<string> {
+async function obterAccessTokenDrive(signal: AbortSignal): Promise<string> {
   if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REFRESH_TOKEN) {
     throw new Error('Credenciais do Google Drive não configuradas nesta function (GOOGLE_DRIVE_CLIENT_ID/CLIENT_SECRET/REFRESH_TOKEN).')
   }
@@ -61,6 +61,7 @@ async function obterAccessTokenDrive(): Promise<string> {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params,
+    signal,
   })
   if (!res.ok) throw new Error(`Falha ao renovar o acesso ao Google Drive: ${await res.text()}`)
   const data = await res.json()
@@ -71,19 +72,26 @@ async function obterAccessTokenDrive(): Promise<string> {
 // prefixo "gdrive:") ou Supabase Storage (caminho antigo, de antes da
 // migração pro Drive) — sempre devolvendo um Response comum, exatamente
 // como um fetch(signedUrl) faria.
-async function baixarAnexo(supabase: ReturnType<typeof createClient>, storagePath: string): Promise<Response> {
+//
+// Recebe o AbortSignal do comLimiteDeTempo (ver mais abaixo) — sem isso, uma
+// chamada de rede lenta continuava rodando escondida em segundo plano mesmo
+// depois da gente desistir dela e gravar erro no banco, criando risco de
+// gravação tardia/fora de ordem quando somamos retry automático no
+// frontend (ver processarAnalise).
+async function baixarAnexo(supabase: ReturnType<typeof createClient>, storagePath: string, signal: AbortSignal): Promise<Response> {
   if (storagePath.startsWith(DRIVE_PREFIX)) {
     const driveFileId = storagePath.slice(DRIVE_PREFIX.length)
-    const accessToken = await obterAccessTokenDrive()
+    const accessToken = await obterAccessTokenDrive(signal)
     return fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`, {
       headers: { Authorization: `Bearer ${accessToken}` },
+      signal,
     })
   }
   const { data: signedUrlData, error: signedUrlError } = await supabase.storage
     .from('client-documents')
     .createSignedUrl(storagePath, 300)
   if (signedUrlError || !signedUrlData) throw new Error('Não foi possível gerar a URL do arquivo no Storage')
-  return fetch(signedUrlData.signedUrl)
+  return fetch(signedUrlData.signedUrl, { signal })
 }
 // Fixo em 3.5 (não 'gemini-flash-latest' nem '2.5-flash'): o Google
 // aposentou o 2.5 Flash em 2026 ("model ... is no longer available to new
@@ -339,7 +347,7 @@ Para "checklistDocumentacao", liste TODOS os documentos de habilitação exigido
 
 Para os 5 campos de "habilitacao", resuma em texto corrido o que o edital exige em cada categoria (habilitação jurídica, regularidade fiscal e trabalhista, qualificação econômico-financeira, qualificação técnica, proposta).`
 
-async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeBytes: number, mimeType: string, displayName: string, apiKey: string) {
+async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeBytes: number, mimeType: string, displayName: string, apiKey: string, signal: AbortSignal) {
   const startRes = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`, {
     method: 'POST',
     headers: {
@@ -350,6 +358,7 @@ async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeByte
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ file: { display_name: displayName } }),
+    signal,
   })
   if (!startRes.ok) throw new Error(`Falha ao iniciar upload no Gemini: ${await startRes.text()}`)
   const uploadUrl = startRes.headers.get('x-goog-upload-url')
@@ -363,6 +372,7 @@ async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeByte
       'X-Goog-Upload-Command': 'upload, finalize',
     },
     body: fileStream,
+    signal,
     // @ts-ignore: 'duplex' é exigido pelo fetch quando o body é uma stream, mas ainda não está no lib.dom.d.ts do TS
     duplex: 'half',
   })
@@ -374,9 +384,9 @@ async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeByte
   // observados levando mais que isso) — espera até ~100s antes de desistir.
   let file = uploaded.file
   let tentativas = 0
-  while (file.state === 'PROCESSING' && tentativas < 50) {
+  while (file.state === 'PROCESSING' && tentativas < 50 && !signal.aborted) {
     await new Promise((r) => setTimeout(r, 2000))
-    const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${file.name}?key=${apiKey}`)
+    const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${file.name}?key=${apiKey}`, { signal })
     file = await checkRes.json()
     tentativas++
   }
@@ -401,12 +411,21 @@ async function uploadParaGemini(fileStream: ReadableStream<Uint8Array>, sizeByte
 // exponencial) antes de desistir. Só usado na chamada de generateContent
 // (corpo é um JSON simples, seguro de reenviar) — não nos uploads de
 // arquivo, cujo corpo é uma stream que não dá pra reler depois de falhar.
-async function fetchComRetry(url: string, init: RequestInit, tentativas = 4): Promise<Response> {
+//
+// Reduzido de 4 pra 2 tentativas: medido em produção que um único "high
+// demand" do Gemini pode levar ~95s só pra RESPONDER com o erro — 4
+// tentativas sequenciais nessa situação estourariam sozinhas o orçamento
+// inteiro de LIMITE_EXECUCAO_MS. Como agora corremos Gemini (as 2 chaves) e
+// Mistral em paralelo (ver realizarAnalise), insistir menos numa chave que
+// já mostrou estar sobrecarregada e deixar as outras disputarem é mais
+// eficaz do que consumir o orçamento inteiro numa única chave.
+async function fetchComRetry(url: string, init: RequestInit, signal: AbortSignal, tentativas = 2): Promise<Response> {
   let ultimoErro: unknown
   let ultimaResposta: Response | undefined
   for (let i = 0; i < tentativas; i++) {
+    if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
     try {
-      const res = await fetch(url, init)
+      const res = await fetch(url, { ...init, signal })
       if (res.ok) return res
       // 4xx (exceto 429) é erro de requisição — tentar de novo não resolve.
       if (res.status < 500 && res.status !== 429) return res
@@ -424,6 +443,10 @@ async function fetchComRetry(url: string, init: RequestInit, tentativas = 4): Pr
       ultimaResposta = new Response(corpo, { status: res.status, statusText: res.statusText, headers: res.headers })
       ultimoErro = new Error(`HTTP ${res.status}: ${corpo}`)
     } catch (err) {
+      // AbortError significa que comLimiteDeTempo já desistiu (ver mais
+      // abaixo) — propaga na hora em vez de reter e aguardar o backoff,
+      // que só atrasaria uma desistência que já foi decidida.
+      if (err instanceof Error && err.name === 'AbortError') throw err
       ultimaResposta = undefined
       ultimoErro = err
     }
@@ -465,9 +488,9 @@ async function apagarArquivoGemini(fileName: string, apiKey: string) {
 // funcionando como reforço.
 const LIMITE_INLINE_BYTES = 15 * 1024 * 1024
 
-async function processarDocumento(supabase: Supa, doc: Anexo, apiKey: string, arquivosGeminiParaApagar: string[]) {
+async function processarDocumento(supabase: Supa, doc: Anexo, apiKey: string, arquivosGeminiParaApagar: string[], signal: AbortSignal) {
   const tInicio = Date.now()
-  const downloadRes = await baixarAnexo(supabase, doc.storage_path)
+  const downloadRes = await baixarAnexo(supabase, doc.storage_path, signal)
   if (!downloadRes.ok || !downloadRes.body) throw new Error(`Falha ao baixar "${doc.name}" do Storage/Drive`)
 
   const mimeType = doc.mime_type || 'application/pdf'
@@ -480,7 +503,7 @@ async function processarDocumento(supabase: Supa, doc: Anexo, apiKey: string, ar
     return { fileData: { inline_data: { mime_type: mimeType, data: bytesParaBase64(bytes) } } }
   }
 
-  const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, doc.name, apiKey)
+  const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, doc.name, apiKey, signal)
   console.log(`[Analisar-oportunidade][timing] "${doc.name}" enviado via Files API em ${Date.now() - tInicio}ms (${sizeBytes} bytes)`)
   // Registra ANTES de retornar — se outro documento do MESMO lote (ver
   // Promise.all abaixo) falhar depois deste já ter subido com sucesso, o
@@ -491,12 +514,12 @@ async function processarDocumento(supabase: Supa, doc: Anexo, apiKey: string, ar
 }
 
 // Envia os documentos e gera a análise com UMA chave/projeto específico do
-// Gemini — extraído à parte pra poder ser chamado de novo com uma SEGUNDA
-// chave se a 1ª bater a cota diária.
-async function tentarAnaliseComGemini(supabase: Supa, docs: Anexo[], apiKey: string): Promise<Response> {
+// Gemini — extraído à parte pra poder ser chamado em paralelo com a 2ª
+// chave e o Mistral (ver realizarAnalise).
+async function tentarAnaliseComGemini(supabase: Supa, docs: Anexo[], apiKey: string, signal: AbortSignal): Promise<Response> {
   const arquivosGeminiParaApagar: string[] = []
   const tDocs = Date.now()
-  const resultados = await Promise.all(docs.map((doc) => processarDocumento(supabase, doc, apiKey, arquivosGeminiParaApagar)))
+  const resultados = await Promise.all(docs.map((doc) => processarDocumento(supabase, doc, apiKey, arquivosGeminiParaApagar, signal)))
   console.log(`[Analisar-oportunidade][timing] preparo de todos os documentos: ${Date.now() - tDocs}ms`)
   const partesArquivos = resultados.map((r) => r.fileData)
 
@@ -514,7 +537,8 @@ async function tentarAnaliseComGemini(supabase: Supa, docs: Anexo[], apiKey: str
           maxOutputTokens: 8192,
         },
       }),
-    }
+    },
+    signal,
   )
   console.log(`[Analisar-oportunidade][timing] chamada generateContent ao Gemini (status ${genRes.status}): ${Date.now() - tGemini}ms`)
 
@@ -532,8 +556,8 @@ function bytesParaBase64(bytes: Uint8Array): string {
   return btoa(binario)
 }
 
-async function baixarBytes(supabase: Supa, anexo: Anexo): Promise<Uint8Array> {
-  const downloadRes = await baixarAnexo(supabase, anexo.storage_path)
+async function baixarBytes(supabase: Supa, anexo: Anexo, signal: AbortSignal): Promise<Uint8Array> {
+  const downloadRes = await baixarAnexo(supabase, anexo.storage_path, signal)
   if (!downloadRes.ok || !downloadRes.body) throw new Error(`Falha ao baixar "${anexo.name}" do Storage/Drive`)
   return new Uint8Array(await downloadRes.arrayBuffer())
 }
@@ -547,13 +571,15 @@ async function baixarBytes(supabase: Supa, anexo: Anexo): Promise<Uint8Array> {
 // em poucos segundos. Tenta de novo (backoff exponencial) antes de contar
 // como "as 3 alternativas falharam" — sem isso, um pico breve de tráfego já
 // derrubava a análise mesmo com o Mistral configurado e de pé.
-async function fetchMistralComRetry(body: unknown, tentativas = 3): Promise<Response> {
+async function fetchMistralComRetry(body: unknown, signal: AbortSignal, tentativas = 3): Promise<Response> {
   let res: Response
   for (let i = 0; i < tentativas; i++) {
+    if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
     res = await fetch('https://api.mistral.ai/v1/ocr', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MISTRAL_API_KEY}` },
       body: JSON.stringify(body),
+      signal,
     })
     if (res.ok || res.status !== 429) return res
     if (i < tentativas - 1) {
@@ -564,7 +590,7 @@ async function fetchMistralComRetry(body: unknown, tentativas = 3): Promise<Resp
   return res!
 }
 
-async function chamarMistralAnnotation(pdfBytes: Uint8Array): Promise<AnaliseResultado> {
+async function chamarMistralAnnotation(pdfBytes: Uint8Array, signal: AbortSignal): Promise<AnaliseResultado> {
   const base64 = bytesParaBase64(pdfBytes)
   const res = await fetchMistralComRetry({
     model: 'mistral-ocr-latest',
@@ -574,7 +600,7 @@ async function chamarMistralAnnotation(pdfBytes: Uint8Array): Promise<AnaliseRes
       json_schema: { name: 'analise_edital', schema: ANALISE_SCHEMA_MISTRAL, strict: true },
     },
     document_annotation_prompt: PROMPT,
-  })
+  }, signal)
   if (!res.ok) throw new Error(`Falha ao analisar com Mistral: ${await res.text()}`)
   const data = await res.json()
   if (!data.document_annotation) throw new Error('Mistral não retornou document_annotation')
@@ -587,12 +613,12 @@ async function chamarMistralAnnotation(pdfBytes: Uint8Array): Promise<AnaliseRes
 // estruturadas completas de forma confiável (campo a campo) foge do escopo
 // razoável aqui; o Edital sozinho já é a fonte primária de quase todo o
 // schema.
-async function tentarFallbackMistral(supabase: Supa, edital: Anexo): Promise<AnaliseResultado> {
+async function tentarFallbackMistral(supabase: Supa, edital: Anexo, signal: AbortSignal): Promise<AnaliseResultado> {
   if (!MISTRAL_API_KEY) {
     throw new Error('MISTRAL_API_KEY não configurada nesta function — sem fallback disponível.')
   }
-  const bytes = await baixarBytes(supabase, edital)
-  return chamarMistralAnnotation(bytes)
+  const bytes = await baixarBytes(supabase, edital, signal)
+  return chamarMistralAnnotation(bytes, signal)
 }
 
 // Limite de segurança pra SEMPRE gravar um status final antes do runtime do
@@ -617,101 +643,117 @@ async function tentarFallbackMistral(supabase: Supa, edital: Anexo): Promise<Ana
 // plano.
 const LIMITE_EXECUCAO_MS = 135_000
 
-async function comLimiteDeTempo<T>(promise: Promise<T>): Promise<T> {
+// Cria um AbortController e o repassa pra `fn` — quando o tempo estoura, o
+// controller é abortado ANTES de rejeitar, cancelando de fato qualquer
+// fetch() em andamento (Gemini/Mistral), em vez de só "parar de esperar"
+// por ele. Sem isso, uma chamada lenta continuava rodando escondida em
+// segundo plano depois da gente já ter desistido e gravado erro no banco —
+// inofensivo sozinho, mas perigoso combinado com retry automático no
+// frontend (duas execuções da function podem then disputar a MESMA linha
+// de análise, e a mais lenta/já abandonada podia sobrescrever por cima de
+// um resultado mais novo e correto). Abortar de verdade elimina essa
+// "zumbi" antes dela virar um problema de corrida.
+async function comLimiteDeTempo<T>(fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController()
   let timer: ReturnType<typeof setTimeout>
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(
-      'A análise demorou mais do que o tempo de execução disponível no plano atual do Supabase — tente novamente. Se isso acontecer com frequência (principalmente em editais grandes/escaneados), considere migrar pra um plano com mais tempo de execução por function.'
-    )), LIMITE_EXECUCAO_MS)
+    timer = setTimeout(() => {
+      controller.abort()
+      reject(new Error(
+        'A análise demorou mais do que o tempo de execução disponível no plano atual do Supabase — tente novamente. Se isso acontecer com frequência (principalmente em editais grandes/escaneados), considere migrar pra um plano com mais tempo de execução por function.'
+      ))
+    }, LIMITE_EXECUCAO_MS)
   })
   try {
-    return await Promise.race([promise, timeout])
+    return await Promise.race([fn(controller.signal), timeout])
   } finally {
     clearTimeout(timer!)
   }
 }
 
-async function realizarAnalise(supabase: Supa, edital: Anexo, tr: Anexo | undefined): Promise<{ analise: AnaliseResultado; provedor: string }> {
-  const docs = [edital, tr].filter((d): d is Anexo => !!d)
+type TentativaResultado = { analise: AnaliseResultado; provedor: 'gemini' | 'gemini-2' | 'mistral' }
 
-  let genRes = await tentarAnaliseComGemini(supabase, docs, GEMINI_API_KEY)
-  let provedor: 'gemini' | 'gemini-2' | 'mistral' = 'gemini'
-
-  // 2º nível: se a 1ª chave bateu a cota diária OU o Gemini está
-  // sobrecarregado (503 persistente mesmo após as tentativas de retry), e
-  // existe uma 2ª chave configurada, tenta de novo com ela antes de
-  // partir pro Mistral.
-  if ((genRes.status === 429 || genRes.status >= 500) && GEMINI_API_KEY_2) {
-    console.warn('[Analisar-oportunidade] 1ª chave do Gemini indisponível (cota esgotada ou sobrecarga) — tentando 2ª chave (projeto Google Cloud separado)...')
-    genRes = await tentarAnaliseComGemini(supabase, docs, GEMINI_API_KEY_2)
-    provedor = 'gemini-2'
-  }
-
-  let analise: AnaliseResultado
-
-  // Chegar aqui ainda com 429/5xx significa: nenhuma chave do Gemini
-  // configurada deu conta agora (cota esgotada ou sobrecarga persistente)
-  // — 3º nível, tenta o mesmo edital via Mistral Document AI antes de
-  // desistir de vez. É o que garante que as 3 alternativas configuradas
-  // são de fato tentadas antes do erro subir pro usuário.
+// Processa a Response de UMA chamada ao Gemini (uma chave específica) até
+// virar um resultado utilizável ou lançar — usado pelas duas "pistas" do
+// Gemini na corrida em paralelo (ver realizarAnalise).
+async function processarRespostaGemini(genRes: Response, provedor: 'gemini' | 'gemini-2'): Promise<TentativaResultado> {
   if (genRes.status === 429 || genRes.status >= 500) {
     // Distingue as duas causas que fetchComRetry cobre com o mesmo "status
-    // não-ok" (cota diária esgotada vs sobrecarga persistente) na mensagem
-    // gravada — sem isso, o erro final (quando o Mistral também falha)
-    // sempre dizia "cota esgotada ou sobrecarga" genérico, mesmo quando só
-    // uma das duas era a causa real, tornando impossível saber qual das
-    // duas aconteceu (inclusive pra quem for investigar depois, olhando só
-    // a mensagem salva). As palavras usadas aqui batem de propósito com o
-    // regex de mensagemAmigavelErroAnalise (src/lib/analiseEdital.ts), que
-    // já sabia separar as duas mas nunca recebia o texto certo pra isso.
-    const motivoGemini = genRes.status === 429
+    // não-ok" (cota diária esgotada vs sobrecarga persistente) — as
+    // palavras usadas aqui batem de propósito com o regex de
+    // mensagemAmigavelErroAnalise (src/lib/analiseEdital.ts), que já sabia
+    // separar as duas mas nunca recebia o texto certo pra isso.
+    const motivo = genRes.status === 429
       ? 'cota diária esgotada (RESOURCE_EXHAUSTED/PerDay)'
       : `servidor sobrecarregado (HTTP ${genRes.status})`
-    console.warn(`[Analisar-oportunidade] Gemini indisponível (${motivoGemini}) em todas as chaves configuradas — tentando fallback via Mistral Document AI...`)
-    try {
-      analise = await tentarFallbackMistral(supabase, edital)
-      provedor = 'mistral'
-    } catch (fallbackErr) {
-      const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
-      throw new Error(`Gemini indisponível (${motivoGemini}) em todas as chaves configuradas, e o fallback via Mistral também falhou: ${fallbackMsg}`, { cause: fallbackErr })
+    throw new Error(`Gemini (${provedor}) indisponível: ${motivo}`)
+  }
+  if (!genRes.ok) {
+    throw new Error(`Falha ao analisar com Gemini (${provedor}): ${await genRes.text()}`)
+  }
+  const genData = await genRes.json()
+  const textoResposta = genData.candidates?.[0]?.content?.parts?.[0]?.text
+  if (!textoResposta) {
+    // finishReason 'MAX_TOKENS' é o caso comum de edital com muitos itens
+    // estourando o limite de saída — sem essa checagem, a mensagem de
+    // erro genérica não dava nenhuma pista do motivo real.
+    if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+      throw new Error(`Gemini (${provedor}): resposta cortada por exceder o limite de tamanho (edital com muitos itens)`)
     }
-  } else if (!genRes.ok) {
-    throw new Error(`Falha ao analisar com Gemini: ${await genRes.text()}`)
-  } else {
-    const genData = await genRes.json()
-    const textoResposta = genData.candidates?.[0]?.content?.parts?.[0]?.text
-    if (!textoResposta) {
-      // finishReason 'MAX_TOKENS' é o caso comum de edital com muitos
-      // itens estourando o limite de saída — sem essa checagem, a
-      // mensagem de erro genérica não dava nenhuma pista do motivo real.
-      if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
-        throw new Error('A resposta do Gemini foi cortada por exceder o limite de tamanho (edital com muitos itens) — tente novamente ou reduza os anexos enviados')
-      }
-      throw new Error('Gemini não retornou conteúdo na análise')
+    throw new Error(`Gemini (${provedor}) não retornou conteúdo na análise`)
+  }
+  try {
+    const analise = JSON.parse(textoResposta) as AnaliseResultado
+    return { analise, provedor }
+  } catch (parseErr) {
+    // Mesmo com texto não-vazio, a resposta pode vir com o JSON cortado no
+    // meio (aspas/chave sem fechar) quando o finishReason é MAX_TOKENS — a
+    // checagem acima só cobre o caso de texto totalmente vazio.
+    if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+      throw new Error(`Gemini (${provedor}): resposta cortada por exceder o limite de tamanho (edital com muitos itens)`)
     }
-    try {
-      analise = JSON.parse(textoResposta) as AnaliseResultado
-    } catch (parseErr) {
-      // Mesmo com texto não-vazio, a resposta pode vir com o JSON cortado
-      // no meio (aspas/chave sem fechar) quando o finishReason é
-      // MAX_TOKENS — a checagem acima só cobre o caso de texto totalmente
-      // vazio. Sem isso, o erro que chegava ao usuário era o genérico do
-      // JSON.parse ("Unterminated string..."), sem nenhuma pista real.
-      if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
-        throw new Error('A resposta do Gemini foi cortada por exceder o limite de tamanho (edital com muitos itens) — tente novamente ou reduza os anexos enviados')
-      }
-      const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr)
-      throw new Error(`Gemini retornou uma resposta em formato inválido: ${parseMsg}`)
-    }
+    const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr)
+    throw new Error(`Gemini (${provedor}) retornou uma resposta em formato inválido: ${parseMsg}`)
+  }
+}
+
+// Corre as fontes de IA configuradas EM PARALELO (não em cascata) e usa a
+// primeira que responder com um resultado utilizável — bem diferente do
+// esquema anterior (tentar chave 1 até esgotar, DEPOIS chave 2, DEPOIS
+// Mistral), que na prática significava que uma única chave lenta/
+// sobrecarregada (ex: ~95s só pra devolver um erro de "high demand") já
+// consumia sozinha quase todo o LIMITE_EXECUCAO_MS antes das outras
+// alternativas terem qualquer chance de rodar. Rodando em paralelo, a
+// velocidade da resposta final passa a ser a da fonte mais rápida entre as
+// configuradas, não a soma de todas — ao custo de eventualmente gastar
+// cota/requisição de fontes que nem seriam necessárias, uma troca aceitável
+// dado o volume baixo de análises por dia.
+async function realizarAnalise(supabase: Supa, edital: Anexo, tr: Anexo | undefined, signal: AbortSignal): Promise<{ analise: AnaliseResultado; provedor: string }> {
+  const docs = [edital, tr].filter((d): d is Anexo => !!d)
+
+  const pistas: Promise<TentativaResultado>[] = [
+    tentarAnaliseComGemini(supabase, docs, GEMINI_API_KEY, signal).then((r) => processarRespostaGemini(r, 'gemini')),
+  ]
+  if (GEMINI_API_KEY_2) {
+    pistas.push(tentarAnaliseComGemini(supabase, docs, GEMINI_API_KEY_2, signal).then((r) => processarRespostaGemini(r, 'gemini-2')))
+  }
+  if (MISTRAL_API_KEY) {
+    pistas.push(tentarFallbackMistral(supabase, edital, signal).then((analise) => ({ analise, provedor: 'mistral' as const })))
   }
 
-  return { analise, provedor }
+  try {
+    return await Promise.any(pistas)
+  } catch (erroAgregado) {
+    const erros = erroAgregado instanceof AggregateError ? erroAgregado.errors : [erroAgregado]
+    const mensagens = erros.map((e) => (e instanceof Error ? e.message : String(e))).join(' | ')
+    throw new Error(`Nenhuma das fontes de IA configuradas conseguiu concluir a análise: ${mensagens}`)
+  }
 }
 
 async function processarAnalise(supabase: Supa, analysisRowId: string, edital: Anexo, tr: Anexo | undefined) {
   const tInicio = Date.now()
   try {
-    const { analise, provedor } = await comLimiteDeTempo(realizarAnalise(supabase, edital, tr))
+    const { analise, provedor } = await comLimiteDeTempo((signal) => realizarAnalise(supabase, edital, tr, signal))
 
     console.log(`[Analisar-oportunidade] Análise concluída via ${provedor} em ${Date.now() - tInicio}ms total.`)
 

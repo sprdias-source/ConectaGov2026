@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { erroEhTemporario } from '../lib/analiseEdital'
 import type { Database } from '../types/database'
 
 export type OpportunityAnalysisStatus = 'processando' | 'concluido' | 'erro' | string
@@ -35,6 +36,15 @@ const QUERY_KEY = ['opportunity_analysis']
 // Mesmo limite usado em useBiddingAnalysis: se a function travar antes de
 // gravar o resultado, a linha fica presa em 'processando' pra sempre.
 const LIMITE_PROCESSANDO_MS = 3 * 60 * 1000
+
+// Quantas vezes tenta de novo SOZINHO (sem o usuário clicar) quando o erro
+// é classificado como temporário (ver erroEhTemporario). Cada tentativa é
+// uma invocação NOVA de Analisar-oportunidade, com um orçamento de tempo de
+// execução zerado (ver AbortController em comLimiteDeTempo, no código da
+// function) — dribla de graça o teto por invocação do plano atual do
+// Supabase, sem precisar de nenhum plano pago.
+const MAX_TENTATIVAS_AUTOMATICAS = 2
+const INTERVALO_RETRY_AUTOMATICO_MS = 5000
 
 // Mesmo padrão de useBiddingAnalysis, mas pro estágio de Oportunidade —
 // permite rodar a mesma análise de IA (Analisar-oportunidade) antes mesmo
@@ -87,16 +97,61 @@ export function useOpportunityAnalysis(opportunityId?: string) {
     && analysis.status === 'processando'
     && agora - new Date(analysis.updatedAt).getTime() > LIMITE_PROCESSANDO_MS
 
+  const [tentativasAutomaticas, setTentativasAutomaticas] = useState(0)
+  // Guarda qual erro (linha + horário) já disparou um retry automático,
+  // pra não tentar de novo repetidamente enquanto o React Query re-renderiza
+  // com o mesmo dado — sem isso o efeito abaixo dispararia a cada render.
+  const ultimoErroRetentadoRef = useRef<string | null>(null)
+
   const analisar = useMutation({
     mutationFn: async () => {
       if (!opportunityId) throw new Error('Oportunidade não informada')
       const { error } = await supabase.functions.invoke('Analisar-oportunidade', { body: { opportunityId } })
       if (error) throw error
     },
+    onMutate: () => {
+      // Um clique MANUAL sempre reseta o contador — o usuário pode querer
+      // tentar de novo depois que as tentativas automáticas já esgotaram.
+      setTentativasAutomaticas(0)
+      ultimoErroRetentadoRef.current = null
+    },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey })
     },
   })
+
+  // Retry automático: se a análise terminar em erro CLASSIFICADO COMO
+  // TEMPORÁRIO (sobrecarga do provedor de IA, timeout de execução — nunca
+  // cota esgotada nem arquivo corrompido, ver erroEhTemporario), tenta de
+  // novo sozinha até MAX_TENTATIVAS_AUTOMATICAS vezes antes de deixar o erro
+  // visível pro usuário. Cada tentativa é uma invocação nova da Edge
+  // Function, com orçamento de tempo próprio — ver comentário de
+  // MAX_TENTATIVAS_AUTOMATICAS acima.
+  useEffect(() => {
+    if (!analysis || analysis.status !== 'erro') return
+    if (!erroEhTemporario(analysis.erroMensagem)) return
+    if (tentativasAutomaticas >= MAX_TENTATIVAS_AUTOMATICAS) return
+
+    const chaveErro = `${analysis.id}:${analysis.updatedAt}`
+    if (ultimoErroRetentadoRef.current === chaveErro) return
+    ultimoErroRetentadoRef.current = chaveErro
+
+    const timer = setTimeout(() => {
+      setTentativasAutomaticas((n) => n + 1)
+      analisar.mutate()
+    }, INTERVALO_RETRY_AUTOMATICO_MS)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysis?.id, analysis?.status, analysis?.updatedAt, analysis?.erroMensagem, tentativasAutomaticas])
+
+  // Enquanto uma tentativa automática está pendente (aguardando o intervalo
+  // antes de disparar) ou já foi disparada e a análise voltou a
+  // "processando", a tela mostra um aviso diferente do erro final — só faz
+  // sentido exibir isso enquanto ainda houver tentativas automáticas em
+  // curso.
+  const tentandoNovamenteAutomaticamente = tentativasAutomaticas > 0
+    && tentativasAutomaticas <= MAX_TENTATIVAS_AUTOMATICAS
+    && (analysis?.status === 'processando' || analisar.isPending)
 
   // Apaga o resultado da análise guardado pra esta oportunidade — usado
   // quando o edital que gerou aquela análise é removido (ou trocado por
@@ -152,5 +207,7 @@ export function useOpportunityAnalysis(opportunityId?: string) {
     limparAnalise,
     alternarItemParticipando,
     definirTodosParticipando,
+    tentandoNovamenteAutomaticamente,
+    tentativasAutomaticas,
   }
 }

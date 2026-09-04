@@ -71,7 +71,7 @@ function OportunidadeDetalhe({
   const { platforms } = usePlatforms()
   const { clients } = useClients()
   const { files, uploadFile, deleteFile } = useAttachedFiles('oportunidade', opportunity.id)
-  const { analysis, analisar, travado, limparAnalise, alternarItemParticipando, definirTodosParticipando } = useOpportunityAnalysis(opportunity.id)
+  const { analysis, analisar, travado, limparAnalise, alternarItemParticipando, definirTodosParticipando, tentandoNovamenteAutomaticamente } = useOpportunityAnalysis(opportunity.id)
   const { perguntar, isPending: perguntando } = usePerguntaOportunidade(opportunity.id)
   const [tipoJuridicoAtivo, setTipoJuridicoAtivo] = useState<TipoAnaliseJuridica>('esclarecimento')
   const { analysis: analiseJuridica, analisar: analisarJuridica, travado: travadoJuridica } = useAnaliseJuridicaOportunidade(opportunity.id, tipoJuridicoAtivo)
@@ -287,9 +287,10 @@ function OportunidadeDetalhe({
           <div className="flex items-center gap-2">
             <Sparkles className="w-3.5 h-3.5 text-accent-400" />
             <span className="text-[12px] text-base-300">
-              {analiseProcessando ? 'Analisando com IA...' : analise ? 'Análise disponível' : 'Ainda não analisado'}
+              {tentandoNovamenteAutomaticamente ? 'Tentando novamente automaticamente...' : analiseProcessando ? 'Analisando com IA...' : analise ? 'Análise disponível' : 'Ainda não analisado'}
             </span>
-            {analiseProcessando && <span className="text-[11px] text-base-500 italic">pode levar até 2 minutos em editais grandes/escaneados</span>}
+            {analiseProcessando && !tentandoNovamenteAutomaticamente && <span className="text-[11px] text-base-500 italic">pode levar até 2 minutos em editais grandes/escaneados</span>}
+            {tentandoNovamenteAutomaticamente && <span className="text-[11px] text-base-500 italic">o serviço de IA parece instável no momento — nova tentativa automática em andamento</span>}
           </div>
           <Button variant="secondary" onClick={() => analisar.mutate()} disabled={analiseProcessando || analisar.isPending}>
             {analiseProcessando || analisar.isPending ? 'Analisando...' : analise ? 'Analisar novamente' : 'Analisar com IA'}
