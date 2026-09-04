@@ -606,7 +606,16 @@ async function tentarFallbackMistral(supabase: Supa, edital: Anexo): Promise<Ana
 // limite interno, o registro ficava preso em "processando" pra sempre,
 // até a tela desistir sozinha (timeout de 3min do lado do cliente) e
 // mostrar "travou" sem nenhuma explicação real.
-const LIMITE_EXECUCAO_MS = 110_000
+//
+// Elevado de 110s pra 135s depois de um caso real medido: um edital de só
+// 2,7MB/44 páginas (já usando o fast-path inline_data, preparo do
+// documento em ~3s) ainda assim ficou mais de 107s esperando o próprio
+// generateContent do Gemini responder, sem nenhum retry logado — ou seja,
+// o gargalo é o tempo de geração do Gemini pra editais com bastante item/
+// checklist pra extrair, não mais o upload. 135s deixa ~15s de folga pro
+// resto do pipeline (gravar o resultado, etc.) antes do teto real do
+// plano.
+const LIMITE_EXECUCAO_MS = 135_000
 
 async function comLimiteDeTempo<T>(promise: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout>
