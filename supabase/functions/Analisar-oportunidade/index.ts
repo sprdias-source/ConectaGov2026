@@ -607,18 +607,51 @@ async function chamarMistralAnnotation(pdfBytes: Uint8Array, signal: AbortSignal
   return JSON.parse(data.document_annotation) as AnaliseResultado
 }
 
+// Junta duas extrações da Mistral feitas separadamente (uma por documento,
+// já que a OCR dela só aceita um por chamada — ver tentarFallbackMistral).
+// Prioriza os campos do Edital (fonte primária de quase todo o schema),
+// mas usa o Termo de Referência pra preencher "itens"/"checklistDocumentacao"
+// quando o Edital vier vazio — em editais de Registro de Preços é comum a
+// tabela de itens estar detalhada só no TR, nunca no próprio Edital. Sem
+// essa mescla, uma extração feita só a partir do Edital não tinha CHANCE
+// NENHUMA de ver os itens reais, e o modelo preenchia o array com algo
+// genérico baseado só na cláusula do objeto (ex: "Madeira de Eucalipto" e
+// "Madeira de Pinus" com valores redondos inventados) — quebrando a
+// instrução do prompt de nunca inventar informação, apesar do próprio
+// modelo nunca ter tido a chance de fazer diferente.
+function mesclarAnalisesMistral(doEdital: AnaliseResultado, doTr: AnaliseResultado): AnaliseResultado {
+  return {
+    ...doEdital,
+    itens: doEdital.itens?.length ? doEdital.itens : doTr.itens,
+    checklistDocumentacao: doEdital.checklistDocumentacao?.length ? doEdital.checklistDocumentacao : doTr.checklistDocumentacao,
+    valorTotalEstimado: doEdital.valorTotalEstimado || doTr.valorTotalEstimado,
+  }
+}
+
 // A OCR da Mistral processa UM documento por chamada (diferente do Gemini,
-// que aceita edital + TR juntos numa única requisição). Só o Edital vai pro
-// Mistral no fallback — o TR é complementar e mesclar duas extrações
-// estruturadas completas de forma confiável (campo a campo) foge do escopo
-// razoável aqui; o Edital sozinho já é a fonte primária de quase todo o
-// schema.
-async function tentarFallbackMistral(supabase: Supa, edital: Anexo, signal: AbortSignal): Promise<AnaliseResultado> {
+// que aceita edital + TR juntos numa única requisição) — chama os dois EM
+// PARALELO (quando o TR existir) e junta os resultados via
+// mesclarAnalisesMistral. Se só o TR falhar (ex: escaneado sem texto
+// legível), ainda devolve o resultado do Edital sozinho em vez de derrubar
+// a análise inteira; se o Edital falhar, propaga o erro normalmente (ele é
+// obrigatório em toda análise, o TR não).
+async function tentarFallbackMistral(supabase: Supa, edital: Anexo, tr: Anexo | undefined, signal: AbortSignal): Promise<AnaliseResultado> {
   if (!MISTRAL_API_KEY) {
     throw new Error('MISTRAL_API_KEY não configurada nesta function — sem fallback disponível.')
   }
-  const bytes = await baixarBytes(supabase, edital, signal)
-  return chamarMistralAnnotation(bytes, signal)
+  const bytesEdital = await baixarBytes(supabase, edital, signal)
+  if (!tr) return chamarMistralAnnotation(bytesEdital, signal)
+
+  const [resEdital, resTr] = await Promise.allSettled([
+    chamarMistralAnnotation(bytesEdital, signal),
+    baixarBytes(supabase, tr, signal).then((bytes) => chamarMistralAnnotation(bytes, signal)),
+  ])
+  if (resEdital.status === 'rejected') throw resEdital.reason
+  if (resTr.status === 'rejected') {
+    console.warn('[Analisar-oportunidade] Mistral não conseguiu processar o Termo de Referência (usando só o Edital):', resTr.reason instanceof Error ? resTr.reason.message : String(resTr.reason))
+    return resEdital.value
+  }
+  return mesclarAnalisesMistral(resEdital.value, resTr.value)
 }
 
 // Limite de segurança pra SEMPRE gravar um status final antes do runtime do
@@ -738,7 +771,7 @@ async function realizarAnalise(supabase: Supa, edital: Anexo, tr: Anexo | undefi
     pistas.push(tentarAnaliseComGemini(supabase, docs, GEMINI_API_KEY_2, signal).then((r) => processarRespostaGemini(r, 'gemini-2')))
   }
   if (MISTRAL_API_KEY) {
-    pistas.push(tentarFallbackMistral(supabase, edital, signal).then((analise) => ({ analise, provedor: 'mistral' as const })))
+    pistas.push(tentarFallbackMistral(supabase, edital, tr, signal).then((analise) => ({ analise, provedor: 'mistral' as const })))
   }
 
   try {
