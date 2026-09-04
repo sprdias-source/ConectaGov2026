@@ -655,13 +655,25 @@ async function realizarAnalise(supabase: Supa, edital: Anexo, tr: Anexo | undefi
   // desistir de vez. É o que garante que as 3 alternativas configuradas
   // são de fato tentadas antes do erro subir pro usuário.
   if (genRes.status === 429 || genRes.status >= 500) {
-    console.warn('[Analisar-oportunidade] Gemini indisponível (cota esgotada ou sobrecarga) em todas as chaves configuradas — tentando fallback via Mistral Document AI...')
+    // Distingue as duas causas que fetchComRetry cobre com o mesmo "status
+    // não-ok" (cota diária esgotada vs sobrecarga persistente) na mensagem
+    // gravada — sem isso, o erro final (quando o Mistral também falha)
+    // sempre dizia "cota esgotada ou sobrecarga" genérico, mesmo quando só
+    // uma das duas era a causa real, tornando impossível saber qual das
+    // duas aconteceu (inclusive pra quem for investigar depois, olhando só
+    // a mensagem salva). As palavras usadas aqui batem de propósito com o
+    // regex de mensagemAmigavelErroAnalise (src/lib/analiseEdital.ts), que
+    // já sabia separar as duas mas nunca recebia o texto certo pra isso.
+    const motivoGemini = genRes.status === 429
+      ? 'cota diária esgotada (RESOURCE_EXHAUSTED/PerDay)'
+      : `servidor sobrecarregado (HTTP ${genRes.status})`
+    console.warn(`[Analisar-oportunidade] Gemini indisponível (${motivoGemini}) em todas as chaves configuradas — tentando fallback via Mistral Document AI...`)
     try {
       analise = await tentarFallbackMistral(supabase, edital)
       provedor = 'mistral'
     } catch (fallbackErr) {
       const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
-      throw new Error(`Gemini indisponível (cota esgotada ou sobrecarga) em todas as chaves configuradas, e o fallback via Mistral também falhou: ${fallbackMsg}`, { cause: fallbackErr })
+      throw new Error(`Gemini indisponível (${motivoGemini}) em todas as chaves configuradas, e o fallback via Mistral também falhou: ${fallbackMsg}`, { cause: fallbackErr })
     }
   } else if (!genRes.ok) {
     throw new Error(`Falha ao analisar com Gemini: ${await genRes.text()}`)
