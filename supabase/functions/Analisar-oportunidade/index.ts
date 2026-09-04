@@ -609,21 +609,25 @@ async function chamarMistralAnnotation(pdfBytes: Uint8Array, signal: AbortSignal
 
 // Junta duas extrações da Mistral feitas separadamente (uma por documento,
 // já que a OCR dela só aceita um por chamada — ver tentarFallbackMistral).
-// Prioriza os campos do Edital (fonte primária de quase todo o schema),
-// mas usa o Termo de Referência pra preencher "itens"/"checklistDocumentacao"
-// quando o Edital vier vazio — em editais de Registro de Preços é comum a
-// tabela de itens estar detalhada só no TR, nunca no próprio Edital. Sem
-// essa mescla, uma extração feita só a partir do Edital não tinha CHANCE
-// NENHUMA de ver os itens reais, e o modelo preenchia o array com algo
-// genérico baseado só na cláusula do objeto (ex: "Madeira de Eucalipto" e
-// "Madeira de Pinus" com valores redondos inventados) — quebrando a
-// instrução do prompt de nunca inventar informação, apesar do próprio
-// modelo nunca ter tido a chance de fazer diferente.
+// Prioriza os campos do Edital (fonte primária de quase todo o schema), mas
+// escolhe pra "itens"/"checklistDocumentacao" a lista MAIS LONGA entre as
+// duas extrações — em editais de Registro de Preços é comum a tabela de
+// itens estar detalhada só no TR, nunca no próprio Edital.
+//
+// Por que "mais longa" e não "a do Edital só se vier vazia": a cláusula do
+// objeto costuma aparecer repetida tanto no Edital quanto no TR (ex:
+// "aquisição de madeiras de eucalipto e pinus") — sem ver a tabela real, o
+// Mistral processando o Edital sozinho tende a alucinar um array CURTO (1-3
+// itens genéricos derivados só dessa frase) em vez de devolver vazio, então
+// checar só "vazio ou não" não bastava: o array alucinado não-vazio do
+// Edital vencia por engano a tabela de verdade do TR. Uma tabela real
+// dificilmente é mais curta que uma alucinação de objeto — por isso a lista
+// mais longa das duas é o sinal mais confiável disponível aqui.
 function mesclarAnalisesMistral(doEdital: AnaliseResultado, doTr: AnaliseResultado): AnaliseResultado {
   return {
     ...doEdital,
-    itens: doEdital.itens?.length ? doEdital.itens : doTr.itens,
-    checklistDocumentacao: doEdital.checklistDocumentacao?.length ? doEdital.checklistDocumentacao : doTr.checklistDocumentacao,
+    itens: (doTr.itens?.length ?? 0) > (doEdital.itens?.length ?? 0) ? doTr.itens : doEdital.itens,
+    checklistDocumentacao: (doTr.checklistDocumentacao?.length ?? 0) > (doEdital.checklistDocumentacao?.length ?? 0) ? doTr.checklistDocumentacao : doEdital.checklistDocumentacao,
     valorTotalEstimado: doEdital.valorTotalEstimado || doTr.valorTotalEstimado,
   }
 }
