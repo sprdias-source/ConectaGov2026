@@ -466,6 +466,7 @@ async function apagarArquivoGemini(fileName: string, apiKey: string) {
 const LIMITE_INLINE_BYTES = 15 * 1024 * 1024
 
 async function processarDocumento(supabase: Supa, doc: Anexo, apiKey: string, arquivosGeminiParaApagar: string[]) {
+  const tInicio = Date.now()
   const downloadRes = await baixarAnexo(supabase, doc.storage_path)
   if (!downloadRes.ok || !downloadRes.body) throw new Error(`Falha ao baixar "${doc.name}" do Storage/Drive`)
 
@@ -475,10 +476,12 @@ async function processarDocumento(supabase: Supa, doc: Anexo, apiKey: string, ar
 
   if (sizeBytes <= LIMITE_INLINE_BYTES) {
     const bytes = new Uint8Array(await downloadRes.arrayBuffer())
+    console.log(`[Analisar-oportunidade][timing] "${doc.name}" baixado e codificado (inline) em ${Date.now() - tInicio}ms (${sizeBytes} bytes)`)
     return { fileData: { inline_data: { mime_type: mimeType, data: bytesParaBase64(bytes) } } }
   }
 
   const geminiFile = await uploadParaGemini(downloadRes.body, sizeBytes, mimeType, doc.name, apiKey)
+  console.log(`[Analisar-oportunidade][timing] "${doc.name}" enviado via Files API em ${Date.now() - tInicio}ms (${sizeBytes} bytes)`)
   // Registra ANTES de retornar — se outro documento do MESMO lote (ver
   // Promise.all abaixo) falhar depois deste já ter subido com sucesso, o
   // Promise.all rejeita sem nunca rodar o .forEach que populava esta lista
@@ -492,9 +495,12 @@ async function processarDocumento(supabase: Supa, doc: Anexo, apiKey: string, ar
 // chave se a 1ª bater a cota diária.
 async function tentarAnaliseComGemini(supabase: Supa, docs: Anexo[], apiKey: string): Promise<Response> {
   const arquivosGeminiParaApagar: string[] = []
+  const tDocs = Date.now()
   const resultados = await Promise.all(docs.map((doc) => processarDocumento(supabase, doc, apiKey, arquivosGeminiParaApagar)))
+  console.log(`[Analisar-oportunidade][timing] preparo de todos os documentos: ${Date.now() - tDocs}ms`)
   const partesArquivos = resultados.map((r) => r.fileData)
 
+  const tGemini = Date.now()
   const genRes = await fetchComRetry(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
     {
@@ -510,6 +516,7 @@ async function tentarAnaliseComGemini(supabase: Supa, docs: Anexo[], apiKey: str
       }),
     }
   )
+  console.log(`[Analisar-oportunidade][timing] chamada generateContent ao Gemini (status ${genRes.status}): ${Date.now() - tGemini}ms`)
 
   for (const nome of arquivosGeminiParaApagar) apagarArquivoGemini(nome, apiKey) // não precisa esperar terminar
 
@@ -681,15 +688,16 @@ async function realizarAnalise(supabase: Supa, edital: Anexo, tr: Anexo | undefi
 }
 
 async function processarAnalise(supabase: Supa, analysisRowId: string, edital: Anexo, tr: Anexo | undefined) {
+  const tInicio = Date.now()
   try {
     const { analise, provedor } = await comLimiteDeTempo(realizarAnalise(supabase, edital, tr))
 
-    console.log(`[Analisar-oportunidade] Análise concluída via ${provedor}.`)
+    console.log(`[Analisar-oportunidade] Análise concluída via ${provedor} em ${Date.now() - tInicio}ms total.`)
 
     await supabase.from('opportunity_analysis').update({ status: 'concluido', analise, erro_mensagem: null, updated_at: new Date().toISOString() }).eq('id', analysisRowId)
   } catch (err) {
     const mensagem = err instanceof Error ? err.message : String(err)
-    console.error('Erro ao analisar oportunidade (segundo plano):', mensagem)
+    console.error(`Erro ao analisar oportunidade (segundo plano) após ${Date.now() - tInicio}ms:`, mensagem)
     await supabase.from('opportunity_analysis').update({ status: 'erro', erro_mensagem: mensagem, updated_at: new Date().toISOString() }).eq('id', analysisRowId)
   }
 }
