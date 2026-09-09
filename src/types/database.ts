@@ -797,6 +797,7 @@ export type Database = {
           resposta: string | null
           status: string
           tipo: string
+          token_acesso: string
           user_id: string
         }
         Insert: {
@@ -808,6 +809,7 @@ export type Database = {
           resposta?: string | null
           status?: string
           tipo: string
+          token_acesso?: string
           user_id: string
         }
         Update: {
@@ -819,6 +821,7 @@ export type Database = {
           resposta?: string | null
           status?: string
           tipo?: string
+          token_acesso?: string
           user_id?: string
         }
         Relationships: []
@@ -2118,17 +2121,23 @@ export type Database = {
       system_settings: {
         Row: {
           atualizado_em: string
+          id: string
           key: string
+          user_id: string | null
           value: string
         }
         Insert: {
           atualizado_em?: string
+          id?: string
           key: string
+          user_id?: string | null
           value: string
         }
         Update: {
           atualizado_em?: string
+          id?: string
           key?: string
+          user_id?: string | null
           value?: string
         }
         Relationships: []

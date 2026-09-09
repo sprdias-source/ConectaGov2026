@@ -17,6 +17,7 @@ import { useAllClientDocuments } from '../../hooks/useClientDocuments'
 import { useAllClientPlatforms, calcPlatformStatus } from '../../hooks/useClientPlatforms'
 import { useOpportunities, calcOpportunityStatus } from '../../hooks/useOpportunities'
 import ResolverCaptchaModal from '../robos/ResolverCaptchaModal'
+import ConvitesEquipeModal from '../usuarios/ConvitesEquipeModal'
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth()
@@ -466,6 +467,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       </main>
 
       <ResolverCaptchaModal />
+      <ConvitesEquipeModal />
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
   )
