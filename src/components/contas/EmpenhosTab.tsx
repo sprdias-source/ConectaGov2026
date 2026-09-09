@@ -3,7 +3,7 @@ import { Plus, Pencil, Trash2, FileSpreadsheet, Ban, CheckCircle2, Repeat, Power
 import { Button, Field, Select } from '../ui/FormControls'
 import { EmptyState, StatusBadge } from '../ui/Primitives'
 import { formatBRL } from '../../hooks/useAccountBalances'
-import { useEmpenhos, type EmpenhoRecorrenteItem } from '../../hooks/useEmpenhos'
+import { useEmpenhos, calcEmpenhoVencimentoStatus, type EmpenhoRecorrenteItem } from '../../hooks/useEmpenhos'
 import { useClients } from '../../hooks/useClients'
 import { useBiddings } from '../../hooks/useBiddings'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
@@ -18,6 +18,17 @@ const MODO_LABELS: Record<string, string> = {
   integral: 'Integral',
   quantidade_fixa: 'Parcelado',
   recorrente: 'Recorrente',
+}
+
+// Cor do texto da célula de vencimento — mesma leitura de urgência da
+// Central de Prazos (vermelho = já passou, âmbar = dentro da janela de 15
+// dias), mas em texto puro, não em pílula: a coluna precisa ficar tão
+// discreta quanto as outras datas da tabela.
+const COR_VENCIMENTO: Record<string, string> = {
+  vencido: 'text-negative-400 font-semibold',
+  vencendo: 'text-warning-400 font-semibold',
+  em_dia: 'text-base-300',
+  sem_vencimento: 'text-base-600',
 }
 
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
@@ -213,6 +224,7 @@ export default function EmpenhosTab() {
                 <tr className="border-b border-base-800 text-left">
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Nº Empenho</th>
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Data</th>
+                  <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Vencimento</th>
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Licitação</th>
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Cliente</th>
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-base-500">Valor Empenhado</th>
@@ -243,6 +255,9 @@ export default function EmpenhosTab() {
                     </td>
                     <td className="px-4 py-3 text-base-300 text-[12px] whitespace-nowrap">
                       {new Date(e.dataEmpenho + 'T12:00:00').toLocaleDateString('pt-BR')}
+                    </td>
+                    <td className={`px-4 py-3 text-[12px] whitespace-nowrap ${COR_VENCIMENTO[calcEmpenhoVencimentoStatus(e.dataVencimento)]}`}>
+                      {e.dataVencimento ? new Date(e.dataVencimento + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
                     </td>
                     <td className="px-4 py-3 text-base-400 text-[12px] max-w-[180px] truncate">{biddingName(e.biddingId)}</td>
                     <td className="px-4 py-3 text-base-300 text-[13px]">{clientName(e.clientId)}</td>

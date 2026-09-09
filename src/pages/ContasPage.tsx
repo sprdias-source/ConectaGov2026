@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Wallet, Receipt, FileSpreadsheet } from 'lucide-react'
 import { PageHeader } from '../components/ui/Primitives'
 import { useTransactions } from '../hooks/useTransactions'
@@ -6,10 +7,15 @@ import { useEmpenhos } from '../hooks/useEmpenhos'
 import ContasLancamentosTab from '../components/contas/ContasLancamentosTab'
 import EmpenhosTab from '../components/contas/EmpenhosTab'
 
-type Tab = 'lancamentos' | 'empenhos'
+const TABS_VALIDAS = ['lancamentos', 'empenhos'] as const
+type Tab = (typeof TABS_VALIDAS)[number]
 
 export default function ContasPage() {
-  const [tab, setTab] = useState<Tab>('lancamentos')
+  const [searchParams] = useSearchParams()
+  // Permite chegar direto na aba certa via link (ex: um alerta de empenho
+  // vencendo na Central de Prazos aponta pra ?tab=empenhos) — só aceita
+  // chaves reais de Tab, qualquer outra coisa cai no padrão.
+  const [tab, setTab] = useState<Tab>(TABS_VALIDAS.find((t) => t === searchParams.get('tab')) ?? 'lancamentos')
   const { transactions } = useTransactions()
   const { empenhos } = useEmpenhos()
 

@@ -1358,6 +1358,7 @@ export type Database = {
           client_id: string
           created_at: string
           data_empenho: string
+          data_vencimento: string | null
           grupo_recorrencia_id: string | null
           id: string
           is_active: boolean
@@ -1382,6 +1383,7 @@ export type Database = {
           client_id: string
           created_at?: string
           data_empenho: string
+          data_vencimento?: string | null
           grupo_recorrencia_id?: string | null
           id?: string
           is_active?: boolean
@@ -1406,6 +1408,7 @@ export type Database = {
           client_id?: string
           created_at?: string
           data_empenho?: string
+          data_vencimento?: string | null
           grupo_recorrencia_id?: string | null
           id?: string
           is_active?: boolean
