@@ -755,10 +755,10 @@ async function processarRespostaGemini(genRes: Response, provedor: 'gemini' | 'g
     // meio (aspas/chave sem fechar) quando o finishReason é MAX_TOKENS — a
     // checagem acima só cobre o caso de texto totalmente vazio.
     if (genData.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
-      throw new Error(`Gemini (${provedor}): resposta cortada por exceder o limite de tamanho (edital com muitos itens)`)
+      throw new Error(`Gemini (${provedor}): resposta cortada por exceder o limite de tamanho (edital com muitos itens)`, { cause: parseErr })
     }
     const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr)
-    throw new Error(`Gemini (${provedor}) retornou uma resposta em formato inválido: ${parseMsg}`)
+    throw new Error(`Gemini (${provedor}) retornou uma resposta em formato inválido: ${parseMsg}`, { cause: parseErr })
   }
 }
 
@@ -791,7 +791,7 @@ async function realizarAnalise(supabase: Supa, edital: Anexo, tr: Anexo | undefi
   } catch (erroAgregado) {
     const erros = erroAgregado instanceof AggregateError ? erroAgregado.errors : [erroAgregado]
     const mensagens = erros.map((e) => (e instanceof Error ? e.message : String(e))).join(' | ')
-    throw new Error(`Nenhuma das fontes de IA configuradas conseguiu concluir a análise: ${mensagens}`)
+    throw new Error(`Nenhuma das fontes de IA configuradas conseguiu concluir a análise: ${mensagens}`, { cause: erroAgregado })
   }
 }
 
