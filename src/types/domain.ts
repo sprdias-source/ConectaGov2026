@@ -219,6 +219,13 @@ export interface Empenho {
   clientId: string
   biddingId: string | null
   dataEmpenho: string
+  // Prazo em que o pagamento deste empenho é esperado. OPCIONAL: empenhos
+  // antigos e empenhos registrados antes da prefeitura informar o prazo
+  // ficam null — e null nunca vira alerta na Central de Prazos.
+  // No formulário dá pra digitar "N dias após a data do empenho" em vez de
+  // escolher no calendário, mas isso é só uma calculadora: o que se guarda
+  // aqui é sempre a data já resolvida (ver EmpenhoFormModal.tsx).
+  dataVencimento: string | null
   valorEmpenhada: number
   percentualComissao: number
   valorComissaoTotal: number

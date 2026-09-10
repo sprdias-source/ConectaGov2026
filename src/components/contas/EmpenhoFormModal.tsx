@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { todayLocalISO } from '../../lib/dateUtils'
+import { todayLocalISO, addDays } from '../../lib/dateUtils'
 import { addMonths, type EmpenhoRecorrenteItem } from '../../hooks/useEmpenhos'
 import Modal from '../ui/Modal'
 import { Field, Input, Select, Textarea, Button } from '../ui/FormControls'
@@ -29,6 +29,7 @@ const emptyForm = (clients: Client[]): Partial<Empenho> => ({
   clientId: clients[0]?.id ?? '',
   biddingId: null,
   dataEmpenho: todayLocalISO(),
+  dataVencimento: null,
   valorEmpenhada: 0,
   percentualComissao: 2,
   modoParcelamento: 'integral',
@@ -60,12 +61,22 @@ export default function EmpenhoFormModal({
   // dado em dois lugares com risco de ficarem dessincronizados.
   const [itensSerie, setItensSerie] = useState<ItemSerieForm[]>([])
 
+  // Como o vencimento é informado: escolhendo no calendário ou digitando
+  // "N dias após a data do empenho". É só UI (igual a tipoLancamento) — o N
+  // digitado nunca é salvo, só a data que ele produz. Por isso o modo "dias"
+  // NÃO fica vinculado: mudar a data do empenho depois não recalcula nada
+  // (na prática ela não muda, é fato registrado pela prefeitura).
+  const [modoVencimento, setModoVencimento] = useState<'data' | 'dias'>('data')
+  const [diasVencimento, setDiasVencimento] = useState('')
+
   // CORREÇÃO DE BUG (mesmo padrão usado em Cliente/Licitação): sempre
   // resincroniza ao abrir, em vez de depender do estado inicial do useState.
   useEffect(() => {
     if (open) {
       setForm(initial ?? emptyForm(clients))
       setTipoLancamento('unico')
+      setModoVencimento('data')
+      setDiasVencimento('')
       setItensSerie([])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -110,6 +121,21 @@ export default function EmpenhoFormModal({
     setItensSerie((atual) => atual.map((it, i) => (i === idx ? { ...it, ...patch } : it)))
   }
 
+  // Modo "dias": calcula a data UMA VEZ, no momento em que o número é
+  // digitado, e guarda só o resultado em form.dataVencimento. Campo vazio
+  // (ou zerado/inválido) limpa o vencimento em vez de virar a própria data
+  // do empenho.
+  const aplicarDiasVencimento = (texto: string) => {
+    setDiasVencimento(texto)
+    const dias = parseInt(texto, 10)
+    if (!texto.trim() || Number.isNaN(dias)) {
+      setForm((f) => ({ ...f, dataVencimento: null }))
+      return
+    }
+    const base = form.dataEmpenho || todayLocalISO()
+    setForm((f) => ({ ...f, dataVencimento: addDays(base, dias) }))
+  }
+
   // Só licitações GANHAS podem receber empenhos — é o evento financeiro
   // oficial que confirma a comissão. Mostra também outras licitações do
   // cliente em andamento, desabilitadas, para deixar claro o motivo.
@@ -134,7 +160,7 @@ export default function EmpenhoFormModal({
           valorEmpenhada: it.valorEmpenhada,
         })),
       ]
-      onSaveSerie(form, itens)
+      onSaveSerie({ ...form, dataVencimento: null }, itens)
       return
     }
 
@@ -223,6 +249,61 @@ export default function EmpenhoFormModal({
         <Field label={rotulos.data} required>
           <Input type="date" required value={form.dataEmpenho ?? ''} onChange={(e) => setForm({ ...form, dataEmpenho: e.target.value })} />
         </Field>
+
+        {/* Data de Vencimento — opcional, e escondida no modo Recorrente:
+            lá cada mês é um empenho próprio, com prazo próprio que a
+            prefeitura normalmente ainda nem definiu. Preenche depois,
+            editando cada empenho da série. */}
+        {!(tipoLancamento === 'recorrente' && !initial) && (
+          <Field
+            label="Data de Vencimento"
+            badge={<span className="text-[9px] font-bold uppercase tracking-wider text-base-500 bg-base-850 border border-base-700 rounded px-1.5 py-0.5">Opcional</span>}
+          >
+            <div className="flex bg-base-850 border border-base-700 rounded-lg p-1 mb-2">
+              {([
+                { v: 'data', label: 'Escolher data' },
+                { v: 'dias', label: 'Dias após o empenho' },
+              ] as { v: 'data' | 'dias'; label: string }[]).map((opt) => (
+                <button
+                  key={opt.v}
+                  type="button"
+                  onClick={() => setModoVencimento(opt.v)}
+                  className={`flex-1 py-1.5 text-[11px] font-bold rounded-md transition ${modoVencimento === opt.v ? 'bg-accent-500 text-base-950' : 'text-base-400'}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {modoVencimento === 'data' ? (
+              <Input
+                type="date"
+                value={form.dataVencimento ?? ''}
+                onChange={(e) => setForm({ ...form, dataVencimento: e.target.value || null })}
+              />
+            ) : (
+              <div className="flex items-center gap-2">
+                <div className="w-28">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={3650}
+                    value={diasVencimento}
+                    onChange={(e) => aplicarDiasVencimento(e.target.value)}
+                    placeholder="30"
+                  />
+                </div>
+                <span className="text-[12px] text-base-500">dias após a data do empenho</span>
+              </div>
+            )}
+
+            <p className="text-[11px] text-base-500 mt-1">
+              {form.dataVencimento
+                ? `Vence em ${new Date(form.dataVencimento + 'T12:00:00').toLocaleDateString('pt-BR')}${modoVencimento === 'dias' ? ' — a data é calculada agora e fica gravada; pode ajustar depois em "Escolher data".' : ''}`
+                : 'Sem vencimento definido — este empenho não vai gerar alerta na Central de Prazos.'}
+            </p>
+          </Field>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           <Field label={rotulos.valor} required>

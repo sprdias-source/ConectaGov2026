@@ -7,6 +7,10 @@ import TopScrollTable from '../ui/TopScrollTable'
 
 type Ferramenta = { key: string; nome: string; ordem: number }
 type Membro = { id: string; nome: string | null; email: string | null; status: string }
+const LABEL_STATUS: Record<string, string> = {
+  ativo: 'Ativo',
+  pendente: 'Aguardando aceite do convidado',
+}
 type Permissao = { team_member_id: string; tool_key: string; nivel_acesso: string }
 
 type Props = { supabase: SupabaseClient }
@@ -40,12 +44,13 @@ export default function MatrizPermissoes({ supabase }: Props) {
   const [nomeConvite, setNomeConvite] = useState('')
   const [convidando, setConvidando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  const [aviso, setAviso] = useState<string | null>(null)
 
   async function carregar() {
     setCarregando(true)
     const [{ data: ferr }, { data: memb }] = await Promise.all([
       supabase.from('system_tools').select('key, nome, ordem').order('ordem'),
-      supabase.from('team_members').select('id, nome, email, status').eq('status', 'ativo'),
+      supabase.from('team_members').select('id, nome, email, status').in('status', ['ativo', 'pendente']),
     ])
     setFerramentas(ferr ?? [])
     setMembros(memb ?? [])
@@ -68,12 +73,16 @@ export default function MatrizPermissoes({ supabase }: Props) {
     if (!emailConvite.trim()) return
     setConvidando(true)
     setErro(null)
+    setAviso(null)
     try {
       const { data, error } = await supabase.functions.invoke('convidar-membro', {
         body: { email: emailConvite.trim(), nome: nomeConvite.trim() || null },
       })
       if (error) throw error
       if (data?.error) throw new Error(data.error)
+      if (data?.pendente) {
+        setAviso('Esse e-mail já tinha uma conta no ConectaGov — o convite fica pendente até a pessoa aceitar (ela vai ver um aviso pra aceitar ou recusar assim que entrar no sistema). As permissões abaixo só valem depois que ela aceitar.')
+      }
       setEmailConvite('')
       setNomeConvite('')
       await carregar()
@@ -187,6 +196,12 @@ export default function MatrizPermissoes({ supabase }: Props) {
         </div>
       )}
 
+      {aviso && (
+        <div className="bg-accent-500/10 border border-accent-500/25 rounded-lg p-3 mb-4 text-[13px] text-accent-300">
+          {aviso}
+        </div>
+      )}
+
       {!carregando && ferramentasFaltando.length > 0 && (
         <div className="bg-warning-500/10 border border-warning-500/25 rounded-lg p-3 mb-4 text-[13px] text-warning-300">
           Faltam colunas nesta tabela: <strong>{ferramentasFaltando.join(', ')}</strong>. Isso acontece quando uma migration do banco ainda não foi rodada — peça pra rodar a migration <code>030_system_tools_faltantes.sql</code> no SQL Editor do Supabase pra essas ferramentas aparecerem aqui.
@@ -216,8 +231,17 @@ export default function MatrizPermissoes({ supabase }: Props) {
                   <tr key={m.id} className="border-b border-base-800/60 hover:bg-base-850/40 transition">
                     <td className="px-4 py-3 font-semibold text-base-100">
                       {m.nome || m.email}
+                      {m.status === 'pendente' && (
+                        <span className="ml-2 text-[10px] font-bold uppercase tracking-wider text-warning-400 bg-warning-500/10 border border-warning-500/25 rounded px-1.5 py-0.5 align-middle">
+                          {LABEL_STATUS.pendente}
+                        </span>
+                      )}
                     </td>
-                    {ferramentas.map((f) => (
+                    {m.status === 'pendente' ? (
+                      <td colSpan={ferramentas.length} className="px-4 py-3 text-[12px] text-base-500 italic">
+                        Permissões liberam assim que a pessoa aceitar o convite.
+                      </td>
+                    ) : ferramentas.map((f) => (
                       <td key={f.key} className="px-4 py-3">
                         <Select
                           value={nivelAtual(m.id, f.key)}

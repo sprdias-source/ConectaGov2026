@@ -16,7 +16,9 @@ import { useBackup } from '../../hooks/useBackup'
 import { useAllClientDocuments } from '../../hooks/useClientDocuments'
 import { useAllClientPlatforms, calcPlatformStatus } from '../../hooks/useClientPlatforms'
 import { useOpportunities, calcOpportunityStatus } from '../../hooks/useOpportunities'
+import { useEmpenhos, calcEmpenhoVencimentoStatus } from '../../hooks/useEmpenhos'
 import ResolverCaptchaModal from '../robos/ResolverCaptchaModal'
+import ConvitesEquipeModal from '../usuarios/ConvitesEquipeModal'
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth()
@@ -29,6 +31,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const { documents: clientDocuments } = useAllClientDocuments()
   const { clientPlatforms } = useAllClientPlatforms()
   const { opportunities } = useOpportunities()
+  const { empenhos } = useEmpenhos()
 
   const [patrimonioVisible, setPatrimonioVisible] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -111,9 +114,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
   // Contagem de itens urgentes pro badge da Central de Prazos: certidões
   // vencendo/vencidas + lançamentos financeiros atrasados + plataformas
   // vencendo/vencidas + oportunidades urgentes/vencidas (edital enviado ao
-  // cliente sem resposta). Mantido simples de propósito — o detalhe completo
-  // (incluindo pregões próximos) fica só na própria tela, aqui é só o
-  // "chame a atenção".
+  // cliente sem resposta) + empenhos vencendo/vencidos. Mantido simples de
+  // propósito — o detalhe completo (incluindo pregões próximos) fica só na
+  // própria tela, aqui é só o "chame a atenção".
   const alertasUrgentes =
     clientDocuments.filter((d) => d.status === 'vencendo' || d.status === 'vencido').length +
     transactions.filter((t) => t.status === 'Atrasado').length +
@@ -124,6 +127,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
     opportunities.filter((o) => {
       const status = calcOpportunityStatus(o)
       return status === 'urgente' || status === 'vencida'
+    }).length +
+    empenhos.filter((e) => {
+      if (!e.isActive || e.status === 'Cancelado') return false
+      const status = calcEmpenhoVencimentoStatus(e.dataVencimento)
+      return status === 'vencendo' || status === 'vencido'
     }).length
 
   // Conteúdo completo do menu (busca, patrimônio, contas/cartões, grupos de
@@ -466,6 +474,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       </main>
 
       <ResolverCaptchaModal />
+      <ConvitesEquipeModal />
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
   )

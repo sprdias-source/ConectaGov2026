@@ -88,24 +88,30 @@ function buildQueryManual(
   sessionId: string,
   supabaseUrl: string,
   anonKey: string,
-  userAccessToken: string
+  tokenAcesso: string
 ) {
   // JS que roda DENTRO da página do TST. Publica a imagem do captcha
-  // (lida do próprio <img id="idImgBase64">) na tabela captcha_sessions.
+  // (lida do próprio <img id="idImgBase64">) na tabela captcha_sessions —
+  // via a função captcha_session_publicar_imagem (migração 053), não mais
+  // com o token de sessão (JWT) real do usuário. Se o Browserless logar o
+  // conteúdo desta query (prática comum de depuração em provedores
+  // terceiros), o que vaza é só a anon key (já pública, embutida no
+  // bundle do frontend) + um segredo de uso único (tokenAcesso) que só dá
+  // acesso a ESTA linha específica de captcha_sessions — nunca o token que
+  // serviria pra agir como o usuário em qualquer outra parte da API.
   const publicarCaptchaJs = `
     (async () => {
       const img = document.querySelector('img#idImgBase64');
       const src = img ? img.src : null;
       if (!src) return { publicado: false };
-      const resp = await fetch('${supabaseUrl}/rest/v1/captcha_sessions?id=eq.${sessionId}', {
-        method: 'PATCH',
+      const resp = await fetch('${supabaseUrl}/rest/v1/rpc/captcha_session_publicar_imagem', {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'apikey': '${anonKey}',
-          'Authorization': 'Bearer ${userAccessToken}',
-          'Prefer': 'return=minimal',
+          'Authorization': 'Bearer ${anonKey}',
         },
-        body: JSON.stringify({ imagem_base64: src }),
+        body: JSON.stringify({ p_id: '${sessionId}', p_token: '${tokenAcesso}', p_imagem: src }),
       });
       return { publicado: resp.ok };
     })()
@@ -122,11 +128,14 @@ function buildQueryManual(
       const deadline = Date.now() + ${POLL_TIMEOUT_MS};
       let resposta = null;
       while (Date.now() < deadline) {
-        const resp = await fetch('${supabaseUrl}/rest/v1/captcha_sessions?id=eq.${sessionId}&select=status,resposta', {
+        const resp = await fetch('${supabaseUrl}/rest/v1/rpc/captcha_session_consultar', {
+          method: 'POST',
           headers: {
+            'Content-Type': 'application/json',
             'apikey': '${anonKey}',
-            'Authorization': 'Bearer ${userAccessToken}',
+            'Authorization': 'Bearer ${anonKey}',
           },
+          body: JSON.stringify({ p_id: '${sessionId}', p_token: '${tokenAcesso}' }),
         });
         const rows = await resp.json();
         const row = rows && rows[0];
@@ -230,9 +239,9 @@ async function tentarBuscarCNDTManual(
   sessionId: string,
   supabaseUrl: string,
   anonKey: string,
-  userAccessToken: string
+  tokenAcesso: string
 ) {
-  const query = buildQueryManual(cnpjLimpo, sessionId, supabaseUrl, anonKey, userAccessToken)
+  const query = buildQueryManual(cnpjLimpo, sessionId, supabaseUrl, anonKey, tokenAcesso)
   const data = await chamarBrowserless(query, apiKey)
 
   const resultadoEspera = data?.data?.esperarEDigitar?.value
@@ -327,17 +336,17 @@ Deno.serve(async (req) => {
 
     if (modo === 'manual') {
       tentativaLog = 1
-      // Extrai o token puro (sem "Bearer ") pra reusar dentro do JS que roda
-      // no navegador remoto.
-      const userAccessToken = authHeader.replace(/^Bearer\s+/i, '')
 
       const expiraEm = new Date(Date.now() + POLL_TIMEOUT_MS + 5000).toISOString()
       // Aqui fica user_id (quem está logado), não ownerId — de propósito:
-      // o JavaScript que roda dentro da sessão do Browserless publica e
-      // consulta esta mesma linha usando o access token de QUEM CHAMOU
-      // (userAccessToken, abaixo), e a política de RLS de captcha_sessions
-      // compara com auth.uid() — trocar pra ownerId quebraria a leitura/
-      // escrita em tempo real pra um membro de equipe que não seja o dono.
+      // o frontend consulta/atualiza esta mesma linha (useCaptchaSessions.ts)
+      // autenticado como quem chamou, e a política de RLS de
+      // captcha_sessions compara com auth.uid() — trocar pra ownerId
+      // quebraria a leitura/escrita em tempo real pra um membro de equipe
+      // que não seja o dono. O navegador remoto (Browserless), por outro
+      // lado, nunca usa esse token — ele publica/consulta via as funções
+      // captcha_session_publicar_imagem/captcha_session_consultar
+      // (migração 053), autenticado só com token_acesso (gerado abaixo).
       const linhaNova: Record<string, unknown> = {
         user_id: user.id,
         client_id: clientId,
@@ -354,14 +363,14 @@ Deno.serve(async (req) => {
       const { data: sessao, error: erroSessao } = await supabase
         .from('captcha_sessions')
         .insert(linhaNova)
-        .select('id')
+        .select('id, token_acesso')
         .single()
 
       if (erroSessao || !sessao) throw new Error('Não foi possível criar a sessão de captcha manual')
 
       try {
         const r = await tentarBuscarCNDTManual(
-          cnpjLimpo, apiKey, sessao.id, supabaseUrl, anonKey, userAccessToken
+          cnpjLimpo, apiKey, sessao.id, supabaseUrl, anonKey, sessao.token_acesso as string
         )
         if (r.expirou) {
           await supabase.from('captcha_sessions').update({ status: 'expirada' }).eq('id', sessao.id)

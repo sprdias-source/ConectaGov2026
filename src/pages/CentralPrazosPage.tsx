@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { AlarmClock, ChevronRight, Gavel, Globe, ShieldAlert, Wallet, Send } from 'lucide-react'
+import { AlarmClock, ChevronRight, FileSpreadsheet, Gavel, Globe, ShieldAlert, Wallet, Send } from 'lucide-react'
 import { PageHeader, Card, EmptyState } from '../components/ui/Primitives'
 import { SkeletonList } from '../components/ui/Skeleton'
 import { useBiddings } from '../hooks/useBiddings'
@@ -11,13 +11,14 @@ import { useAllClientDocuments, calcDocStatus, diasRestantes } from '../hooks/us
 import { useAllClientPlatforms, calcPlatformStatus, diasParaVencer } from '../hooks/useClientPlatforms'
 import { usePlatforms } from '../hooks/usePlatforms'
 import { useOpportunities, calcOpportunityStatus, diasParaSessao } from '../hooks/useOpportunities'
+import { useEmpenhos, calcEmpenhoVencimentoStatus, diasParaVencerEmpenho } from '../hooks/useEmpenhos'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { CERT_CONFIG } from '../types/domain'
 import { todayLocalISO } from '../lib/dateUtils'
 
 type ItemPrazo = {
   key: string
-  tipo: 'Pregão' | 'Certidão' | 'Financeiro' | 'Plataforma' | 'Oportunidade'
+  tipo: 'Pregão' | 'Certidão' | 'Financeiro' | 'Plataforma' | 'Oportunidade' | 'Empenho'
   titulo: string
   subtitulo: string
   data: string
@@ -42,6 +43,7 @@ export default function CentralPrazosPage() {
   const { clientPlatforms, isLoading: loadingPlatforms } = useAllClientPlatforms()
   const { platforms } = usePlatforms()
   const { opportunities, isLoading: loadingOpportunities } = useOpportunities()
+  const { empenhos, isLoading: loadingEmpenhos } = useEmpenhos()
 
   const clientName = (id: string | null) => id ? (clients.find((c) => c.id === id)?.name ?? 'Cliente removido') : 'Sem cliente definido'
 
@@ -198,16 +200,38 @@ export default function CentralPrazosPage() {
       })
     }
 
-    return lista.sort((a, b) => a.dias - b.dias)
-  }, [biddings, documents, allChecklistItems, transactions, clients, clientPlatforms, platforms, opportunities])
+    // Empenhos com data de vencimento chegando ou já vencida — o prazo em
+    // que a prefeitura deveria pagar. Vencimento é opcional no cadastro:
+    // empenho sem data nunca aparece aqui (calcEmpenhoVencimentoStatus
+    // devolve 'sem_vencimento'), em vez de virar um falso "vencido".
+    // Cancelado e inativo ficam de fora — não há mais nada a cobrar.
+    for (const e of empenhos) {
+      if (!e.isActive || e.status === 'Cancelado') continue
+      const status = calcEmpenhoVencimentoStatus(e.dataVencimento)
+      if (status !== 'vencendo' && status !== 'vencido') continue
+      lista.push({
+        key: `empenho-${e.id}`,
+        tipo: 'Empenho',
+        titulo: `Empenho nº ${e.numeroEmpenho ?? 'a definir'}`,
+        subtitulo: `${clientName(e.clientId)} — ${e.status}`,
+        data: e.dataVencimento ?? hoje,
+        dias: diasParaVencerEmpenho(e.dataVencimento) ?? 0,
+        valor: e.valorEmpenhada,
+        link: '/contas?tab=empenhos',
+      })
+    }
 
-  const isLoading = loadingBiddings || loadingTransactions || loadingDocuments || loadingChecklist || loadingPlatforms || loadingOpportunities
+    return lista.sort((a, b) => a.dias - b.dias)
+  }, [biddings, documents, allChecklistItems, transactions, clients, clientPlatforms, platforms, opportunities, empenhos])
+
+  const isLoading = loadingBiddings || loadingTransactions || loadingDocuments || loadingChecklist || loadingPlatforms || loadingOpportunities || loadingEmpenhos
 
   const iconFor = (tipo: ItemPrazo['tipo']) => {
     if (tipo === 'Pregão') return Gavel
     if (tipo === 'Certidão') return ShieldAlert
     if (tipo === 'Plataforma') return Globe
     if (tipo === 'Oportunidade') return Send
+    if (tipo === 'Empenho') return FileSpreadsheet
     return Wallet
   }
 

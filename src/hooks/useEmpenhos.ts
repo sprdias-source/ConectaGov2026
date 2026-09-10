@@ -46,6 +46,36 @@ export function addMonths(dateStr: string, months: number): string {
   return dateToLocalISO(d)
 }
 
+// Janela de antecedência pra considerar um empenho "vencendo" — mesma régua
+// de 15 dias já usada em pregões, certidões e financeiro (JANELA_PREGOES_DIAS
+// em CentralPrazosPage.tsx), pra Central de Prazos falar uma língua só.
+// Fixa de propósito: diferente de plataformas (que têm dias_aviso_vencimento
+// por registro, porque cada assinatura tem regra própria), o vencimento de
+// empenho é sempre a mesma pergunta — "a prefeitura já deveria ter pago?".
+export const JANELA_VENCIMENTO_EMPENHO_DIAS = 15
+
+export type EmpenhoVencimentoStatus = 'sem_vencimento' | 'em_dia' | 'vencendo' | 'vencido'
+
+// Mesmo padrão de calcPlatformStatus (useClientPlatforms.ts): calcula pelo
+// dado bruto (a data), nunca por um status gravado no banco — um status
+// gravado no cadastro nunca "envelhece" sozinho e o empenho ficaria eternamente
+// "em dia" mesmo depois de vencido de verdade.
+export function calcEmpenhoVencimentoStatus(dataVencimento: string | null): EmpenhoVencimentoStatus {
+  if (!dataVencimento) return 'sem_vencimento'
+  const dias = diasParaVencerEmpenho(dataVencimento)
+  if (dias === null) return 'sem_vencimento'
+  if (dias < 0) return 'vencido'
+  if (dias <= JANELA_VENCIMENTO_EMPENHO_DIAS) return 'vencendo'
+  return 'em_dia'
+}
+
+export function diasParaVencerEmpenho(dataVencimento: string | null): number | null {
+  if (!dataVencimento) return null
+  const hoje = new Date(todayLocalISO() + 'T00:00:00')
+  const vencimento = new Date(dataVencimento + 'T00:00:00')
+  return Math.floor((vencimento.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24))
+}
+
 // Gera as transações de comissão de um empenho, de acordo com o modo de
 // parcelamento escolhido:
 // - integral: uma única parcela com o valor total
@@ -219,6 +249,10 @@ export function useEmpenhos() {
           const draft: Partial<Empenho> = {
             ...base,
             dataEmpenho: item.dataEmpenho,
+            // A série herda tudo de `base`, MENOS o vencimento: um vencimento
+            // só vale para o empenho em que foi digitado. Copiar a mesma data
+            // pros N meses geraria N alertas falsos no mesmo dia.
+            dataVencimento: null,
             numeroEmpenho: item.numeroEmpenho,
             numeroNotaFiscal: item.numeroNotaFiscal,
             valorEmpenhada: item.valorEmpenhada,

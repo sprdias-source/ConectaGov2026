@@ -55,7 +55,7 @@ export function useNfseConfig() {
     mutationFn: async (config: NfseConfigPadrao) => {
       const { error } = await supabase
         .from('system_settings')
-        .upsert({ key: SETTINGS_KEY, value: JSON.stringify(config) }, { onConflict: 'key' })
+        .upsert({ key: SETTINGS_KEY, value: JSON.stringify(config) }, { onConflict: 'key,user_id' })
       if (error) throw error
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['nfse_config'] }),

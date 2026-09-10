@@ -56,6 +56,7 @@ Deno.serve(async (req) => {
     // pra ele definir a própria senha — mais simples que criar senha
     // temporária e ter que comunicar ela por fora.
     let usuarioId: string
+    let usuarioJaExistia = false
 
     const { data: novoUsuario, error: erroConvite } = await supabaseAdmin.auth.admin.inviteUserByEmail(email)
 
@@ -75,11 +76,44 @@ Deno.serve(async (req) => {
           throw new Error('E-mail já cadastrado, mas não foi possível localizar o usuário pra vincular')
         }
         usuarioId = usuarioExistente.id
+        usuarioJaExistia = true
       } else {
         throw new Error(mensagemErro || 'Não foi possível convidar esse e-mail')
       }
     } else {
       usuarioId = novoUsuario.user.id
+    }
+
+    // Um e-mail já cadastrado pode já ter dados próprios (clientes,
+    // licitações, financeiro) numa conta que não tem nada a ver com quem
+    // está convidando — vincular como 'ativo' direto derrubaria o acesso
+    // dessa pessoa aos próprios dados sem ela nunca ter concordado (ver
+    // owner_efetivo/set_owner_efetivo_on_insert, que passam a tratar essa
+    // conta como pertencente ao dono que convidou assim que o vínculo fica
+    // 'ativo'). Por isso: pendente até o convidado aceitar explicitamente,
+    // autenticado como ele mesmo, pela função responder-convite. Um
+    // usuário recém-criado por inviteUserByEmail não corre esse risco (a
+    // conta não existe até ele mesmo definir a senha pelo link do e-mail),
+    // então esse continua ficando 'ativo' na hora.
+    const statusInicial = usuarioJaExistia ? 'pendente' : 'ativo'
+
+    // Evita empilhar convites duplicados se o dono clicar em "convidar" mais
+    // de uma vez pro mesmo e-mail — reaproveita o vínculo já existente em
+    // vez de criar outra linha.
+    const { data: vinculoExistenteMembro } = await supabaseAdmin
+      .from('team_members')
+      .select('id, status')
+      .eq('owner_id', owner.id)
+      .eq('member_user_id', usuarioId)
+      .maybeSingle()
+
+    if (vinculoExistenteMembro) {
+      return new Response(JSON.stringify({
+        success: true,
+        teamMemberId: vinculoExistenteMembro.id,
+        pendente: vinculoExistenteMembro.status === 'pendente',
+        jaConvidado: true,
+      }), { headers: { ...CORS, 'Content-Type': 'application/json' } })
     }
 
     const { data: vinculo, error: erroVinculo } = await supabaseAdmin
@@ -89,7 +123,7 @@ Deno.serve(async (req) => {
         member_user_id: usuarioId,
         nome: nome ?? null,
         email,
-        status: 'ativo',
+        status: statusInicial,
       })
       .select('id')
       .single()
@@ -109,7 +143,7 @@ Deno.serve(async (req) => {
       )
     }
 
-    return new Response(JSON.stringify({ success: true, teamMemberId: vinculo.id }), {
+    return new Response(JSON.stringify({ success: true, teamMemberId: vinculo.id, pendente: usuarioJaExistia }), {
       headers: { ...CORS, 'Content-Type': 'application/json' },
     })
 

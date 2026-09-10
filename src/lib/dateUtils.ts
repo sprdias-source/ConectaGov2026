@@ -26,3 +26,18 @@ export function dateToLocalISO(date: Date): string {
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
+
+// Soma N dias a uma data no formato 'YYYY-MM-DD' e devolve outra string no
+// mesmo formato. Usado pelo modo "N dias após a Data do Empenho" no cadastro
+// de empenhos, onde o usuário sabe o prazo ("30 dias") mas não a data exata.
+//
+// Constrói a data com T12:00:00 (meio-dia local) e volta por dateToLocalISO,
+// nunca por toISOString(): meio-dia dá 12h de folga pra qualquer fuso, então
+// nem o horário de verão nem UTC-3 conseguem empurrar o resultado pro dia
+// anterior/seguinte. days pode ser negativo, e o setDate() nativo já cuida
+// da virada de mês e ano.
+export function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + 'T12:00:00')
+  d.setDate(d.getDate() + days)
+  return dateToLocalISO(d)
+}
