@@ -30,33 +30,56 @@
 -- ----------------------------------------------------------------------------
 -- 1) FK de user_id nas tabelas do módulo Contabilidade (migração 051)
 -- ----------------------------------------------------------------------------
-alter table empresa_perfil
-  add constraint empresa_perfil_user_id_fkey
-  foreign key (user_id) references auth.users(id) on delete cascade;
+-- "alter table ... add constraint" não tem uma forma nativa de "se não
+-- existir" (diferente de "add column if not exists", usado no resto desta
+-- migração) — por isso cada uma vai num bloco que confere em pg_constraint
+-- antes de criar. Sem isso, colar este script de novo (ex: depois de uma
+-- execução anterior que parou no meio por outro motivo) falha com
+-- "constraint ... already exists" em vez de simplesmente não fazer nada.
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'empresa_perfil_user_id_fkey') then
+    alter table empresa_perfil
+      add constraint empresa_perfil_user_id_fkey
+      foreign key (user_id) references auth.users(id) on delete cascade;
+  end if;
 
-alter table regime_tributario_historico
-  add constraint regime_tributario_historico_user_id_fkey
-  foreign key (user_id) references auth.users(id) on delete cascade;
+  if not exists (select 1 from pg_constraint where conname = 'regime_tributario_historico_user_id_fkey') then
+    alter table regime_tributario_historico
+      add constraint regime_tributario_historico_user_id_fkey
+      foreign key (user_id) references auth.users(id) on delete cascade;
+  end if;
 
-alter table simples_nacional_faixas
-  add constraint simples_nacional_faixas_user_id_fkey
-  foreign key (user_id) references auth.users(id) on delete cascade;
+  if not exists (select 1 from pg_constraint where conname = 'simples_nacional_faixas_user_id_fkey') then
+    alter table simples_nacional_faixas
+      add constraint simples_nacional_faixas_user_id_fkey
+      foreign key (user_id) references auth.users(id) on delete cascade;
+  end if;
 
-alter table simples_nacional_partilha
-  add constraint simples_nacional_partilha_user_id_fkey
-  foreign key (user_id) references auth.users(id) on delete cascade;
+  if not exists (select 1 from pg_constraint where conname = 'simples_nacional_partilha_user_id_fkey') then
+    alter table simples_nacional_partilha
+      add constraint simples_nacional_partilha_user_id_fkey
+      foreign key (user_id) references auth.users(id) on delete cascade;
+  end if;
 
-alter table tipos_servico
-  add constraint tipos_servico_user_id_fkey
-  foreign key (user_id) references auth.users(id) on delete cascade;
+  if not exists (select 1 from pg_constraint where conname = 'tipos_servico_user_id_fkey') then
+    alter table tipos_servico
+      add constraint tipos_servico_user_id_fkey
+      foreign key (user_id) references auth.users(id) on delete cascade;
+  end if;
 
-alter table notas_fiscais_emitidas
-  add constraint notas_fiscais_emitidas_user_id_fkey
-  foreign key (user_id) references auth.users(id) on delete cascade;
+  if not exists (select 1 from pg_constraint where conname = 'notas_fiscais_emitidas_user_id_fkey') then
+    alter table notas_fiscais_emitidas
+      add constraint notas_fiscais_emitidas_user_id_fkey
+      foreign key (user_id) references auth.users(id) on delete cascade;
+  end if;
 
-alter table grupos_contabeis
-  add constraint grupos_contabeis_user_id_fkey
-  foreign key (user_id) references auth.users(id) on delete cascade;
+  if not exists (select 1 from pg_constraint where conname = 'grupos_contabeis_user_id_fkey') then
+    alter table grupos_contabeis
+      add constraint grupos_contabeis_user_id_fkey
+      foreign key (user_id) references auth.users(id) on delete cascade;
+  end if;
+end $$;
 
 -- ----------------------------------------------------------------------------
 -- 2) FK real em bidding_checklist_items.client_document_id
@@ -64,9 +87,14 @@ alter table grupos_contabeis
 -- Mesmo comportamento que já existe hoje via trigger de aplicação
 -- (trg_compliance_apos_exclusao_documento, migração 041) — "on delete set
 -- null" só passa a ser garantido pelo banco também, não só pela aplicação.
-alter table bidding_checklist_items
-  add constraint bidding_checklist_items_client_document_id_fkey
-  foreign key (client_document_id) references client_documents(id) on delete set null;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'bidding_checklist_items_client_document_id_fkey') then
+    alter table bidding_checklist_items
+      add constraint bidding_checklist_items_client_document_id_fkey
+      foreign key (client_document_id) references client_documents(id) on delete set null;
+  end if;
+end $$;
 
 -- ----------------------------------------------------------------------------
 -- 3) Índices faltando
@@ -89,7 +117,14 @@ alter table system_settings add column if not exists user_id uuid references aut
 -- chave de configuração.
 alter table system_settings drop constraint if exists system_settings_pkey;
 alter table system_settings add column if not exists id uuid not null default gen_random_uuid();
-alter table system_settings add constraint system_settings_pkey primary key (id);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'system_settings_pkey') then
+    alter table system_settings add constraint system_settings_pkey primary key (id);
+  end if;
+end $$;
+
 create unique index if not exists idx_system_settings_key_user_id on system_settings(key, user_id);
 
 -- Mesmo padrão usado em ~30 outras tabelas do sistema (migração 041): o
