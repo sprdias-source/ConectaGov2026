@@ -10,7 +10,7 @@ import NotificationBell from './NotificationBell'
 import { useAuth } from '../../hooks/useAuth'
 import { useTheme } from '../../hooks/useTheme'
 import { useFinancialAccounts } from '../../hooks/useFinancialAccounts'
-import { useTransactions } from '../../hooks/useTransactions'
+import { useTransactions, isRepasseAtrasado } from '../../hooks/useTransactions'
 import { useAccountBalances, formatBRL } from '../../hooks/useAccountBalances'
 import { useBackup } from '../../hooks/useBackup'
 import { useAllClientDocuments } from '../../hooks/useClientDocuments'
@@ -114,9 +114,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
   // Contagem de itens urgentes pro badge da Central de Prazos: certidões
   // vencendo/vencidas + lançamentos financeiros atrasados + plataformas
   // vencendo/vencidas + oportunidades urgentes/vencidas (edital enviado ao
-  // cliente sem resposta) + empenhos vencendo/vencidos. Mantido simples de
-  // propósito — o detalhe completo (incluindo pregões próximos) fica só na
-  // própria tela, aqui é só o "chame a atenção".
+  // cliente sem resposta) + empenhos vencendo/vencidos + comissões cuja
+  // prefeitura já liquidou mas o cliente ainda não repassou. Mantido
+  // simples de propósito — o detalhe completo (incluindo pregões próximos)
+  // fica só na própria tela, aqui é só o "chame a atenção".
   const alertasUrgentes =
     clientDocuments.filter((d) => d.status === 'vencendo' || d.status === 'vencido').length +
     transactions.filter((t) => t.status === 'Atrasado').length +
@@ -132,7 +133,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
       if (!e.isActive || e.status === 'Cancelado') return false
       const status = calcEmpenhoVencimentoStatus(e.dataVencimento)
       return status === 'vencendo' || status === 'vencido'
-    }).length
+    }).length +
+    transactions.filter(isRepasseAtrasado).length
 
   // Conteúdo completo do menu (busca, patrimônio, contas/cartões, grupos de
   // navegação) — reaproveitado tanto no painel expandido normal quanto na

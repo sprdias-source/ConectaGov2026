@@ -263,6 +263,13 @@ export interface Transaction {
   value: number
   dueDate: string
   paymentDate: string | null
+  // Só fazem sentido pra comissão gerada de um empenho (empenhoId
+  // preenchido) — quando a prefeitura deveria pagar o cliente, e quando
+  // pagou de fato. Opcionais, preenchidos manualmente na baixa; servem pra
+  // acompanhar se o cliente demora a repassar a comissão já recebida da
+  // prefeitura (ver Central de Prazos e Relatório de Repasse por Cliente).
+  dataVencimentoPrefeitura: string | null
+  dataLiquidacaoPrefeitura: string | null
   paymentMethod: string | null
   status: TransactionStatus
   isProjected: boolean

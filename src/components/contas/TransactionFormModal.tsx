@@ -139,6 +139,26 @@ export default function TransactionFormModal({
           </Field>
         </div>
 
+        {/* Só faz sentido pra comissão vinda de um empenho — é lá que existe
+            uma prefeitura pagando o cliente por trás do lançamento. Um
+            lançamento avulso (sem empenhoId) não tem esse "elo" pra
+            acompanhar, então o bloco nem aparece. */}
+        {form.empenhoId && (
+          <div className="bg-accent-500/10 border border-accent-500/25 rounded-lg p-3 flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Vencimento na Prefeitura">
+                <Input type="date" value={form.dataVencimentoPrefeitura ?? ''} onChange={(e) => setForm({ ...form, dataVencimentoPrefeitura: e.target.value || null })} />
+              </Field>
+              <Field label="Liquidação na Prefeitura">
+                <Input type="date" value={form.dataLiquidacaoPrefeitura ?? ''} onChange={(e) => setForm({ ...form, dataLiquidacaoPrefeitura: e.target.value || null })} />
+              </Field>
+            </div>
+            <p className="text-[11px] text-base-500">
+              Quando a prefeitura deveria pagar o cliente, e quando pagou de fato — acompanha se o cliente demora a repassar a comissão depois de já ter recebido.
+            </p>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4">
           <Field label="Forma de Pagamento">
             <Select value={form.paymentMethod ?? ''} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}>
