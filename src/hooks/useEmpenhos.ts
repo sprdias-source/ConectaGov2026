@@ -95,12 +95,21 @@ export function buildCommissionTransactions(emp: Empenho): Partial<Transaction>[
 
   const baseDescription = `Comissão s/ Empenho ${emp.numeroEmpenho ?? 'a definir'} (${emp.percentualComissao}% de R$ ${emp.valorEmpenhada.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`
 
+  // Vencimento da comissão acompanha a Data de Vencimento do EMPENHO
+  // (escolhida no calendário ou calculada por "N dias após o empenho" —
+  // ver EmpenhoFormModal.tsx), não a Data do Empenho — são coisas
+  // diferentes: a data do empenho é quando a prefeitura registrou o
+  // empenho no sistema dela, a de vencimento é quando o pagamento é
+  // esperado. Empenho sem vencimento definido (a maioria dos já
+  // cadastrados) continua caindo na Data do Empenho, como sempre foi.
+  const dataBaseVencimento = emp.dataVencimento ?? emp.dataEmpenho
+
   if (emp.modoParcelamento === 'quantidade_fixa' && emp.quantidadeParcelas && emp.quantidadeParcelas > 1) {
     const total = emp.quantidadeParcelas
     const splitValue = Math.round((emp.valorComissaoTotal / total) * 100) / 100
     const result: Partial<Transaction>[] = []
     for (let i = 1; i <= total; i++) {
-      const dueDate = addMonths(emp.dataEmpenho, i - 1)
+      const dueDate = addMonths(dataBaseVencimento, i - 1)
       const value = i === total ? Math.round((emp.valorComissaoTotal - splitValue * (total - 1)) * 100) / 100 : splitValue
       result.push({
         type: 'Receber',
@@ -126,7 +135,7 @@ export function buildCommissionTransactions(emp: Empenho): Partial<Transaction>[
     const total = Math.max(1, emp.quantidadeParcelas ?? 1)
     const result: Partial<Transaction>[] = []
     for (let i = 1; i <= total; i++) {
-      const dueDate = addMonths(emp.dataEmpenho, months * (i - 1))
+      const dueDate = addMonths(dataBaseVencimento, months * (i - 1))
       result.push({
         type: 'Receber',
         category: 'Comissão de Êxito (Recorrente)',
@@ -155,9 +164,9 @@ export function buildCommissionTransactions(emp: Empenho): Partial<Transaction>[
     biddingId: emp.biddingId,
     empenhoId: emp.id,
     value: emp.valorComissaoTotal,
-    dueDate: emp.dataEmpenho,
+    dueDate: dataBaseVencimento,
     paymentMethod: 'Boleto',
-    status: statusForDate(emp.dataEmpenho),
+    status: statusForDate(dataBaseVencimento),
   }]
 }
 
