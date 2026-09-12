@@ -1,11 +1,11 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { AlarmClock, ChevronRight, FileSpreadsheet, Gavel, Globe, ShieldAlert, Wallet, Send } from 'lucide-react'
+import { AlarmClock, ChevronRight, FileSpreadsheet, Gavel, Globe, Landmark, ShieldAlert, Wallet, Send } from 'lucide-react'
 import { PageHeader, Card, EmptyState } from '../components/ui/Primitives'
 import { SkeletonList } from '../components/ui/Skeleton'
 import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
-import { useTransactions } from '../hooks/useTransactions'
+import { useTransactions, diasDesdeLiquidacaoPrefeitura, isRepasseAtrasado } from '../hooks/useTransactions'
 import { useAllBiddingChecklistItems } from '../hooks/useBiddingChecklist'
 import { useAllClientDocuments, calcDocStatus, diasRestantes } from '../hooks/useClientDocuments'
 import { useAllClientPlatforms, calcPlatformStatus, diasParaVencer } from '../hooks/useClientPlatforms'
@@ -18,7 +18,7 @@ import { todayLocalISO } from '../lib/dateUtils'
 
 type ItemPrazo = {
   key: string
-  tipo: 'Pregão' | 'Certidão' | 'Financeiro' | 'Plataforma' | 'Oportunidade' | 'Empenho'
+  tipo: 'Pregão' | 'Certidão' | 'Financeiro' | 'Plataforma' | 'Oportunidade' | 'Empenho' | 'Repasse'
   titulo: string
   subtitulo: string
   data: string
@@ -221,6 +221,28 @@ export default function CentralPrazosPage() {
       })
     }
 
+    // Comissão de empenho que a prefeitura já liquidou (pagou o cliente) há
+    // mais de LIMIAR_REPASSE_ATRASADO_DIAS dias, mas o cliente ainda não
+    // repassou pra gente (lançamento continua não "Pago"). Diferente do
+    // "Financeiro" acima, que olha o PRÓPRIO vencimento da comissão — aqui o
+    // gatilho é a liquidação da prefeitura, que pode acontecer bem antes do
+    // vencimento (prefeitura rápida, cliente lento) e merece cobrança
+    // mesmo sem a comissão estar tecnicamente vencida ainda.
+    for (const t of transactions) {
+      if (!isRepasseAtrasado(t) || !t.dataLiquidacaoPrefeitura) continue
+      const vencimento = new Date(t.dueDate + 'T12:00:00')
+      lista.push({
+        key: `repasse-${t.id}`,
+        tipo: 'Repasse',
+        titulo: t.description,
+        subtitulo: `${clientName(t.clientId)} — prefeitura já liquidou`,
+        data: t.dataLiquidacaoPrefeitura,
+        dias: -(diasDesdeLiquidacaoPrefeitura(t) ?? 0),
+        valor: t.value,
+        link: `/contas?mes=${vencimento.getMonth()}&ano=${vencimento.getFullYear()}&highlight=${t.id}`,
+      })
+    }
+
     return lista.sort((a, b) => a.dias - b.dias)
   }, [biddings, documents, allChecklistItems, transactions, clients, clientPlatforms, platforms, opportunities, empenhos])
 
@@ -232,6 +254,7 @@ export default function CentralPrazosPage() {
     if (tipo === 'Plataforma') return Globe
     if (tipo === 'Oportunidade') return Send
     if (tipo === 'Empenho') return FileSpreadsheet
+    if (tipo === 'Repasse') return Landmark
     return Wallet
   }
 
