@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 
 // Barra de rolagem horizontal "fantasma" fixada ACIMA da tabela, sincronizada
 // com o scroll real por baixo — o navegador só desenha a barra nativa
@@ -8,11 +8,56 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 // (KanbanLicitacoesPage.tsx), generalizado aqui pra qualquer tabela do
 // sistema — troca só o `<div className="overflow-x-auto ...">` que já
 // envolve a tabela por este componente, com o mesmo className.
+// Só começa a tratar como "arrastando" depois desse tanto de movimento —
+// sem isso, qualquer clique normal num botão/link de dentro da tabela
+// (editar, excluir, alternar) contaria como um arraste de 0px e o clique
+// de verdade nunca chegaria a disparar.
+const LIMIAR_ARRASTE_PX = 4
+
 export default function TopScrollTable({ children, className = '' }: { children: ReactNode; className?: string }) {
   const topoRef = useRef<HTMLDivElement>(null)
   const conteudoRef = useRef<HTMLDivElement>(null)
   const [largura, setLargura] = useState(0)
   const sincronizandoRef = useRef<'topo' | 'conteudo' | null>(null)
+
+  // Clique-e-arraste ("mãozinha") pra rolar a tabela pro lado a partir de
+  // qualquer ponto dela, não só acertando a barra de rolagem. Guardado em
+  // ref (não state) porque muda a cada pixel do mouse — só o "estou
+  // arrastando de verdade" (arrastando, abaixo) precisa virar re-render,
+  // pra aplicar a classe que troca o cursor e desliga clique nos filhos.
+  const arrasteRef = useRef<{ pointerId: number; xInicial: number; scrollInicial: number; arrastando: boolean } | null>(null)
+  const [arrastando, setArrastando] = useState(false)
+
+  const handlePointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    // Só o botão esquerdo do mouse inicia o gesto (botão direito é menu de
+    // contexto, meio costuma abrir em nova aba) — toque continua rolando
+    // do jeito nativo do navegador, sem passar por aqui.
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    if (e.pointerType !== 'mouse') return
+    const el = conteudoRef.current
+    if (!el) return
+    arrasteRef.current = { pointerId: e.pointerId, xInicial: e.clientX, scrollInicial: el.scrollLeft, arrastando: false }
+  }
+
+  const handlePointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    const estado = arrasteRef.current
+    const el = conteudoRef.current
+    if (!estado || !el || estado.pointerId !== e.pointerId) return
+    const delta = e.clientX - estado.xInicial
+    if (!estado.arrastando) {
+      if (Math.abs(delta) < LIMIAR_ARRASTE_PX) return
+      estado.arrastando = true
+      el.setPointerCapture(e.pointerId)
+      setArrastando(true)
+    }
+    el.scrollLeft = estado.scrollInicial - delta
+  }
+
+  const pararArraste = (e: PointerEvent<HTMLDivElement>) => {
+    if (arrasteRef.current?.pointerId !== e.pointerId) return
+    arrasteRef.current = null
+    setArrastando(false)
+  }
 
   // Duas fontes de remedição, porque nenhuma sozinha cobre os dois jeitos
   // da largura mudar: o ResizeObserver no próprio contêiner pega quando a
@@ -57,7 +102,15 @@ export default function TopScrollTable({ children, className = '' }: { children:
           <div style={{ width: largura, height: 1 }} />
         </div>
       )}
-      <div ref={conteudoRef} onScroll={handleScrollConteudo} className={`overflow-x-auto ${className}`}>
+      <div
+        ref={conteudoRef}
+        onScroll={handleScrollConteudo}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={pararArraste}
+        onPointerCancel={pararArraste}
+        className={`table-scroll overflow-x-auto ${arrastando ? 'dragging' : ''} ${className}`}
+      >
         {children}
       </div>
     </div>

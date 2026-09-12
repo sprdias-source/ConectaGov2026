@@ -4,6 +4,7 @@ import { addMonths, type EmpenhoRecorrenteItem } from '../../hooks/useEmpenhos'
 import Modal from '../ui/Modal'
 import { Field, Input, Select, Textarea, Button } from '../ui/FormControls'
 import CurrencyInput from '../ui/CurrencyInput'
+import TopScrollTable from '../ui/TopScrollTable'
 import ErrorAlert from '../ui/ErrorAlert'
 import type { Empenho, ModoParcelamento, Periodicidade } from '../../types/domain'
 import type { Client, Bidding } from '../../types/domain'
@@ -443,7 +444,7 @@ export default function EmpenhoFormModal({
                       {pendentesSerie === 0 ? 'Todos os números preenchidos' : `${pendentesSerie} de ${totalMesesSerie} números ainda não preenchidos`}
                     </span>
                   </div>
-                  <div className="overflow-x-auto">
+                  <TopScrollTable>
                     <table className="w-full text-[12px]">
                       <thead>
                         <tr className="bg-base-900/40 text-left">
@@ -499,7 +500,7 @@ export default function EmpenhoFormModal({
                         </tr>
                       </tfoot>
                     </table>
-                  </div>
+                  </TopScrollTable>
                 </div>
 
                 <p className="text-[11px] text-base-500 -mt-1 flex items-start gap-1.5">

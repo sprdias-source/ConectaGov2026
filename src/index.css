@@ -216,6 +216,46 @@ body {
   scrollbar-width: auto;
 }
 
+/* Rolagem horizontal do CONTEÚDO real de tabelas largas (ver
+   TopScrollTable.tsx) — mesmo tratamento visual da .top-scrollbar (barra
+   grossa, sempre visível, cor de destaque): a barra fina padrão do
+   navegador é fácil de não notar ou não conseguir "acertar" com o mouse.
+   Também fica arrastável — clicar e segurar em qualquer ponto da tabela e
+   puxar pro lado rola ela, sem precisar acertar a barra (ver o handler de
+   pointer events no próprio componente). O cursor de "mãozinha aberta"
+   convida a isso; vira "fechada" durante o arraste de verdade (classe
+   .dragging, aplicada só depois de um deslocamento mínimo, pra nunca
+   atrapalhar um clique normal num botão da linha).  */
+.table-scroll {
+  cursor: grab;
+}
+.table-scroll::-webkit-scrollbar {
+  height: 14px;
+}
+.table-scroll::-webkit-scrollbar-track {
+  background: var(--color-base-850);
+  border-radius: 999px;
+}
+.table-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-accent-500);
+  border-radius: 999px;
+  border: 3px solid var(--color-base-850);
+}
+.table-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent-400);
+}
+.table-scroll {
+  scrollbar-color: var(--color-accent-500) var(--color-base-850);
+  scrollbar-width: auto;
+}
+.table-scroll.dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+.table-scroll.dragging * {
+  pointer-events: none;
+}
+
 /* Impressão: ao clicar em "Imprimir/Exportar", mostramos só o conteúdo
    marcado com .print-only (ex: o DRE, um contrato, um recibo) — sem isso,
    o navegador tentaria imprimir a tela inteira do sistema, com sidebar
