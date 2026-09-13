@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Landmark, Plus, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Landmark, Plus, AlertTriangle, CheckCircle2, FilePlus2 } from 'lucide-react'
 import { Card } from '../ui/Primitives'
 import { Field, Input, Select, Button } from '../ui/FormControls'
 import CurrencyInput from '../ui/CurrencyInput'
@@ -8,8 +9,30 @@ import { formatBRL } from '../../hooks/useAccountBalances'
 import { useRegimeTributario } from '../../hooks/useRegimeTributario'
 import { useSimplesNacional } from '../../hooks/useSimplesNacional'
 import { useTiposServico } from '../../hooks/useTiposServico'
-import { todayLocalISO } from '../../lib/dateUtils'
+import { useTransactions } from '../../hooks/useTransactions'
+import { todayLocalISO, dateToLocalISO } from '../../lib/dateUtils'
 import type { RegimeTributario, AnexoSimples } from '../../types/domain'
+
+// Mesma categoria já cadastrada em useCategories.ts — usar o texto exato
+// evita criar uma categoria nova "solta" (que não apareceria no filtro de
+// Categorias nem em nenhum relatório que já entenda essa categoria).
+const CATEGORIA_DAS_PAGAR = 'Impostos (DAS/Simples)'
+
+// Vencimento padrão do DAS: dia 20 do mês seguinte à competência (regra da
+// Receita Federal). Se cair em fim de semana/feriado, o prazo real desloca
+// pro próximo dia útil — o sistema sempre calcula o dia 20 fixo; ajuste
+// manualmente no lançamento se cair num desses dias.
+function calcularVencimentoDas(competencia: string): string {
+  const [ano, mes] = competencia.split('-').map(Number)
+  // mes vem 1-12 (competência); como Date usa mês 0-indexado, passar "mes"
+  // direto já aponta pro mês SEGUINTE — não precisa somar 1.
+  return dateToLocalISO(new Date(ano, mes, 20))
+}
+
+function descricaoDas(competencia: string): string {
+  const [ano, mes] = competencia.split('-')
+  return `DAS Simples Nacional — Competência ${mes}/${ano}`
+}
 import NotasFiscaisSection from './NotasFiscaisSection'
 
 const REGIME_LABEL: Record<RegimeTributario, string> = {
@@ -23,6 +46,7 @@ export default function AbaFiscal() {
   const { historico, vigente, registrarTroca } = useRegimeTributario()
   const { conferenciaDas, faixas } = useSimplesNacional()
   const { tiposServico, addTipoServico } = useTiposServico()
+  const { transactions, addTransactions } = useTransactions()
 
   const [competencia, setCompetencia] = useState(todayLocalISO().slice(0, 7))
   const [dasReal, setDasReal] = useState<number | null>(null)
@@ -42,6 +66,27 @@ export default function AbaFiscal() {
   const [aliqFederal, setAliqFederal] = useState(0)
 
   const conferencia = conferenciaDas(competencia)
+
+  // Detecta se o DAS desta competência já foi gerado em Contas a Pagar —
+  // pela descrição exata, já que "Valor real emitido" é só estado local
+  // (não persiste, ver comentário no useState acima) e não tem como
+  // guardar "já cliquei em gerar" em nenhum outro lugar. Sem essa checagem,
+  // reabrir a tela ou trocar de competência e voltar deixaria o botão
+  // "Gerar" disponível de novo, arriscando duplicar o lançamento.
+  const descricaoDasAtual = descricaoDas(competencia)
+  const dasJaGerado = transactions.find((t) => t.type === 'Pagar' && t.category === CATEGORIA_DAS_PAGAR && t.description === descricaoDasAtual)
+
+  const gerarContasAPagarDas = () => {
+    if (dasReal === null || dasReal <= 0) return
+    addTransactions.mutate([{
+      type: 'Pagar',
+      category: CATEGORIA_DAS_PAGAR,
+      description: descricaoDasAtual,
+      value: dasReal,
+      dueDate: calcularVencimentoDas(competencia),
+      status: 'Pendente',
+    }])
+  }
 
   const salvarTroca = () => {
     registrarTroca.mutate(
@@ -181,6 +226,30 @@ export default function AbaFiscal() {
                     ? <span className="flex items-center justify-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Confere — diferença R$ 0,00</span>
                     : `Diferença: ${formatBRL(dasReal - conferencia.dasEstimado)}`}
                 </div>
+              )}
+
+              {dasReal !== null && dasReal > 0 && (
+                dasJaGerado ? (
+                  <div className="mt-2 bg-positive-500/10 border border-positive-500/25 rounded-lg p-2.5 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-positive-400 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11.5px] font-bold text-base-200">Já gerado em Contas a Pagar</p>
+                      <p className="text-[10.5px] text-base-500">
+                        Vence {new Date(dasJaGerado.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')} — {formatBRL(dasJaGerado.value)}
+                      </p>
+                    </div>
+                    <Link
+                      to={`/contas?mes=${new Date(dasJaGerado.dueDate + 'T12:00:00').getMonth()}&ano=${new Date(dasJaGerado.dueDate + 'T12:00:00').getFullYear()}&highlight=${dasJaGerado.id}`}
+                      className="text-[11px] font-bold text-accent-400 hover:text-accent-300 whitespace-nowrap"
+                    >
+                      Ver lançamento →
+                    </Link>
+                  </div>
+                ) : (
+                  <Button onClick={gerarContasAPagarDas} disabled={addTransactions.isPending} className="w-full justify-center mt-2">
+                    <FilePlus2 className="w-3.5 h-3.5" /> {addTransactions.isPending ? 'Gerando...' : 'Gerar Contas a Pagar'}
+                  </Button>
+                )
               )}
             </Card>
           </div>
