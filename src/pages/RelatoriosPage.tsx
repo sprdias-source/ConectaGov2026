@@ -10,11 +10,12 @@ import { useCategories } from '../hooks/useCategories'
 import { useBiddings } from '../hooks/useBiddings'
 import { usePagination, PaginationControls } from '../hooks/usePagination'
 import RelatorioLicitacoesCliente from '../components/relatorios/RelatorioLicitacoesCliente'
+import RelatorioRepassePorCliente from '../components/relatorios/RelatorioRepassePorCliente'
 
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 
 export default function RelatoriosPage() {
-  const [aba, setAba] = useState<'faturamento' | 'despesas' | 'licitacoes'>('faturamento')
+  const [aba, setAba] = useState<'faturamento' | 'despesas' | 'licitacoes' | 'repasse'>('faturamento')
   const { transactions } = useTransactions()
   const { clients } = useClients()
   const { categoriesReceber, categoriesPagar } = useCategories()
@@ -89,10 +90,10 @@ export default function RelatoriosPage() {
     <div className="pb-10">
       <PageHeader
         title="Relatórios"
-        subtitle="Vendas detalhadas, despesas por categoria e relatório de oportunidades por cliente"
+        subtitle="Vendas detalhadas, despesas por categoria, oportunidades e repasse de comissão por cliente"
         icon={FileBarChart}
         actions={
-          aba !== 'licitacoes' && (
+          (aba === 'faturamento' || aba === 'despesas') && (
             <>
               <button onClick={() => window.print()} className="flex items-center gap-1.5 text-[12px] font-semibold text-base-300 hover:text-base-100 bg-base-850 border border-base-700 rounded-lg px-3 py-1.5 transition">
                 <Printer className="w-3.5 h-3.5" /> Imprimir / PDF
@@ -125,9 +126,17 @@ export default function RelatoriosPage() {
           >
             Oportunidades por Cliente
           </button>
+          <button
+            onClick={() => selecionarAba('repasse')}
+            className={`px-3 py-1.5 rounded-md text-[12px] font-semibold transition ${aba === 'repasse' ? 'bg-accent-500 text-base-950' : 'text-base-400 hover:text-base-100'}`}
+          >
+            Repasse por Cliente
+          </button>
         </div>
 
         {aba === 'licitacoes' && <RelatorioLicitacoesCliente clients={clients} biddings={biddings} />}
+
+        {aba === 'repasse' && <RelatorioRepassePorCliente clients={clients} transactions={transactions} />}
 
         {(aba === 'faturamento' || aba === 'despesas') && <>
         <Card className="p-4 mb-4">

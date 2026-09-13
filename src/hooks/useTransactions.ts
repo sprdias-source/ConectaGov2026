@@ -8,6 +8,35 @@ import { useAuditLog } from './useAuditLog'
 
 const QUERY_KEY = ['transactions']
 
+// Quantos dias depois da prefeitura liquidar (pagar o cliente) o sistema
+// espera antes de cobrar o repasse da comissão — evita alertar no dia
+// seguinte por um atraso normal de processamento bancário. Exportada (em
+// vez de duplicada) porque a Central de Prazos e o badge de alertas da
+// sidebar (AppShell.tsx) precisam do MESMO número — senão o contador da
+// sidebar diverge da lista real de alertas.
+export const LIMIAR_REPASSE_ATRASADO_DIAS = 5
+
+// Dias corridos desde que a prefeitura liquidou (pagou o cliente) — null
+// se a comissão não é de empenho, já foi recebida, ou a liquidação ainda
+// não foi registrada. Mesmo padrão de "calcula pelo dado bruto, nunca por
+// um status gravado" já usado em calcEmpenhoVencimentoStatus/
+// calcPlatformStatus: assim o alerta nunca fica desatualizado.
+export function diasDesdeLiquidacaoPrefeitura(t: Transaction): number | null {
+  if (t.type !== 'Receber' || !t.empenhoId || t.status === 'Pago') return null
+  if (!t.dataLiquidacaoPrefeitura) return null
+  const hoje = new Date(todayLocalISO() + 'T00:00:00')
+  const liquidacao = new Date(t.dataLiquidacaoPrefeitura + 'T00:00:00')
+  return Math.floor((hoje.getTime() - liquidacao.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+// true quando a comissão já passou do prazo de graça sem o cliente
+// repassar — usado tanto pra listar o alerta na Central de Prazos quanto
+// pra somar no badge da sidebar (precisam bater exatamente).
+export function isRepasseAtrasado(t: Transaction): boolean {
+  const dias = diasDesdeLiquidacaoPrefeitura(t)
+  return dias !== null && dias >= LIMIAR_REPASSE_ATRASADO_DIAS
+}
+
 export function useTransactions() {
   const { user } = useAuth()
   const queryClient = useQueryClient()

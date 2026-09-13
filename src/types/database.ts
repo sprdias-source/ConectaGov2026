@@ -2206,6 +2206,8 @@ export type Database = {
           category: string
           client_id: string | null
           created_at: string
+          data_liquidacao_prefeitura: string | null
+          data_vencimento_prefeitura: string | null
           description: string
           desconto: number | null
           due_date: string
@@ -2240,6 +2242,8 @@ export type Database = {
           category: string
           client_id?: string | null
           created_at?: string
+          data_liquidacao_prefeitura?: string | null
+          data_vencimento_prefeitura?: string | null
           description: string
           desconto?: number | null
           due_date: string
@@ -2274,6 +2278,8 @@ export type Database = {
           category?: string
           client_id?: string | null
           created_at?: string
+          data_liquidacao_prefeitura?: string | null
+          data_vencimento_prefeitura?: string | null
           description?: string
           desconto?: number | null
           due_date?: string
