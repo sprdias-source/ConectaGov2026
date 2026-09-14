@@ -45,6 +45,15 @@ export default function AbaContabil() {
     cnpj: perfil?.cnpj ?? '',
     endereco: perfil?.endereco ?? '',
     capitalSocial: perfil?.capitalSocial ?? 0,
+    representanteNome: perfil?.representanteNome ?? '',
+    representanteCpf: perfil?.representanteCpf ?? '',
+    representanteEstadoCivil: perfil?.representanteEstadoCivil ?? '',
+    representanteEndereco: perfil?.representanteEndereco ?? '',
+    bancoNome: perfil?.bancoNome ?? '',
+    bancoAgencia: perfil?.bancoAgencia ?? '',
+    bancoConta: perfil?.bancoConta ?? '',
+    chavePix: perfil?.chavePix ?? '',
+    comarcaForoPadrao: perfil?.comarcaForoPadrao ?? '',
   })
 
   const availableYears = useMemo(() => {
@@ -180,6 +189,36 @@ export default function AbaContabil() {
               onChange={(e) => setFormPerfil({ ...formPerfil, capitalSocial: parseFloat(e.target.value) || 0 })}
             />
           </div>
+
+          <div className="border-t border-base-800 mt-4 pt-3">
+            <p className="text-[12px] font-bold text-base-300 mb-1">Dados da Contratada (Módulo de Contratos)</p>
+            <p className="text-[11px] text-base-500 mb-3">Preenchidos aqui uma vez só — usados automaticamente em todo contrato gerado, em vez de digitados de novo a cada um.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+              <Input placeholder="Nome do Representante" value={formPerfil.representanteNome} onChange={(e) => setFormPerfil({ ...formPerfil, representanteNome: e.target.value })} />
+              <Input placeholder="CPF do Representante" value={formPerfil.representanteCpf} onChange={(e) => setFormPerfil({ ...formPerfil, representanteCpf: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+              <Input placeholder="Endereço Residencial do Representante" value={formPerfil.representanteEndereco} onChange={(e) => setFormPerfil({ ...formPerfil, representanteEndereco: e.target.value })} />
+              <Select value={formPerfil.representanteEstadoCivil} onChange={(e) => setFormPerfil({ ...formPerfil, representanteEstadoCivil: e.target.value })}>
+                <option value="">Estado Civil — não informado</option>
+                <option value="Solteiro(a)">Solteiro(a)</option>
+                <option value="Casado(a)">Casado(a)</option>
+                <option value="Divorciado(a)">Divorciado(a)</option>
+                <option value="Viúvo(a)">Viúvo(a)</option>
+                <option value="União Estável">União Estável</option>
+              </Select>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+              <Input placeholder="Banco (ex: 756 - Sicoob)" value={formPerfil.bancoNome} onChange={(e) => setFormPerfil({ ...formPerfil, bancoNome: e.target.value })} />
+              <Input placeholder="Agência" value={formPerfil.bancoAgencia} onChange={(e) => setFormPerfil({ ...formPerfil, bancoAgencia: e.target.value })} />
+              <Input placeholder="Conta" value={formPerfil.bancoConta} onChange={(e) => setFormPerfil({ ...formPerfil, bancoConta: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Input placeholder="Chave Pix" value={formPerfil.chavePix} onChange={(e) => setFormPerfil({ ...formPerfil, chavePix: e.target.value })} />
+              <Input placeholder="Comarca do Foro Padrão (ex: Vacaria/RS)" value={formPerfil.comarcaForoPadrao} onChange={(e) => setFormPerfil({ ...formPerfil, comarcaForoPadrao: e.target.value })} />
+            </div>
+          </div>
+
           <div className="flex justify-end gap-2 mt-3">
             {perfil?.razaoSocial && <Button variant="secondary" onClick={() => setEditandoPerfil(false)}>Cancelar</Button>}
             <Button onClick={salvarFormPerfil} disabled={salvarPerfil.isPending}>{salvarPerfil.isPending ? 'Salvando...' : 'Salvar'}</Button>

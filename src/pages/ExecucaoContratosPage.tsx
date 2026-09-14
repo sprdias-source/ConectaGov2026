@@ -1,17 +1,108 @@
 import { useState, useEffect, useMemo } from 'react'
-import { ClipboardCheck, Plus, CheckCircle2, Circle, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { ClipboardCheck, Plus, CheckCircle2, Circle, Trash2, ChevronDown, ChevronUp, Ban } from 'lucide-react'
 import { PageHeader, Card, EmptyState } from '../components/ui/Primitives'
 import { SkeletonList } from '../components/ui/Skeleton'
 import { Button, Input } from '../components/ui/FormControls'
 import { useContractMarcos, useContractMarcosPorContratos } from '../hooks/useContractMarcos'
 import { useClients } from '../hooks/useClients'
+import { useBiddings } from '../hooks/useBiddings'
+import { useContracts, calcContratoStatus } from '../hooks/useContracts'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import { supabase } from '../lib/supabase'
 import { fromContractRow } from '../lib/mappers'
 import { todayLocalISO } from '../lib/dateUtils'
-import type { Contract, ContractMarco } from '../types/domain'
+import type { Contract, ContractMarco, Bidding } from '../types/domain'
 
-function ContratoCard({ contrato, clientName, podeEditar, marcos }: { contrato: Contract; clientName: string; podeEditar: boolean; marcos: ContractMarco[] }) {
+// Barra de vigência só faz sentido pra Mensalista (tem início/término em
+// meses); Individual não tem prazo em meses — o "mês atual" aqui é só uma
+// leitura visual de progresso, nunca usado pra decidir o status (isso é
+// sempre calcContratoStatus).
+function progressoVigencia(dataInicio: string, vigenciaMeses: number): { percent: number; mesAtual: number } {
+  const inicio = new Date(dataInicio + 'T00:00:00')
+  const hoje = new Date(todayLocalISO() + 'T00:00:00')
+  const diasTotais = vigenciaMeses * 30.44
+  const diasPassados = Math.max(0, (hoje.getTime() - inicio.getTime()) / (1000 * 60 * 60 * 24))
+  const percent = Math.min(100, Math.max(0, (diasPassados / diasTotais) * 100))
+  const mesAtual = Math.min(vigenciaMeses, Math.max(1, Math.ceil(diasPassados / 30.44) || 1))
+  return { percent, mesAtual }
+}
+
+function StatusVigenciaContrato({ contrato, bidding, podeEditar, onRescindir }: {
+  contrato: Contract; bidding: Bidding | null; podeEditar: boolean; onRescindir: () => void
+}) {
+  const status = calcContratoStatus(contrato, bidding)
+
+  if (status.tipo === 'rescindido') {
+    return <span className="text-[10.5px] font-bold px-2.5 py-1 rounded-full bg-base-800 text-base-400">Rescindido</span>
+  }
+
+  if (status.tipo === 'sem_vigencia') {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] text-base-500 italic">Sem vigência definida</span>
+        {podeEditar && (
+          <button onClick={onRescindir} title="Marcar como rescindido" className="p-1 text-base-500 hover:text-negative-400 transition">
+            <Ban className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  if (status.tipo === 'licitacao') {
+    const info: Record<Bidding['status'], { label: string; cls: string }> = {
+      'Em Andamento': { label: 'Aguardando resultado da licitação', cls: 'bg-accent-500/10 text-accent-300' },
+      'Ganhou': { label: 'Concluído — Êxito', cls: 'bg-positive-500/10 text-positive-400' },
+      'Perdeu': { label: 'Concluído — Sem êxito', cls: 'bg-base-800 text-base-400' },
+      'Cancelada': { label: 'Licitação cancelada', cls: 'bg-warning-500/10 text-warning-400' },
+      'Desistiu': { label: 'Licitação desistida', cls: 'bg-warning-500/10 text-warning-400' },
+    }
+    const { label, cls } = info[status.biddingStatus]
+    return (
+      <div className="flex items-center gap-2">
+        <span className={`text-[10.5px] font-bold px-2.5 py-1 rounded-full ${cls}`}>{label}</span>
+        {podeEditar && (
+          <button onClick={onRescindir} title="Marcar como rescindido" className="p-1 text-base-500 hover:text-negative-400 transition">
+            <Ban className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  // ativo | vencendo | vencido
+  const { percent, mesAtual } = progressoVigencia(contrato.dataInicio!, contrato.vigenciaMeses!)
+  const corBarra = status.tipo === 'vencido' ? 'bg-negative-500' : status.tipo === 'vencendo' ? 'bg-warning-500' : 'bg-positive-500'
+  const pillCls = status.tipo === 'vencido' ? 'bg-negative-500/10 text-negative-400' : status.tipo === 'vencendo' ? 'bg-warning-500/10 text-warning-400' : 'bg-positive-500/10 text-positive-400'
+  const pillLabel = status.tipo === 'vencido' ? `Vencido há ${Math.abs(status.diasParaTermino)} dias` : status.tipo === 'vencendo' ? `Vencendo — ${status.diasParaTermino} dias` : `Ativo — ${status.diasParaTermino} dias`
+
+  return (
+    <div className="flex items-center gap-3 flex-1 min-w-[220px]">
+      <div className="flex-1 flex flex-col gap-1">
+        <div className="h-1.5 rounded-full bg-base-800 overflow-hidden">
+          <div className={`h-full rounded-full ${corBarra}`} style={{ width: `${percent}%` }} />
+        </div>
+        <div className="flex justify-between text-[10px] text-base-500 font-mono">
+          <span>{new Date(contrato.dataInicio! + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+          <span>Mês {mesAtual} de {contrato.vigenciaMeses}</span>
+          <span>{new Date(status.termino + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <span className={`text-[10.5px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap ${pillCls}`}>{pillLabel}</span>
+        {podeEditar && (
+          <button onClick={onRescindir} title="Marcar como rescindido" className="p-1 text-base-500 hover:text-negative-400 transition">
+            <Ban className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ContratoCard({ contrato, clientName, bidding, podeEditar, marcos, onRescindir }: {
+  contrato: Contract; clientName: string; bidding: Bidding | null; podeEditar: boolean; marcos: ContractMarco[]; onRescindir: () => void
+}) {
   // Só usa este hook pelas mutations — a leitura vem pronta via prop
   // (useContractMarcosPorContratos, uma query só pra todos os contratos da
   // página, em vez de cada card buscar os próprios marcos sozinho).
@@ -43,16 +134,21 @@ function ContratoCard({ contrato, clientName, podeEditar, marcos }: { contrato: 
 
   return (
     <Card className="overflow-hidden">
-      <button onClick={() => setAberto((v) => !v)} className="w-full flex items-center gap-3 px-4 py-3 text-left">
-        <ClipboardCheck className="w-4 h-4 text-accent-400 shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-[13px] font-semibold text-base-200">{clientName}</p>
-          <p className="text-[11px] text-base-500">
-            {totalMarcos > 0 ? `${concluidos}/${totalMarcos} marcos concluídos` : 'Nenhum marco cadastrado ainda'}
-          </p>
-        </div>
-        {aberto ? <ChevronUp className="w-4 h-4 text-base-500" /> : <ChevronDown className="w-4 h-4 text-base-500" />}
-      </button>
+      <div className="w-full flex items-center gap-3 px-4 py-3 flex-wrap">
+        <button onClick={() => setAberto((v) => !v)} className="flex items-center gap-3 text-left shrink-0" style={{ minWidth: 200 }}>
+          <ClipboardCheck className="w-4 h-4 text-accent-400 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-[13px] font-semibold text-base-200">{clientName}</p>
+            <p className="text-[11px] text-base-500">
+              {totalMarcos > 0 ? `${concluidos}/${totalMarcos} marcos concluídos` : 'Nenhum marco cadastrado ainda'}
+            </p>
+          </div>
+        </button>
+        <StatusVigenciaContrato contrato={contrato} bidding={bidding} podeEditar={podeEditar} onRescindir={onRescindir} />
+        <button onClick={() => setAberto((v) => !v)} className="shrink-0">
+          {aberto ? <ChevronUp className="w-4 h-4 text-base-500" /> : <ChevronDown className="w-4 h-4 text-base-500" />}
+        </button>
+      </div>
 
       {aberto && (
         <div className="border-t border-base-800 px-4 py-3 flex flex-col gap-2">
@@ -113,6 +209,8 @@ function ContratoCard({ contrato, clientName, podeEditar, marcos }: { contrato: 
 
 export default function ExecucaoContratosPage() {
   const { clients } = useClients()
+  const { biddings } = useBiddings()
+  const { updateContractStatus } = useContracts()
   // 'contratos' — igual ContratosPage.tsx (mesmo domínio funcional). Antes
   // essa tela checava 'cadastros' por engano: um admin que só desse
   // "edição" em Contratos (sem mexer em Cadastros) não conseguia gerenciar
@@ -136,6 +234,15 @@ export default function ExecucaoContratosPage() {
   }, [])
 
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? 'Cliente removido'
+  const biddingDe = (id: string | null) => biddings.find((b) => b.id === id) ?? null
+
+  const rescindirContrato = (contrato: Contract) => {
+    if (!window.confirm('Marcar este contrato como rescindido?')) return
+    updateContractStatus.mutate(
+      { contract: contrato, newStatus: 'rescindido' },
+      { onSuccess: (updated) => setContratos((cs) => cs.map((c) => (c.id === updated.id ? updated : c))) }
+    )
+  }
 
   const contratoIds = useMemo(() => contratos.map((c) => c.id), [contratos])
   const { marcosPorContrato } = useContractMarcosPorContratos(contratoIds)
@@ -158,7 +265,15 @@ export default function ExecucaoContratosPage() {
         ) : (
           <div className="flex flex-col gap-2">
             {contratos.map((c) => (
-              <ContratoCard key={c.id} contrato={c} clientName={clientName(c.clientId)} podeEditar={podeEditar} marcos={marcosPorContrato.get(c.id) ?? []} />
+              <ContratoCard
+                key={c.id}
+                contrato={c}
+                clientName={clientName(c.clientId)}
+                bidding={biddingDe(c.biddingId)}
+                podeEditar={podeEditar}
+                marcos={marcosPorContrato.get(c.id) ?? []}
+                onRescindir={() => rescindirContrato(c)}
+              />
             ))}
           </div>
         )}

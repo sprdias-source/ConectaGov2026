@@ -12,7 +12,7 @@ const emptyForm: Partial<Client> = {
   name: '', cnpj: '', address: '', cep: '', bairro: '', cidade: '', inscricaoEstadual: '',
   phone: '', whatsapp: '', email: '', website: '',
   bancoNome: '', bancoAgencia: '', bancoConta: '',
-  responsavelNome: '', responsavelCpf: '', responsavelCargo: '', responsavelRg: '', estadoCivil: '',
+  responsavelNome: '', responsavelCpf: '', responsavelCargo: '', responsavelRg: '', responsavelEndereco: '', estadoCivil: '',
   porteEmpresa: '', cabecalhoDeclaracao: '',
   isMensalista: false, valorMensalidade: undefined, periodoMeses: 12, diaVencimento: 10,
   dataCadastro: todayLocalISO(),
@@ -243,6 +243,9 @@ export default function ClientFormModal({
               </Select>
             </Field>
           </div>
+          <Field label="Endereço do Responsável">
+            <Input value={form.responsavelEndereco ?? ''} onChange={(e) => setForm({ ...form, responsavelEndereco: e.target.value })} placeholder="Endereço residencial completo — usado no Módulo de Contratos" />
+          </Field>
         </div>
 
         <div className="border-t border-base-800 pt-4">
