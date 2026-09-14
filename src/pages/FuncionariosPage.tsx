@@ -7,7 +7,8 @@ import { SkeletonTableRows } from '../components/ui/Skeleton'
 import { Field, Select, Input, Button } from '../components/ui/FormControls'
 import { useEmployees } from '../hooks/useEmployees'
 import { useTransactions } from '../hooks/useTransactions'
-import { formatBRL } from '../hooks/useAccountBalances'
+import { useFinancialAccounts } from '../hooks/useFinancialAccounts'
+import { formatBRL, contasInternasIds } from '../hooks/useAccountBalances'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import { supabase } from '../lib/supabase'
 import { fromTransactionRow } from '../lib/mappers'
@@ -76,6 +77,7 @@ function calcularFechamentoFolha(employee: Employee, bonus: number, tipoSaidaSoc
 export default function FuncionariosPage() {
   const { employees, isLoading, addEmployee, updateEmployee, deleteEmployee } = useEmployees()
   const { transactions, addTransactions, updateTransaction } = useTransactions()
+  const { accounts } = useFinancialAccounts()
   // Antes não checava nenhuma permissão — qualquer membro convidado
   // conseguia contratar, editar, remover colaboradores e fechar folha de
   // pagamento, independente do nível configurado.
@@ -103,17 +105,21 @@ export default function FuncionariosPage() {
     () => transactions.filter((t) => ['Folha de Pagamento', ...Object.values(CATEGORIA_SAIDA_SOCIO)].includes(t.category)),
     [transactions]
   )
+  // Lançamento vinculado a uma conta Caixa Interno (fictícia, controle
+  // pessoal) continua aparecendo nas listas abaixo — só fica de fora dos 3
+  // totais, mesma regra do Patrimônio em useAccountBalances.ts.
+  const internalIds = useMemo(() => contasInternasIds(accounts), [accounts])
   const totalPagoCompetencia = payrollTxs
-    .filter((t) => t.status === 'Pago' && t.dueDate.startsWith(competenciaPrefix))
+    .filter((t) => t.status === 'Pago' && t.dueDate.startsWith(competenciaPrefix) && !internalIds.has(t.accountId ?? ''))
     .reduce((s, t) => s + t.value, 0)
-  const totalPendente = payrollTxs.filter((t) => t.status !== 'Pago').reduce((s, t) => s + t.value, 0)
+  const totalPendente = payrollTxs.filter((t) => t.status !== 'Pago' && !internalIds.has(t.accountId ?? '')).reduce((s, t) => s + t.value, 0)
 
   const encargoCategorias = ['INSS a Recolher (GPS)', 'IRRF a Recolher (DARF)', 'FGTS a Recolher']
   const encargoTxs = useMemo(
     () => transactions.filter((t) => encargoCategorias.includes(t.category)),
     [transactions]
   )
-  const totalEncargosPendentes = encargoTxs.filter((t) => t.status !== 'Pago').reduce((s, t) => s + t.value, 0)
+  const totalEncargosPendentes = encargoTxs.filter((t) => t.status !== 'Pago' && !internalIds.has(t.accountId ?? '')).reduce((s, t) => s + t.value, 0)
 
   const selectedEmployee = employees.find((e) => e.id === selectedEmployeeId)
 

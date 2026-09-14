@@ -15,7 +15,7 @@ import { useClients } from '../hooks/useClients'
 import { useBiddings } from '../hooks/useBiddings'
 import { useTransactions } from '../hooks/useTransactions'
 import { useFinancialAccounts } from '../hooks/useFinancialAccounts'
-import { useAccountBalances, formatBRL } from '../hooks/useAccountBalances'
+import { useAccountBalances, formatBRL, contasInternasIds } from '../hooks/useAccountBalances'
 
 const MONTH_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
@@ -26,46 +26,55 @@ export default function DashboardPage() {
   const { accounts } = useFinancialAccounts()
   const { patrimonioTotal } = useAccountBalances(accounts, transactions)
 
+  // Lançamentos vinculados a uma conta Caixa Interno (fictícia, controle
+  // pessoal) não entram em nenhum KPI/gráfico do Dashboard — mesma regra já
+  // aplicada ao Patrimônio Total acima, agora estendida a todo o resto da
+  // tela, que até então somava esses lançamentos junto com dinheiro real.
+  const transactionsReais = useMemo(() => {
+    const internalIds = contasInternasIds(accounts)
+    return transactions.filter((t) => !internalIds.has(t.accountId ?? ''))
+  }, [transactions, accounts])
+
   const now = new Date()
   const currentYear = now.getFullYear()
   const todayStr = todayLocalISO()
 
   const kpis = useMemo(() => {
-    const aReceberPendente = transactions
+    const aReceberPendente = transactionsReais
       .filter((t) => t.type === 'Receber' && t.status !== 'Pago')
       .reduce((sum, t) => sum + t.value, 0)
 
-    const aPagarPendente = transactions
+    const aPagarPendente = transactionsReais
       .filter((t) => t.type === 'Pagar' && t.status !== 'Pago')
       .reduce((sum, t) => sum + t.value, 0)
 
-    const atrasados = transactions.filter((t) => t.status === 'Atrasado')
+    const atrasados = transactionsReais.filter((t) => t.status === 'Atrasado')
     const atrasadosValor = atrasados.reduce((sum, t) => sum + t.value, 0)
 
-    const comissaoProjetada = transactions
+    const comissaoProjetada = transactionsReais
       .filter((t) => t.category === 'Comissão de Êxito (Projetada - 12 meses)' && t.status !== 'Pago')
       .reduce((sum, t) => sum + t.value, 0)
 
     return { aReceberPendente, aPagarPendente, atrasados: atrasados.length, atrasadosValor, comissaoProjetada }
-  }, [transactions])
+  }, [transactionsReais])
 
   const monthlyFlow = useMemo(() => {
     const data = MONTH_LABELS.map((label, idx) => {
       const monthStr = String(idx + 1).padStart(2, '0')
       const prefix = `${currentYear}-${monthStr}`
-      const entradas = transactions
+      const entradas = transactionsReais
         .filter((t) => t.type === 'Receber' && t.status === 'Pago' && t.paymentDate?.startsWith(prefix))
         .reduce((s, t) => s + t.value, 0)
-      const saidas = transactions
+      const saidas = transactionsReais
         .filter((t) => t.type === 'Pagar' && t.status === 'Pago' && t.paymentDate?.startsWith(prefix))
         .reduce((s, t) => s + t.value, 0)
-      const aReceber = transactions
+      const aReceber = transactionsReais
         .filter((t) => t.type === 'Receber' && t.dueDate.startsWith(prefix))
         .reduce((s, t) => s + t.value, 0)
       return { mes: label, entradas, saidas, saldo: entradas - saidas, aReceber }
     })
     return data
-  }, [transactions, currentYear])
+  }, [transactionsReais, currentYear])
 
   // Delta de "saúde do caixa" comparando o resultado líquido (entradas -
   // saídas) do mês atual com o mês anterior — usado no card de Patrimônio
@@ -97,21 +106,21 @@ export default function DashboardPage() {
 
   const categoryBreakdown = useMemo(() => {
     const map = new Map<string, number>()
-    transactions
+    transactionsReais
       .filter((t) => t.type === 'Receber' && t.status !== 'Pago')
       .forEach((t) => map.set(t.category, (map.get(t.category) ?? 0) + t.value))
     return Array.from(map.entries())
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 6)
-  }, [transactions])
+  }, [transactionsReais])
 
   const upcoming = useMemo(() => {
-    return transactions
+    return transactionsReais
       .filter((t) => t.status !== 'Pago' && t.dueDate >= todayStr)
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
       .slice(0, 6)
-  }, [transactions, todayStr])
+  }, [transactionsReais, todayStr])
 
   const winRate = biddings.length > 0
     ? Math.round((biddings.filter((b) => b.status === 'Ganhou').length / biddings.filter((b) => b.status === 'Ganhou' || b.status === 'Perdeu').length || 0) * 100)
@@ -125,11 +134,11 @@ export default function DashboardPage() {
     const editais = biddings.length
     const disputas = biddings.filter((b) => b.status === 'Em Andamento').length
     const vitorias = biddings.filter((b) => b.status === 'Ganhou').length
-    const comissaoPrevista = transactions
+    const comissaoPrevista = transactionsReais
       .filter((t) => t.status !== 'Pago' && (t.category.startsWith('Comissão') || t.category === 'Taxa de Participação Individual'))
       .reduce((s, t) => s + t.value, 0)
     return { editais, disputas, vitorias, comissaoPrevista }
-  }, [biddings, transactions])
+  }, [biddings, transactionsReais])
 
   return (
     <div className="pb-10">

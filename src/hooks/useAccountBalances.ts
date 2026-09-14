@@ -9,10 +9,21 @@ import type { FinancialAccount, Transaction } from '../types/domain'
 const toCents = (value: number): number => Math.round(value * 100)
 const fromCents = (cents: number): number => cents / 100
 
+// Conjunto de IDs de contas do tipo INTERNO (Caixa Interno — controle
+// pessoal, fictício). Reutilizada por qualquer tela que soma valores de
+// `transactions` e precisa excluir esses lançamentos do resultado — sem
+// isso, cada tela reimplementava o mesmo `accounts.filter(...).map(...)`
+// e era fácil esquecer de aplicar em alguma (foi exatamente o que
+// aconteceu: Dashboard, Fluxo de Caixa, DRE, Simples Nacional e outros
+// somavam Caixa Interno junto com dinheiro real até essa correção).
+export function contasInternasIds(accounts: FinancialAccount[]): Set<string> {
+  return new Set(accounts.filter((a) => a.type === 'INTERNO').map((a) => a.id))
+}
+
 export function useAccountBalances(accounts: FinancialAccount[], transactions: Transaction[]) {
   return useMemo(() => {
     // Transações vinculadas a contas INTERNO também ficam fora do cálculo
-    const internalAccountIds = new Set(accounts.filter((a) => a.type === 'INTERNO').map((a) => a.id))
+    const internalAccountIds = contasInternasIds(accounts)
     const paidTxs = transactions.filter((t) => t.status === 'Pago' && !internalAccountIds.has(t.accountId ?? ''))
 
     // CORREÇÃO DE BUG: o sistema antigo (mockData) usava IDs fixos como

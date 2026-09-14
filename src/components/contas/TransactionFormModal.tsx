@@ -68,6 +68,17 @@ export default function TransactionFormModal({
 
   const categories = form.type === 'Pagar' ? categoriesPagar : categoriesReceber
 
+  // Um lançamento "de verdade" (vinculado a cliente, licitação ou empenho)
+  // nunca pode ser lançado numa conta Caixa Interno — ela é fictícia,
+  // controle pessoal, e não deve entrar em nenhum cálculo financeiro real
+  // (ver useAccountBalances.ts). Mantém a opção só se já era o valor salvo
+  // (edição de um lançamento antigo já cadastrado assim), pra não apagar
+  // silenciosamente um dado existente.
+  const vinculadoAoNegocio = !!(form.clientId || form.biddingId || form.empenhoId)
+  const contasSelecionaveis = vinculadoAoNegocio
+    ? accounts.filter((a) => a.type !== 'INTERNO' || a.id === form.accountId)
+    : accounts
+
   const handleTypeChange = (type: TransactionType) => {
     const newCats = type === 'Pagar' ? categoriesPagar : categoriesReceber
     setForm({ ...form, type, category: newCats[0] ?? '' })
@@ -168,7 +179,7 @@ export default function TransactionFormModal({
           <Field label="Conta Vinculada">
             <Select value={form.accountId ?? ''} onChange={(e) => setForm({ ...form, accountId: e.target.value || null })}>
               <option value="">Não definida</option>
-              {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              {contasSelecionaveis.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </Select>
           </Field>
         </div>

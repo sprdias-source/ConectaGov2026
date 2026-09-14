@@ -1,9 +1,10 @@
 import { useMemo } from 'react'
 import { Users, Percent } from 'lucide-react'
 import { Card } from '../ui/Primitives'
-import { formatBRL } from '../../hooks/useAccountBalances'
+import { formatBRL, contasInternasIds } from '../../hooks/useAccountBalances'
 import { useEmployees } from '../../hooks/useEmployees'
 import { useTransactions } from '../../hooks/useTransactions'
+import { useFinancialAccounts } from '../../hooks/useFinancialAccounts'
 import { useSimplesNacional } from '../../hooks/useSimplesNacional'
 import { useRegimeTributario } from '../../hooks/useRegimeTributario'
 import { todayLocalISO } from '../../lib/dateUtils'
@@ -13,17 +14,26 @@ const CATEGORIAS_FOLHA = ['Folha de Pagamento', 'Pró-Labore']
 export default function AbaPessoal() {
   const { employees } = useEmployees()
   const { transactions } = useTransactions()
+  const { accounts } = useFinancialAccounts()
   const { calcularRbt12 } = useSimplesNacional()
   const { vigente } = useRegimeTributario()
 
   const activeEmployees = employees.filter((e) => e.isActive)
   const competenciaAtual = todayLocalISO().slice(0, 7)
 
+  // Lançamento vinculado a uma conta Caixa Interno (fictícia, controle
+  // pessoal) não é folha de pagamento de verdade — mesma regra do
+  // Patrimônio em useAccountBalances.ts.
+  const transactionsReais = useMemo(() => {
+    const internalIds = contasInternasIds(accounts)
+    return transactions.filter((t) => !internalIds.has(t.accountId ?? ''))
+  }, [transactions, accounts])
+
   const folhaMesAtual = useMemo(
-    () => transactions
+    () => transactionsReais
       .filter((t) => t.type === 'Pagar' && CATEGORIAS_FOLHA.includes(t.category) && t.dueDate.slice(0, 7) === competenciaAtual)
       .reduce((s, t) => s + t.value, 0),
-    [transactions, competenciaAtual]
+    [transactionsReais, competenciaAtual]
   )
 
   // Fator R: (folha + pró-labore dos últimos 12 meses) ÷ RBT12 — define se o
@@ -33,7 +43,7 @@ export default function AbaPessoal() {
     const [ano, mes] = competenciaAtual.split('-').map(Number)
     const inicio = new Date(ano, mes - 12, 1)
     const fim = new Date(ano, mes - 1, 1)
-    const folha = transactions
+    const folha = transactionsReais
       .filter((t) => t.type === 'Pagar' && CATEGORIAS_FOLHA.includes(t.category))
       .filter((t) => {
         const d = new Date(t.dueDate + 'T12:00:00')
@@ -43,7 +53,7 @@ export default function AbaPessoal() {
       .reduce((s, t) => s + t.value, 0)
     const rbt = calcularRbt12(competenciaAtual)
     return { folha12Meses: folha, rbt12: rbt, fatorR: rbt > 0 ? (folha / rbt) * 100 : 0 }
-  }, [transactions, competenciaAtual, calcularRbt12])
+  }, [transactionsReais, competenciaAtual, calcularRbt12])
 
   return (
     <div className="px-6 mt-4 pb-10 flex flex-col gap-4">

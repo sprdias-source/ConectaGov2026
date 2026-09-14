@@ -4,6 +4,8 @@ import { Bell, AlertOctagon, FileWarning, Clock, Globe, Send } from 'lucide-reac
 import { useSessoesDeRisco } from '../../hooks/useSessoesDeRisco'
 import { useAllClientDocuments } from '../../hooks/useClientDocuments'
 import { useTransactions } from '../../hooks/useTransactions'
+import { useFinancialAccounts } from '../../hooks/useFinancialAccounts'
+import { contasInternasIds } from '../../hooks/useAccountBalances'
 import { useAllClientPlatforms, calcPlatformStatus } from '../../hooks/useClientPlatforms'
 import { useOpportunities, calcOpportunityStatus } from '../../hooks/useOpportunities'
 import { useClients } from '../../hooks/useClients'
@@ -25,6 +27,7 @@ export default function NotificationBell() {
   const { sessoesDeRisco } = useSessoesDeRisco()
   const { documents: clientDocuments } = useAllClientDocuments()
   const { transactions } = useTransactions()
+  const { accounts } = useFinancialAccounts()
   const { clientPlatforms } = useAllClientPlatforms()
   const { opportunities } = useOpportunities()
   const { clients } = useClients()
@@ -38,7 +41,11 @@ export default function NotificationBell() {
   }, [])
 
   const certidoesVencendo = clientDocuments.filter((d) => d.status === 'vencendo' || d.status === 'vencido').length
-  const financeiroAtrasado = transactions.filter((t) => t.status === 'Atrasado').length
+  // Lançamento vinculado a uma conta Caixa Interno (fictícia, controle
+  // pessoal) não deve gerar alerta financeiro — mesma regra do Patrimônio
+  // em useAccountBalances.ts.
+  const internalIds = contasInternasIds(accounts)
+  const financeiroAtrasado = transactions.filter((t) => t.status === 'Atrasado' && !internalIds.has(t.accountId ?? '')).length
   const plataformasVencendo = clientPlatforms.filter((cp) => {
     const status = calcPlatformStatus(cp.dataVencimento, cp.diasAvisoVencimento)
     return status === 'vencendo' || status === 'vencida'
