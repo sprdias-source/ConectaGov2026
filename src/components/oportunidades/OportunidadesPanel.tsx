@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
 import {
   Globe, MapPin, Plus, X, ChevronDown, ChevronRight, Upload, Eye, Trash2, Sparkles,
-  Check, XCircle, ArrowRight, ExternalLink,
+  Check, XCircle, ArrowRight, ExternalLink, LayoutGrid, ClipboardList, FileText, Calendar,
 } from 'lucide-react'
 import { Button, Input, Select } from '../ui/FormControls'
 import { Card } from '../ui/Primitives'
+import Modal from '../ui/Modal'
 import ErrorAlert from '../ui/ErrorAlert'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import PdfViewerModal from '../ui/PdfViewerModal'
@@ -19,7 +20,7 @@ import { useAnaliseJuridicaOportunidade, useLimparAnaliseJuridicaOportunidade } 
 import type { TipoAnaliseJuridica } from '../../hooks/useAnaliseJuridicaEdital'
 import { usePlatforms } from '../../hooks/usePlatforms'
 import { useClients } from '../../hooks/useClients'
-import { useAttachedFiles } from '../../hooks/useAttachedFiles'
+import { useAttachedFiles, useOpportunityIdsComEdital } from '../../hooks/useAttachedFiles'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
 import { useToast } from '../../hooks/useToast'
 import { mensagemDeErro } from '../../lib/errors'
@@ -44,6 +45,88 @@ function StatusPill({ status, opportunity }: { status: OpportunityStatus; opport
       ? `Aguardando · ${dias! < 0 ? 'atrasada' : `vence em ${dias}d`}`
       : 'Aguardando resposta'
   return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${map[status as 'aguardando' | 'urgente' | 'vencida']}`}>{label}</span>
+}
+
+const formatarDataSessao = (dataSessao: string) => new Date(dataSessao + 'T12:00:00').toLocaleDateString('pt-BR')
+
+type SegmentoQuadroOportunidade = 'aguardando' | 'aceita' | 'convertida' | 'recusada'
+
+const COLUNAS_QUADRO: { id: SegmentoQuadroOportunidade; titulo: string; cor: string }[] = [
+  { id: 'aguardando', titulo: 'Aguardando Resposta', cor: 'border-t-base-500' },
+  { id: 'aceita', titulo: 'Aceita — Falta Converter', cor: 'border-t-positive-500' },
+  { id: 'convertida', titulo: 'Convertida em Licitação', cor: 'border-t-accent-500' },
+  { id: 'recusada', titulo: 'Recusada', cor: 'border-t-base-600' },
+]
+
+function ColunaOportunidade({ titulo, cor, itens, children }: { titulo: string; cor: string; itens: number; children: React.ReactNode }) {
+  return (
+    <div className={`w-64 shrink-0 bg-base-900/40 border border-base-800 border-t-2 ${cor} rounded-xl p-3`}>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[11px] font-bold uppercase tracking-wider text-base-400">{titulo}</p>
+        <span className="text-[10px] font-bold bg-base-800 text-base-400 rounded-full px-2 py-0.5">{itens}</span>
+      </div>
+      <div className="flex flex-col gap-2">{children}</div>
+    </div>
+  )
+}
+
+// Card do quadro — colunas na borda esquerda mudam de cor conforme a
+// urgência (mesmo cálculo de calcOpportunityStatus), sem precisar de uma
+// coluna própria só pra "urgente"/"vencida" dentro de "Aguardando Resposta".
+function CardOportunidade({
+  o, status, clienteNome, plataformaNome, municipio, temEdital, onAbrir,
+}: {
+  o: Opportunity
+  status: OpportunityStatus
+  clienteNome: string
+  plataformaNome: string
+  municipio: string | undefined
+  temEdital: boolean
+  onAbrir: () => void
+}) {
+  const corBorda = o.resposta === 'recusada'
+    ? 'border-l-base-600 opacity-70'
+    : o.biddingId
+      ? 'border-l-accent-500'
+      : o.resposta === 'aceita'
+        ? 'border-l-positive-500'
+        : status === 'vencida'
+          ? 'border-l-negative-500'
+          : status === 'urgente'
+            ? 'border-l-warning-500'
+            : 'border-l-base-500'
+
+  return (
+    <button
+      onClick={onAbrir}
+      className={`w-full text-left bg-base-850 border border-base-800 border-l-[3px] ${corBorda} rounded-lg px-3 py-2.5 flex flex-col gap-1.5 hover:border-base-700 transition`}
+    >
+      <p className="text-[12px] font-semibold text-base-100 truncate">{clienteNome}</p>
+      <p className="text-[11.5px] text-base-300 line-clamp-2">{o.titulo || '(sem título)'}</p>
+      <div className="flex items-center flex-wrap gap-x-2.5 gap-y-0.5 text-[10.5px] text-base-500">
+        <span className="flex items-center gap-1"><Globe className="w-3 h-3 shrink-0" /> {plataformaNome}</span>
+        {municipio && <span className="flex items-center gap-1"><MapPin className="w-3 h-3 shrink-0" /> {municipio}</span>}
+      </div>
+      {o.motivoRecusa && <p className="text-[10.5px] text-base-500 italic">"{o.motivoRecusa}"</p>}
+      <div className="flex items-center justify-between gap-2 mt-1 pt-1.5 border-t border-base-800">
+        {o.biddingId ? (
+          <span className="text-[11px] font-semibold text-accent-300">Ver licitação →</span>
+        ) : (
+          <StatusPill status={status} opportunity={o} />
+        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {o.dataSessao && !o.biddingId && (
+            <span className={`flex items-center gap-1 text-[10px] font-mono font-semibold ${status === 'vencida' ? 'text-negative-400' : status === 'urgente' ? 'text-warning-400' : 'text-base-500'}`}>
+              <Calendar className="w-3 h-3" /> {formatarDataSessao(o.dataSessao)}
+            </span>
+          )}
+          {!o.biddingId && o.resposta !== 'recusada' && (
+            <FileText className={`w-3 h-3 ${temEdital ? 'text-accent-400' : 'text-base-700'}`} title={temEdital ? 'Edital anexado' : 'Edital ainda não enviado'} />
+          )}
+        </div>
+      </div>
+    </button>
+  )
 }
 
 const FORM_VAZIO = {
@@ -417,12 +500,39 @@ export default function OportunidadesPanel() {
   const podeEditar = nivel === 'edicao' && !carregandoPermissao
   const { showToast } = useToast()
 
+  const { opportunityIdsComEdital } = useOpportunityIdsComEdital()
+
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [mostrarForm, setMostrarForm] = useState(false)
   const [form, setForm] = useState(FORM_VAZIO)
   const [erroForm, setErroForm] = useState<string | null>(null)
   const [visualizando, setVisualizando] = useState<{ nome: string; url: string | null } | null>(null)
   const { getDownloadUrl } = useAttachedFiles('oportunidade')
+
+  // "quadro" (Kanban) é o padrão — organiza pelo que fazer com cada
+  // oportunidade agora (aguardando resposta → aceita/recusada → convertida)
+  // em vez da lista única ordenada só por prazo. Preferência persistida do
+  // mesmo jeito que o Kanban de Licitações (mesma chave de padrão, mas
+  // própria pra não interferir naquela tela).
+  const [visualizacao, setVisualizacao] = useState<'quadro' | 'lista'>(() => {
+    try {
+      return localStorage.getItem('cg_oportunidades_visualizacao') === 'lista' ? 'lista' : 'quadro'
+    } catch {
+      return 'quadro'
+    }
+  })
+  const mudarVisualizacao = (v: 'quadro' | 'lista') => {
+    setVisualizacao(v)
+    try {
+      localStorage.setItem('cg_oportunidades_visualizacao', v)
+    } catch {
+      // Navegação privada, cota estourada etc. — só não persiste pra próxima sessão.
+    }
+  }
+  const [clienteFiltroId, setClienteFiltroId] = useState('')
+  const [platformFiltroId, setPlatformFiltroId] = useState('')
+  const [abrindoId, setAbrindoId] = useState<string | null>(null)
+  const abrindo = abrindoId ? opportunities.find((o) => o.id === abrindoId) ?? null : null
 
   // Oportunidade recém-criada: em vez de cair escondida em algum lugar da
   // lista ordenada por prazo (às vezes lá embaixo), fica "presa" bem onde o
@@ -454,6 +564,37 @@ export default function OportunidadesPanel() {
     const diasB = diasParaSessao(b.dataSessao) ?? Infinity
     return diasA - diasB
   })
+
+  const filtradas = useMemo(
+    () => ordenadas.filter((o) =>
+      (!clienteFiltroId || o.clientId === clienteFiltroId) &&
+      (!platformFiltroId || o.platformId === platformFiltroId)
+    ),
+    [ordenadas, clienteFiltroId, platformFiltroId]
+  )
+
+  // Clientes/plataformas com pelo menos uma oportunidade — só esses aparecem
+  // como opção de filtro, pra não listar cadastros que nunca tiveram nenhuma.
+  const clientesComOportunidade = useMemo(() => {
+    const ids = new Set(opportunities.map((o) => o.clientId).filter((id): id is string => !!id))
+    return clients.filter((c) => ids.has(c.id)).sort((a, b) => a.name.localeCompare(b.name))
+  }, [opportunities, clients])
+  const plataformasComOportunidade = useMemo(() => {
+    const ids = new Set(opportunities.map((o) => o.platformId).filter((id): id is string => !!id))
+    return platforms.filter((p) => ids.has(p.id)).sort((a, b) => a.nome.localeCompare(b.nome))
+  }, [opportunities, platforms])
+
+  // Colunas do quadro: o que fazer com cada oportunidade agora, não um
+  // status abstrato — a urgência (vencida/urgente/aguardando) continua
+  // visível, só que vira a cor da borda do card em vez de uma coluna própria
+  // (ver CardOportunidade), pra o quadro não crescer pra 6+ colunas.
+  const colunasQuadro = useMemo(() => {
+    const aguardando = filtradas.filter((o) => o.resposta === 'pendente' && !o.biddingId)
+    const aceita = filtradas.filter((o) => o.resposta === 'aceita' && !o.biddingId)
+    const convertida = [...filtradas.filter((o) => !!o.biddingId)].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    const recusada = [...filtradas.filter((o) => o.resposta === 'recusada' && !o.biddingId)].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    return { aguardando, aceita, convertida, recusada }
+  }, [filtradas])
 
   const handleVisualizar = async (nome: string, storagePath: string) => {
     setVisualizando({ nome, url: null })
@@ -521,12 +662,59 @@ export default function OportunidadesPanel() {
           <h3 className="text-sm font-bold text-base-100">Oportunidades</h3>
           <p className="text-[11px] text-base-500 mt-0.5">Editais mandados pro cliente avaliar, antes de virarem licitação de verdade</p>
         </div>
-        {podeEditar && !mostrarForm && (
-          <button onClick={() => setMostrarForm(true)} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-950 bg-accent-500 hover:bg-accent-400 rounded-lg px-3 py-1.5 transition">
-            <Plus className="w-3.5 h-3.5" /> Nova oportunidade
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-base-900/60 border border-base-700/50 rounded-lg p-1">
+            <button
+              onClick={() => mudarVisualizacao('quadro')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11.5px] font-semibold transition ${
+                visualizacao === 'quadro' ? 'bg-accent-500/15 text-accent-300' : 'text-base-500 hover:text-base-300'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" /> Quadro
+            </button>
+            <button
+              onClick={() => mudarVisualizacao('lista')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11.5px] font-semibold transition ${
+                visualizacao === 'lista' ? 'bg-accent-500/15 text-accent-300' : 'text-base-500 hover:text-base-300'
+              }`}
+            >
+              <ClipboardList className="w-3.5 h-3.5" /> Lista
+            </button>
+          </div>
+          {podeEditar && !mostrarForm && (
+            <button onClick={() => setMostrarForm(true)} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-950 bg-accent-500 hover:bg-accent-400 rounded-lg px-3 py-1.5 transition">
+              <Plus className="w-3.5 h-3.5" /> Nova oportunidade
+            </button>
+          )}
+        </div>
       </div>
+
+      {(clientesComOportunidade.length > 0 || plataformasComOportunidade.length > 0) && (
+        <div className="flex items-center gap-3 flex-wrap bg-base-900/60 border border-base-700/50 rounded-xl p-3">
+          <div className="flex items-center gap-2 w-44">
+            <span className="text-[10px] uppercase tracking-wider text-base-500 font-bold shrink-0">Cliente</span>
+            <Select value={clienteFiltroId} onChange={(e) => setClienteFiltroId(e.target.value)} className="!py-1.5 !text-[12px]">
+              <option value="">Todos</option>
+              {clientesComOportunidade.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+          </div>
+          <div className="flex items-center gap-2 w-44">
+            <span className="text-[10px] uppercase tracking-wider text-base-500 font-bold shrink-0">Plataforma</span>
+            <Select value={platformFiltroId} onChange={(e) => setPlatformFiltroId(e.target.value)} className="!py-1.5 !text-[12px]">
+              <option value="">Todas</option>
+              {plataformasComOportunidade.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+            </Select>
+          </div>
+          {(clienteFiltroId || platformFiltroId) && (
+            <button onClick={() => { setClienteFiltroId(''); setPlatformFiltroId('') }} className="text-[11px] font-semibold text-accent-300 hover:underline">
+              Limpar filtros
+            </button>
+          )}
+          <span className="text-[12px] text-base-500 ml-auto">
+            Mostrando <strong className="text-base-200 font-semibold">{filtradas.length}</strong> de {opportunities.length} oportunidade{opportunities.length === 1 ? '' : 's'}
+          </span>
+        </div>
+      )}
 
       {platforms.some((p) => p.ativo) && (
         <Card className="p-3">
@@ -635,9 +823,53 @@ export default function OportunidadesPanel() {
         <p className="text-[12px] text-base-500 italic py-2">Carregando...</p>
       ) : ordenadas.length === 0 ? (
         <p className="text-[12px] text-base-500 italic py-2">Nenhuma oportunidade cadastrada ainda.</p>
+      ) : visualizacao === 'quadro' ? (
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {COLUNAS_QUADRO.map(({ id, titulo, cor }) => {
+            const itens = colunasQuadro[id]
+            return (
+              <ColunaOportunidade key={id} titulo={titulo} cor={cor} itens={itens.length}>
+                {itens.length === 0 ? (
+                  <p className="text-[11px] text-base-600 italic text-center py-6">Nenhuma aqui</p>
+                ) : (
+                  itens.map((o) => {
+                    if (id === 'convertida') {
+                      return (
+                        <Link
+                          key={o.id}
+                          to={`/licitacoes/${o.biddingId}`}
+                          className="w-full text-left bg-base-850 border border-base-800 border-l-[3px] border-l-accent-500 rounded-lg px-3 py-2.5 flex flex-col gap-1.5 hover:border-base-700 transition"
+                        >
+                          <p className="text-[12px] font-semibold text-base-100 truncate">{clientName(o.clientId)}</p>
+                          <p className="text-[11.5px] text-base-300 line-clamp-2">{o.titulo || '(sem título)'}</p>
+                          <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-base-800">
+                            <span className="text-[10px] text-base-500">No Kanban de Licitações</span>
+                            <span className="text-[11px] font-semibold text-accent-300">Ver →</span>
+                          </div>
+                        </Link>
+                      )
+                    }
+                    return (
+                      <CardOportunidade
+                        key={o.id}
+                        o={o}
+                        status={calcOpportunityStatus(o)}
+                        clienteNome={clientName(o.clientId)}
+                        plataformaNome={platformInfo(o.platformId)?.nome ?? 'Plataforma removida'}
+                        municipio={municipioPorOportunidade[o.id]}
+                        temEdital={opportunityIdsComEdital.has(o.id)}
+                        onAbrir={() => setAbrindoId(o.id)}
+                      />
+                    )
+                  })
+                )}
+              </ColunaOportunidade>
+            )
+          })}
+        </div>
       ) : (
         <div className="flex flex-col gap-1.5">
-          {ordenadas.map((o) => {
+          {filtradas.map((o) => {
             const status = calcOpportunityStatus(o)
             const aberto = expandedId === o.id
             const plataforma = platformInfo(o.platformId)
@@ -675,6 +907,18 @@ export default function OportunidadesPanel() {
           })}
         </div>
       )}
+
+      <Modal open={!!abrindo} onClose={() => setAbrindoId(null)} title={abrindo ? `${clientName(abrindo.clientId)} — ${abrindo.titulo || '(sem título)'}` : ''} maxWidth="max-w-5xl">
+        {abrindo && (
+          <OportunidadeDetalhe
+            opportunity={abrindo}
+            podeEditar={podeEditar}
+            onVisualizar={handleVisualizar}
+            onExcluida={() => setAbrindoId(null)}
+            onResolvida={() => {}}
+          />
+        )}
+      </Modal>
 
       <PdfViewerModal open={!!visualizando} onClose={() => setVisualizando(null)} nome={visualizando?.nome ?? ''} url={visualizando?.url ?? null} />
     </div>
