@@ -7,6 +7,7 @@ import {
 import { Button, Input, Select } from '../ui/FormControls'
 import { Card } from '../ui/Primitives'
 import Modal from '../ui/Modal'
+import TopScrollTable from '../ui/TopScrollTable'
 import ErrorAlert from '../ui/ErrorAlert'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import PdfViewerModal from '../ui/PdfViewerModal'
@@ -826,7 +827,8 @@ export default function OportunidadesPanel() {
       ) : ordenadas.length === 0 ? (
         <p className="text-[12px] text-base-500 italic py-2">Nenhuma oportunidade cadastrada ainda.</p>
       ) : visualizacao === 'quadro' ? (
-        <div className="flex gap-3 overflow-x-auto pb-2">
+        <TopScrollTable>
+          <div className="flex gap-3 min-w-max pb-2">
           {COLUNAS_QUADRO.map(({ id, titulo, cor }) => {
             const itens = colunasQuadro[id]
             return (
@@ -868,7 +870,8 @@ export default function OportunidadesPanel() {
               </ColunaOportunidade>
             )
           })}
-        </div>
+          </div>
+        </TopScrollTable>
       ) : (
         <div className="flex flex-col gap-1.5">
           {filtradas.map((o) => {
