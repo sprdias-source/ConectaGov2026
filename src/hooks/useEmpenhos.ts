@@ -101,7 +101,14 @@ export function statusExibidoEmpenho(empenho: Empenho, transactions: Transaction
 //   REPETEM o valor total em cada uma — não divide. Modela cobranças
 //   recorrentes de contrato (ex: manutenção mensal), onde N pode ser
 //   aumentado depois se o contrato for aditado/prorrogado.
-export function buildCommissionTransactions(emp: Empenho): Partial<Transaction>[] {
+// `totalSerie` só é informado por quem gera/atualiza um empenho que faz
+// parte de uma Série Recorrente (ver EmpenhoRecorrenteItem/addSerieEmpenhos
+// acima) — cada mês vira um EMPENHO PRÓPRIO, então sem isso a descrição da
+// comissão de cada um ficava idêntica ("Comissão s/ Empenho a definir..."),
+// impossível de distinguir qual mês da série é qual em Contas &
+// Lançamentos. Com o total, a descrição ganha "— i/N" (a mesma posição já
+// mostrada como selo "🔁 i/N" em EmpenhosTab.tsx).
+export function buildCommissionTransactions(emp: Empenho, totalSerie?: number): Partial<Transaction>[] {
   if (emp.status === 'Cancelado') return []
   // Sem valor de comissão nenhum (ex: 0% de comissão, digitado ou
   // deixado zerado sem querer), dividir por N parcelas só criaria N
@@ -109,7 +116,10 @@ export function buildCommissionTransactions(emp: Empenho): Partial<Transaction>[
   // parcela faz sentido nesse caso.
   if (!emp.valorComissaoTotal || emp.valorComissaoTotal <= 0) return []
 
-  const baseDescription = `Comissão s/ Empenho ${emp.numeroEmpenho ?? 'a definir'} (${emp.percentualComissao}% de R$ ${emp.valorEmpenhada.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`
+  const posicaoSerie = emp.grupoRecorrenciaId && emp.numeroOrdemRecorrencia && totalSerie
+    ? ` — ${emp.numeroOrdemRecorrencia}/${totalSerie}`
+    : ''
+  const baseDescription = `Comissão s/ Empenho ${emp.numeroEmpenho ?? 'a definir'}${posicaoSerie} (${emp.percentualComissao}% de R$ ${emp.valorEmpenhada.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`
 
   // Vencimento da comissão acompanha a Data de Vencimento do EMPENHO
   // (escolhida no calendário ou calculada por "N dias após o empenho" —
@@ -297,7 +307,7 @@ export function useEmpenhos() {
           const created = fromEmpenhoRow(empData)
           criados.push(created)
 
-          const txs = buildCommissionTransactions(created)
+          const txs = buildCommissionTransactions(created, itens.length)
           if (txs.length > 0) {
             const { error: txError } = await supabase
               .from('transactions')
@@ -335,7 +345,20 @@ export function useEmpenhos() {
 
       await supabase.from('transactions').delete().eq('empenho_id', updated.id).neq('status', 'Pago')
 
-      const allTxs = buildCommissionTransactions(updated)
+      // Se este empenho faz parte de uma Série Recorrente, busca o total de
+      // empenhos do mesmo grupo pra recompor a posição "i/N" na descrição
+      // da comissão — o total não muda ao editar um item, só precisa ser
+      // reconsultado porque updateEmpenho lida com um empenho por vez.
+      let totalSerie: number | undefined
+      if (updated.grupoRecorrenciaId) {
+        const { count } = await supabase
+          .from('empenhos')
+          .select('id', { count: 'exact', head: true })
+          .eq('grupo_recorrencia_id', updated.grupoRecorrenciaId)
+        totalSerie = count ?? undefined
+      }
+
+      const allTxs = buildCommissionTransactions(updated, totalSerie)
       const { data: paidTxs } = await supabase
         .from('transactions')
         .select('projection_month_number, value')
