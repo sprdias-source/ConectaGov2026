@@ -6,6 +6,7 @@ import { useAuth } from './useAuth'
 import { useAuditLog } from './useAuditLog'
 import { addMonths } from './useEmpenhos'
 import { todayLocalISO } from '../lib/dateUtils'
+import { ehArquivoDrive, excluirNoDrive } from '../lib/driveStorage'
 
 const QUERY_KEY = ['contracts']
 
@@ -83,6 +84,41 @@ export function useContracts() {
     },
   })
 
+  const deleteContract = useMutation({
+    mutationFn: async (contract: Contract) => {
+      // O "Contrato Assinado" anexado (ver DocumentUploader em
+      // ContratosPage.tsx) é uma referência solta por entity_type/entity_id
+      // em attached_files, não uma FK de verdade pro contrato — sem essa
+      // limpeza explícita, excluir o contrato deixava o arquivo órfão pra
+      // sempre no Drive/Storage, sem nenhuma tela pra achá-lo de novo.
+      const { data: anexos, error: anexosError } = await supabase
+        .from('attached_files')
+        .select('id, storage_path')
+        .eq('entity_type', 'contrato')
+        .eq('entity_id', contract.id)
+      if (anexosError) throw anexosError
+
+      for (const anexo of anexos ?? []) {
+        if (!anexo.storage_path) continue
+        if (ehArquivoDrive(anexo.storage_path)) {
+          await excluirNoDrive('attached_files', anexo.storage_path).catch(() => {})
+        } else {
+          await supabase.storage.from('client-documents').remove([anexo.storage_path]).catch(() => {})
+        }
+      }
+      if (anexos && anexos.length > 0) {
+        await supabase.from('attached_files').delete().eq('entity_type', 'contrato').eq('entity_id', contract.id)
+      }
+
+      const { error } = await supabase.from('contracts').delete().eq('id', contract.id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEY })
+      logEvent('Excluiu Contrato', 'Excluiu um contrato de prestação de serviços')
+    },
+  })
+
   const updateContractStatus = useMutation({
     mutationFn: async ({ contract, newStatus }: { contract: Contract; newStatus: Contract['status'] }) => {
       const { data, error } = await supabase
@@ -104,6 +140,7 @@ export function useContracts() {
     contracts: query.data ?? [],
     isLoading: query.isLoading,
     addContract,
+    deleteContract,
     updateContractStatus,
   }
 }

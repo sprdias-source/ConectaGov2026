@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { FileSignature, Copy, Printer, Lock, Pencil, Check, RotateCcw, AlertTriangle } from 'lucide-react'
+import { FileSignature, Copy, Printer, Lock, Pencil, Check, RotateCcw, AlertTriangle, Trash2 } from 'lucide-react'
 import { PageHeader, Card } from '../components/ui/Primitives'
 import { Field, Input, Select, Textarea, Button } from '../components/ui/FormControls'
 import DocumentUploader from '../components/ui/DocumentUploader'
@@ -12,7 +12,7 @@ import { useEmpresaPerfil } from '../hooks/useEmpresaPerfil'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { todayLocalISO } from '../lib/dateUtils'
-import type { Client, Bidding, EmpresaPerfil, ContractTipo } from '../types/domain'
+import type { Client, Bidding, EmpresaPerfil, Contract, ContractTipo } from '../types/domain'
 
 const MESES_EXTENSO = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 
@@ -199,7 +199,7 @@ function renderContrato(p: ContratoParams): string {
 export default function ContratosPage() {
   const { clients } = useClients()
   const { biddings } = useBiddings()
-  const { contracts, addContract } = useContracts()
+  const { contracts, addContract, deleteContract } = useContracts()
   const { perfil } = useEmpresaPerfil()
   const { nivel: nivelAcesso, carregando: carregandoPermissao } = usePermissaoFerramenta('contratos')
   const podeEditar = nivelAcesso === 'edicao' && !carregandoPermissao
@@ -220,7 +220,15 @@ export default function ContratosPage() {
   const [modoEdicao, setModoEdicao] = useState(false)
   const [editadoManualmente, setEditadoManualmente] = useState(false)
   const [confirmRegenerarAberto, setConfirmRegenerarAberto] = useState(false)
+  const [confirmDuplicataAberto, setConfirmDuplicataAberto] = useState(false)
+  const [excluindoContrato, setExcluindoContrato] = useState<Contract | null>(null)
   const docRef = useRef<HTMLDivElement>(null)
+  // Guarda síncrona (não é state — não espera o re-render) contra um duplo
+  // clique bem rápido em "Salvar Contrato Gerado": addContract.isPending só
+  // vira true depois que o React processa o próximo render, então dois
+  // cliques dentro do mesmo instante ainda passariam pelo `disabled` do
+  // botão. Zerada nos dois desfechos do salvamento (sucesso ou erro).
+  const salvandoRef = useRef(false)
 
   const client = clients.find((c) => c.id === clientId) ?? null
   const clientBiddings = biddings.filter((b) => b.clientId === clientId)
@@ -293,8 +301,26 @@ export default function ContratosPage() {
 
   const termino = tipo === 'mensalista' ? calcContratoTermino({ dataInicio, vigenciaMeses }) : null
 
-  const handleSave = () => {
-    if (!client || !docRef.current) return
+  // Mesmo cliente + mesmos parâmetros que decidem o texto do contrato — se
+  // já existe um contrato salvo assim, é bem provável que seja um clique
+  // duplicado (ex: duplo clique sem querer em "Salvar Contrato Gerado") em
+  // vez de um segundo contrato de verdade pro mesmo cliente.
+  const contratoDuplicado = useMemo(() => {
+    if (!client) return null
+    return contracts.find((c) =>
+      c.clientId === client.id &&
+      c.tipo === tipo &&
+      c.retentorFixoMensal === valor &&
+      c.comissaoExito === comissao &&
+      c.comarcaForo === comarcaForo &&
+      c.dataAssinatura === dataAssinatura &&
+      (tipo === 'individual' ? c.biddingId === (biddingId || null) : (c.dataInicio === dataInicio && c.vigenciaMeses === vigenciaMeses))
+    ) ?? null
+  }, [contracts, client, tipo, valor, comissao, comarcaForo, dataAssinatura, biddingId, dataInicio, vigenciaMeses])
+
+  const salvarContratoDeVerdade = () => {
+    if (!client || !docRef.current || salvandoRef.current) return
+    salvandoRef.current = true
     addContract.mutate({
       clientId: client.id,
       biddingId: tipo === 'individual' ? (biddingId || null) : null,
@@ -308,7 +334,18 @@ export default function ContratosPage() {
       dataInicio: tipo === 'mensalista' ? dataInicio : null,
       vigenciaMeses: tipo === 'mensalista' ? vigenciaMeses : null,
       status: 'ativo',
+    }, {
+      onSettled: () => { salvandoRef.current = false },
     })
+  }
+
+  const handleSave = () => {
+    if (!client || !docRef.current || salvandoRef.current) return
+    if (contratoDuplicado) {
+      setConfirmDuplicataAberto(true)
+      return
+    }
+    salvarContratoDeVerdade()
   }
 
   const copyText = () => {
@@ -508,6 +545,15 @@ export default function ContratosPage() {
                           {c.tipo === 'individual' ? 'Individual' : 'Mensalista'} · Valor: {c.retentorFixoMensal ? formatBRL(c.retentorFixoMensal) : '—'} · Comissão: {c.comissaoExito}% · {new Date(c.createdAt).toLocaleDateString('pt-BR')}
                         </p>
                       </div>
+                      {podeEditar && (
+                        <button
+                          onClick={() => setExcluindoContrato(c)}
+                          title="Excluir contrato"
+                          className="p-1.5 text-base-500 hover:text-negative-400 hover:bg-base-800 rounded-lg transition shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                     {podeEditar && (
                       <DocumentUploader entityType="contrato" entityId={c.id} category="Contrato" label="Anexar Contrato Assinado" />
@@ -528,6 +574,30 @@ export default function ContratosPage() {
         danger
         onCancel={() => setConfirmRegenerarAberto(false)}
         onConfirm={() => { regenerarDocumento(); setConfirmRegenerarAberto(false) }}
+      />
+
+      <ConfirmDialog
+        open={confirmDuplicataAberto}
+        title="Já existe um contrato igual a este"
+        description={`${client?.name ?? 'Este cliente'} já tem um contrato salvo com os mesmos dados (tipo, valor, comissão, comarca e data de assinatura). Isso costuma acontecer quando "Salvar Contrato Gerado" é clicado duas vezes sem querer. Quer salvar mesmo assim?`}
+        confirmLabel="Salvar mesmo assim"
+        danger
+        onCancel={() => setConfirmDuplicataAberto(false)}
+        onConfirm={() => { setConfirmDuplicataAberto(false); salvarContratoDeVerdade() }}
+      />
+
+      <ConfirmDialog
+        open={!!excluindoContrato}
+        title="Excluir Contrato"
+        description={`Isso apaga o contrato salvo pra ${clients.find((cl) => cl.id === excluindoContrato?.clientId)?.name ?? 'este cliente'} (e o Contrato Assinado anexado a ele, se houver). Não pode ser desfeito.`}
+        confirmLabel="Excluir"
+        danger
+        isLoading={deleteContract.isPending}
+        onCancel={() => setExcluindoContrato(null)}
+        onConfirm={() => {
+          if (!excluindoContrato) return
+          deleteContract.mutate(excluindoContrato, { onSuccess: () => setExcluindoContrato(null) })
+        }}
       />
 
       <style>{`
