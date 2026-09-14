@@ -532,7 +532,7 @@ export default function ContratosPage() {
 
       <style>{`
         .contrato-doc .logo-wrap { text-align: center; margin-bottom: 14px; }
-        .contrato-doc .logo-wrap img { width: 100px; height: auto; }
+        .contrato-doc .logo-wrap img { width: 100px; height: auto; display: block; margin: 0 auto; opacity: .45; }
         .contrato-doc .titulo { text-align: center; font-weight: 700; font-size: 13px; margin: 0 0 16px; }
         .contrato-doc .sec { font-weight: 700; text-decoration: underline; margin: 14px 0 8px; }
         .contrato-doc p { margin: 0 0 9px; text-align: justify; }
