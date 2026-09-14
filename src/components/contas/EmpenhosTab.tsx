@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Plus, Pencil, Trash2, FileSpreadsheet, Ban, CheckCircle2, Repeat, Power, Eye, EyeOff } from 'lucide-react'
+import { Plus, Pencil, Trash2, FileSpreadsheet, Ban, Repeat, Power, Eye, EyeOff } from 'lucide-react'
 import { Button, Field, Select } from '../ui/FormControls'
 import { EmptyState, StatusBadge } from '../ui/Primitives'
 import { formatBRL } from '../../hooks/useAccountBalances'
-import { useEmpenhos, calcEmpenhoVencimentoStatus, type EmpenhoRecorrenteItem } from '../../hooks/useEmpenhos'
+import { useEmpenhos, calcEmpenhoVencimentoStatus, statusExibidoEmpenho, type EmpenhoRecorrenteItem } from '../../hooks/useEmpenhos'
+import { useTransactions } from '../../hooks/useTransactions'
 import { useClients } from '../../hooks/useClients'
 import { useBiddings } from '../../hooks/useBiddings'
 import { usePermissaoFerramenta } from '../../hooks/usePermissaoFerramenta'
@@ -38,6 +39,7 @@ export default function EmpenhosTab() {
     empenhos, isLoading, addEmpenho, addSerieEmpenhos, updateEmpenho, updateEmpenhoStatus, deleteEmpenho,
     toggleEmpenhoActive, checkEmpenhoHasFinancialHistory,
   } = useEmpenhos()
+  const { transactions } = useTransactions()
   const { clients } = useClients()
   const { biddings } = useBiddings()
   const { nivel: nivelFinanceiro, carregando: carregandoPermissao } = usePermissaoFerramenta('financeiro')
@@ -274,19 +276,10 @@ export default function EmpenhosTab() {
                         {(e.modoParcelamento === 'quantidade_fixa' || e.modoParcelamento === 'recorrente') && ')'}
                       </span>
                     </td>
-                    <td className="px-4 py-3"><StatusBadge status={e.status} /></td>
+                    <td className="px-4 py-3"><StatusBadge status={statusExibidoEmpenho(e, transactions)} /></td>
                     {podeEditar && (
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {e.status === 'Pendente' && (
-                            <button
-                              onClick={() => updateEmpenhoStatus.mutate({ empenho: e, newStatus: 'Faturado' })}
-                              title="Marcar como faturado"
-                              className="p-1.5 text-base-400 hover:text-positive-400 hover:bg-base-800 rounded transition"
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
                           {e.status !== 'Cancelado' && (
                             <button
                               onClick={() => updateEmpenhoStatus.mutate({ empenho: e, newStatus: 'Cancelado' })}
