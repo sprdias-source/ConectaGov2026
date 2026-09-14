@@ -121,7 +121,9 @@ function CardOportunidade({
             </span>
           )}
           {!o.biddingId && o.resposta !== 'recusada' && (
-            <FileText className={`w-3 h-3 ${temEdital ? 'text-accent-400' : 'text-base-700'}`} title={temEdital ? 'Edital anexado' : 'Edital ainda não enviado'} />
+            <span title={temEdital ? 'Edital anexado' : 'Edital ainda não enviado'}>
+              <FileText className={`w-3 h-3 ${temEdital ? 'text-accent-400' : 'text-base-700'}`} />
+            </span>
           )}
         </div>
       </div>
