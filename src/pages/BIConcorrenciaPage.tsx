@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import {
-  Target, TrendingUp, Award, Building2, Percent, Lightbulb,
+  Target, TrendingUp, Award, Building2, MapPin, Percent, Lightbulb,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -49,6 +49,29 @@ export default function BIConcorrenciaPage() {
     }
     return Array.from(map.entries())
       .map(([orgao, v]) => ({ orgao, taxa: Math.round((v.ganhou / v.total) * 100), total: v.total, valorGanho: v.valorGanho }))
+      .sort((a, b) => b.valorGanho - a.valorGanho)
+      .slice(0, 8)
+  }, [finalized])
+
+  // Mesmo cálculo de byOrgao, mas agrupado por Município/UF em vez do nome
+  // do órgão — se o mesmo município tiver mais de um órgão cadastrado (ex:
+  // Prefeitura e Secretaria de Educação), eles somam juntos aqui. Licitação
+  // sem município preenchido cai de volta no nome do órgão, pra nunca sumir
+  // do ranking.
+  const byMunicipio = useMemo(() => {
+    const map = new Map<string, { total: number; ganhou: number; valorGanho: number }>()
+    for (const b of finalized) {
+      const chave = b.municipio ? `${b.municipio}${b.uf ? `/${b.uf}` : ''}` : b.orgao
+      const entry = map.get(chave) ?? { total: 0, ganhou: 0, valorGanho: 0 }
+      entry.total++
+      if (b.status === 'Ganhou') {
+        entry.ganhou++
+        entry.valorGanho += b.valorOfertadoReal ?? b.valorLicitado
+      }
+      map.set(chave, entry)
+    }
+    return Array.from(map.entries())
+      .map(([municipio, v]) => ({ municipio, taxa: Math.round((v.ganhou / v.total) * 100), total: v.total, valorGanho: v.valorGanho }))
       .sort((a, b) => b.valorGanho - a.valorGanho)
       .slice(0, 8)
   }, [finalized])
@@ -267,6 +290,29 @@ export default function BIConcorrenciaPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 px-6 mt-4">
         <Card className="p-5">
           <div className="flex items-center gap-2 mb-1">
+            <MapPin className="w-4 h-4 text-accent-400" />
+            <h3 className="text-sm font-bold text-base-100">Performance por Município</h3>
+          </div>
+          <p className="text-[12px] text-base-500 mb-3">Top municípios por valor efetivamente ganho</p>
+          {byMunicipio.length === 0 ? (
+            <div className="text-base-500 text-sm py-10 text-center">Sem disputas finalizadas ainda</div>
+          ) : (
+            <div className="flex flex-col gap-2 max-h-[240px] overflow-y-auto">
+              {byMunicipio.map((m) => (
+                <div key={m.municipio} className="flex items-center justify-between gap-2 bg-base-850/60 rounded-lg px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-[12px] font-medium text-base-200 truncate">{m.municipio}</p>
+                    <p className="text-[10px] text-base-500">{m.total} disputa(s) · {m.taxa}% de êxito</p>
+                  </div>
+                  <span className="font-mono font-bold text-[12px] text-positive-400 shrink-0">{formatBRL(m.valorGanho)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-5">
+          <div className="flex items-center gap-2 mb-1">
             <Award className="w-4 h-4 text-accent-400" />
             <h3 className="text-sm font-bold text-base-100">Ranking de Clientes (por valor ganho)</h3>
           </div>
@@ -288,7 +334,9 @@ export default function BIConcorrenciaPage() {
             </div>
           )}
         </Card>
+      </div>
 
+      <div className="px-6 mt-4">
         <Card className="p-5">
           <div className="flex items-center gap-2 mb-1">
             <TrendingUp className="w-4 h-4 text-accent-400" />
