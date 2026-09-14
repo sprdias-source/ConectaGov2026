@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Plus, Pencil, Trash2, FileSpreadsheet, Ban, Repeat, Power, Eye, EyeOff } from 'lucide-react'
-import { Button, Field, Select } from '../ui/FormControls'
+import { Plus, Pencil, Trash2, FileSpreadsheet, Ban, Repeat, Power, Eye, EyeOff, Globe, ChevronDown } from 'lucide-react'
+import { Button } from '../ui/FormControls'
 import { EmptyState, StatusBadge } from '../ui/Primitives'
 import { formatBRL } from '../../hooks/useAccountBalances'
 import { useEmpenhos, calcEmpenhoVencimentoStatus, statusExibidoEmpenho, type EmpenhoRecorrenteItem } from '../../hooks/useEmpenhos'
@@ -13,6 +13,7 @@ import ClientPrefeiturasPanel from './ClientPrefeiturasPanel'
 import DeleteWithPasswordDialog from '../ui/DeleteWithPasswordDialog'
 import ErrorAlert from '../ui/ErrorAlert'
 import TopScrollTable from '../ui/TopScrollTable'
+import FilterDropdown, { type FilterDropdownOption } from '../ui/FilterDropdown'
 import type { Empenho } from '../../types/domain'
 
 const MODO_LABELS: Record<string, string> = {
@@ -20,6 +21,14 @@ const MODO_LABELS: Record<string, string> = {
   quantidade_fixa: 'Parcelado',
   recorrente: 'Recorrente',
 }
+
+const MES_OPTIONS: FilterDropdownOption<string>[] = [
+  { value: 'todos', label: 'Todos os Meses' },
+  { value: '01', label: 'Janeiro' }, { value: '02', label: 'Fevereiro' }, { value: '03', label: 'Março' },
+  { value: '04', label: 'Abril' }, { value: '05', label: 'Maio' }, { value: '06', label: 'Junho' },
+  { value: '07', label: 'Julho' }, { value: '08', label: 'Agosto' }, { value: '09', label: 'Setembro' },
+  { value: '10', label: 'Outubro' }, { value: '11', label: 'Novembro' }, { value: '12', label: 'Dezembro' },
+]
 
 // Cor do texto da célula de vencimento — mesma leitura de urgência da
 // Central de Prazos (vermelho = já passou, âmbar = dentro da janela de 15
@@ -31,8 +40,6 @@ const COR_VENCIMENTO: Record<string, string> = {
   em_dia: 'text-base-300',
   sem_vencimento: 'text-base-600',
 }
-
-const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 
 export default function EmpenhosTab() {
   const {
@@ -52,7 +59,10 @@ export default function EmpenhosTab() {
 
   // Painel "Prefeituras deste cliente" — cliente escolhido aqui é
   // independente do filtro da lista de empenhos abaixo, só serve pra
-  // achar rápido o portal onde confirmar se o empenho já saiu.
+  // achar rápido o portal onde confirmar se o empenho já saiu. Recolhido
+  // por padrão — é uma consulta pontual, não algo que precisa ficar
+  // ocupando espaço na tela o tempo todo.
+  const [consultaAberta, setConsultaAberta] = useState(false)
   const [consultaClientIdEscolhido, setConsultaClientIdEscolhido] = useState('')
 
   // Filtro da tabela de empenhos — sem relação com o cliente escolhido
@@ -90,6 +100,19 @@ export default function EmpenhosTab() {
     const years = new Set(empenhos.map((e) => e.dataEmpenho.slice(0, 4)))
     return Array.from(years).sort((a, b) => Number(b) - Number(a))
   }, [empenhos])
+
+  const clienteOptions = useMemo<FilterDropdownOption<string>[]>(
+    () => [{ value: 'todos', label: 'Todos os Clientes' }, ...clients.map((c) => ({ value: c.id, label: c.name }))],
+    [clients]
+  )
+  const anoOptions = useMemo<FilterDropdownOption<string>[]>(
+    () => [{ value: 'todos', label: 'Todos os Anos' }, ...availableYears.map((y) => ({ value: y, label: y }))],
+    [availableYears]
+  )
+  const consultaClientOptions = useMemo<FilterDropdownOption<string>[]>(
+    () => clients.map((c) => ({ value: c.id, label: c.name })),
+    [clients]
+  )
 
   const filtrosAtivos = filtroClientId !== 'todos' || filtroMes !== 'todos' || filtroAno !== 'todos'
   const limparFiltros = () => { setFiltroClientId('todos'); setFiltroMes('todos'); setFiltroAno('todos') }
@@ -154,62 +177,44 @@ export default function EmpenhosTab() {
 
       {clients.length > 0 && (
         <div className="mb-4">
-          <div className="w-56 mb-2">
-            <Field label="Cliente">
-              <Select value={consultaClientId} onChange={(e) => setConsultaClientIdEscolhido(e.target.value)}>
-                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </Select>
-            </Field>
-          </div>
-          <ClientPrefeiturasPanel key={consultaClientId} clientId={consultaClientId} podeEditar={podeEditar} />
+          <button
+            onClick={() => setConsultaAberta((v) => !v)}
+            className="flex items-center gap-1.5 text-[12px] font-semibold text-accent-400 hover:text-accent-300 transition"
+          >
+            <Globe className="w-3.5 h-3.5" />
+            Consultar portal da prefeitura de um cliente
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${consultaAberta ? 'rotate-180' : ''}`} />
+          </button>
+          {consultaAberta && (
+            <div className="mt-3 flex flex-col gap-2">
+              <FilterDropdown label="Cliente" value={consultaClientId} options={consultaClientOptions} onChange={setConsultaClientIdEscolhido} />
+              <ClientPrefeiturasPanel key={consultaClientId} clientId={consultaClientId} podeEditar={podeEditar} />
+            </div>
+          )}
         </div>
       )}
 
-      <div className="bg-base-900/60 border border-base-700/50 rounded-xl p-4 mb-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="w-52">
-            <Field label="Cliente">
-              <Select value={filtroClientId} onChange={(e) => setFiltroClientId(e.target.value)}>
-                <option value="todos">Todos os Clientes</option>
-                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </Select>
-            </Field>
-          </div>
-          <div className="w-40">
-            <Field label="Mês">
-              <Select value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)}>
-                <option value="todos">Todos os Meses</option>
-                {MESES.map((m, i) => <option key={m} value={String(i + 1).padStart(2, '0')}>{m}</option>)}
-              </Select>
-            </Field>
-          </div>
-          <div className="w-32">
-            <Field label="Ano">
-              <Select value={filtroAno} onChange={(e) => setFiltroAno(e.target.value)}>
-                <option value="todos">Todos os Anos</option>
-                {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
-              </Select>
-            </Field>
-          </div>
-          {filtrosAtivos && (
-            <button onClick={limparFiltros} className="text-[12px] font-semibold text-accent-400 hover:text-accent-300 pb-2.5">
-              Limpar filtros
-            </button>
-          )}
-          <span className="ml-auto text-[12px] text-base-500 pb-2.5">
-            <strong className="text-base-300">{visibleEmpenhos.length}</strong> de {empenhosAtivosInativos.length} empenhos
-          </span>
-        </div>
-      </div>
-
-      <div className="flex justify-end mb-2">
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <FilterDropdown label="Cliente" value={filtroClientId} options={clienteOptions} onChange={setFiltroClientId} />
+        <FilterDropdown label="Mês" value={filtroMes} options={MES_OPTIONS} onChange={setFiltroMes} />
+        <FilterDropdown label="Ano" value={filtroAno} options={anoOptions} onChange={setFiltroAno} />
+        {filtrosAtivos && (
+          <button onClick={limparFiltros} className="text-[12px] font-semibold text-accent-400 hover:text-accent-300">
+            Limpar filtros
+          </button>
+        )}
         <button
           onClick={() => setShowInactive((v) => !v)}
-          className={`text-[12px] font-semibold flex items-center gap-1.5 transition ${showInactive ? 'text-accent-300' : 'text-base-500 hover:text-base-300'}`}
+          className={`flex items-center gap-1.5 text-[12px] font-semibold px-3 py-2 rounded-lg border transition ${
+            showInactive ? 'border-accent-500 bg-accent-500/10 text-accent-300' : 'border-base-700 text-base-400 hover:border-base-600'
+          }`}
         >
           {showInactive ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
           {showInactive ? 'Mostrando inativos' : 'Mostrar inativos'}
         </button>
+        <span className="ml-auto text-[12px] text-base-500">
+          <strong className="text-base-300">{visibleEmpenhos.length}</strong> de {empenhosAtivosInativos.length} empenhos
+        </span>
       </div>
 
       <ErrorAlert error={deleteEmpenho.error || updateEmpenhoStatus.error || toggleEmpenhoActive.error} />
