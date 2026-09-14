@@ -2,14 +2,16 @@ import { useMemo, useState } from 'react'
 import { CalendarRange, ArrowUpCircle, ArrowDownCircle, ChevronLeft, ChevronRight } from 'lucide-react'
 import { PageHeader, Card, StatusBadge } from '../components/ui/Primitives'
 import TopScrollTable from '../components/ui/TopScrollTable'
-import { formatBRL } from '../hooks/useAccountBalances'
+import { formatBRL, contasInternasIds } from '../hooks/useAccountBalances'
 import { useTransactions } from '../hooks/useTransactions'
+import { useFinancialAccounts } from '../hooks/useFinancialAccounts'
 import { useClients } from '../hooks/useClients'
 
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 
 export default function FluxoCaixaPage() {
   const { transactions } = useTransactions()
+  const { accounts } = useFinancialAccounts()
   const { clients } = useClients()
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
@@ -17,17 +19,26 @@ export default function FluxoCaixaPage() {
 
   const clientName = (id: string | null) => clients.find((c) => c.id === id)?.name ?? '—'
 
+  // Lançamentos vinculados a uma conta Caixa Interno (fictícia, controle
+  // pessoal) continuam aparecendo nas listas de Liquidados/Previstos
+  // abaixo (é um registro real que o usuário fez) — só ficam de fora dos
+  // totais/somatórios desta página, mesma regra do Patrimônio em
+  // useAccountBalances.ts.
+  const internalIds = useMemo(() => contasInternasIds(accounts), [accounts])
+  const naoInterno = (t: { accountId: string | null }) => !internalIds.has(t.accountId ?? '')
+
   const yearly = useMemo(() => {
     return MONTHS.map((label, idx) => {
       const m = String(idx + 1).padStart(2, '0')
       const prefix = `${year}-${m}`
-      const aReceber = transactions.filter((t) => t.type === 'Receber' && t.dueDate.startsWith(prefix)).reduce((s, t) => s + t.value, 0)
-      const aPagar = transactions.filter((t) => t.type === 'Pagar' && t.dueDate.startsWith(prefix)).reduce((s, t) => s + t.value, 0)
-      const entradas = transactions.filter((t) => t.type === 'Receber' && t.status === 'Pago' && t.paymentDate?.startsWith(prefix)).reduce((s, t) => s + t.value, 0)
-      const saidas = transactions.filter((t) => t.type === 'Pagar' && t.status === 'Pago' && t.paymentDate?.startsWith(prefix)).reduce((s, t) => s + t.value, 0)
+      const aReceber = transactions.filter((t) => t.type === 'Receber' && t.dueDate.startsWith(prefix) && naoInterno(t)).reduce((s, t) => s + t.value, 0)
+      const aPagar = transactions.filter((t) => t.type === 'Pagar' && t.dueDate.startsWith(prefix) && naoInterno(t)).reduce((s, t) => s + t.value, 0)
+      const entradas = transactions.filter((t) => t.type === 'Receber' && t.status === 'Pago' && t.paymentDate?.startsWith(prefix) && naoInterno(t)).reduce((s, t) => s + t.value, 0)
+      const saidas = transactions.filter((t) => t.type === 'Pagar' && t.status === 'Pago' && t.paymentDate?.startsWith(prefix) && naoInterno(t)).reduce((s, t) => s + t.value, 0)
       return { label, monthIndex: idx, aReceber, aPagar, entradas, saidas, saldo: entradas - saidas }
     })
-  }, [transactions, year])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions, year, internalIds])
 
   const monthStr = String(activeMonth + 1).padStart(2, '0')
   const prefix = `${year}-${monthStr}`
@@ -41,10 +52,10 @@ export default function FluxoCaixaPage() {
   const liquidados = transactions.filter((t) => t.status === 'Pago' && t.paymentDate?.startsWith(prefix))
   const previstos = transactions.filter((t) => t.status !== 'Pago' && t.dueDate.startsWith(prefix))
 
-  const totalEntradas = liquidados.filter((t) => t.type === 'Receber').reduce((s, t) => s + t.value, 0)
-  const totalSaidas = liquidados.filter((t) => t.type === 'Pagar').reduce((s, t) => s + t.value, 0)
-  const aReceberProjetado = previstos.filter((t) => t.type === 'Receber').reduce((s, t) => s + t.value, 0)
-  const aPagarAgendado = previstos.filter((t) => t.type === 'Pagar').reduce((s, t) => s + t.value, 0)
+  const totalEntradas = liquidados.filter((t) => t.type === 'Receber' && naoInterno(t)).reduce((s, t) => s + t.value, 0)
+  const totalSaidas = liquidados.filter((t) => t.type === 'Pagar' && naoInterno(t)).reduce((s, t) => s + t.value, 0)
+  const aReceberProjetado = previstos.filter((t) => t.type === 'Receber' && naoInterno(t)).reduce((s, t) => s + t.value, 0)
+  const aPagarAgendado = previstos.filter((t) => t.type === 'Pagar' && naoInterno(t)).reduce((s, t) => s + t.value, 0)
 
   return (
     <div className="pb-10">

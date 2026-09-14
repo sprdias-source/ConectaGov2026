@@ -3,8 +3,9 @@ import { FileBarChart, Download, Printer } from 'lucide-react'
 import { PageHeader, Card, StatusBadge, EmptyState } from '../components/ui/Primitives'
 import TopScrollTable from '../components/ui/TopScrollTable'
 import { Select } from '../components/ui/FormControls'
-import { formatBRL } from '../hooks/useAccountBalances'
+import { formatBRL, contasInternasIds } from '../hooks/useAccountBalances'
 import { useTransactions } from '../hooks/useTransactions'
+import { useFinancialAccounts } from '../hooks/useFinancialAccounts'
 import { useClients } from '../hooks/useClients'
 import { useCategories } from '../hooks/useCategories'
 import { useBiddings } from '../hooks/useBiddings'
@@ -17,6 +18,7 @@ const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Jul
 export default function RelatoriosPage() {
   const [aba, setAba] = useState<'faturamento' | 'despesas' | 'licitacoes' | 'repasse'>('faturamento')
   const { transactions } = useTransactions()
+  const { accounts } = useFinancialAccounts()
   const { clients } = useClients()
   const { categoriesReceber, categoriesPagar } = useCategories()
   const { biddings } = useBiddings()
@@ -50,8 +52,12 @@ export default function RelatoriosPage() {
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
   }, [transactions, tipo, monthFilter, yearFilter, clientFilter, categoryFilter])
 
-  const total = filtered.reduce((s, t) => s + t.value, 0)
-  const totalQuitado = filtered.filter((t) => t.status === 'Pago').reduce((s, t) => s + t.value, 0)
+  // A lista/CSV continuam mostrando lançamentos de Caixa Interno (é um
+  // registro real que o usuário fez) — só os dois totais abaixo excluem
+  // esses lançamentos, mesma regra do Patrimônio em useAccountBalances.ts.
+  const internalIds = useMemo(() => contasInternasIds(accounts), [accounts])
+  const total = filtered.filter((t) => !internalIds.has(t.accountId ?? '')).reduce((s, t) => s + t.value, 0)
+  const totalQuitado = filtered.filter((t) => t.status === 'Pago' && !internalIds.has(t.accountId ?? '')).reduce((s, t) => s + t.value, 0)
 
   const { paginated, page, setPage, totalPages, totalItems, pageSize } = usePagination(filtered)
 
@@ -136,7 +142,7 @@ export default function RelatoriosPage() {
 
         {aba === 'licitacoes' && <RelatorioLicitacoesCliente clients={clients} biddings={biddings} />}
 
-        {aba === 'repasse' && <RelatorioRepassePorCliente clients={clients} transactions={transactions} />}
+        {aba === 'repasse' && <RelatorioRepassePorCliente clients={clients} transactions={transactions} accounts={accounts} />}
 
         {(aba === 'faturamento' || aba === 'despesas') && <>
         <Card className="p-4 mb-4">

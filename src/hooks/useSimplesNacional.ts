@@ -4,7 +4,9 @@ import { supabase } from '../lib/supabase'
 import { fromSimplesNacionalFaixaRow, fromSimplesNacionalPartilhaRow } from '../lib/mappers'
 import { useAuth } from './useAuth'
 import { useTransactions } from './useTransactions'
+import { useFinancialAccounts } from './useFinancialAccounts'
 import { useRegimeTributario } from './useRegimeTributario'
+import { contasInternasIds } from './useAccountBalances'
 import type { SimplesNacionalFaixa, SimplesNacionalPartilha, TributoPartilha } from '../types/domain'
 
 // Faixas do Anexo III — valores informados pelo próprio usuário (conferidos
@@ -74,7 +76,18 @@ export function useSimplesNacional() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const { transactions } = useTransactions()
+  const { accounts } = useFinancialAccounts()
   const { vigente } = useRegimeTributario()
+
+  // Lançamento vinculado a uma conta Caixa Interno (fictícia, controle
+  // pessoal) não é receita de verdade — não pode entrar na base do
+  // Simples Nacional (RBT12/DAS). Mesma regra do Patrimônio em
+  // useAccountBalances.ts, aplicada aqui por ser o achado mais sensível:
+  // um lançamento vinculado por engano infla a base do imposto de verdade.
+  const transactionsReais = useMemo(() => {
+    const internalIds = contasInternasIds(accounts)
+    return transactions.filter((t) => !internalIds.has(t.accountId ?? ''))
+  }, [transactions, accounts])
 
   const faixasQuery = useQuery({
     queryKey: ['simples_nacional_faixas'],
@@ -147,7 +160,7 @@ export function useSimplesNacional() {
     const [ano, mes] = competenciaRef.split('-').map(Number)
     const fim = new Date(ano, mes - 1, 1)
     const inicio = new Date(ano, mes - 12, 1)
-    return transactions
+    return transactionsReais
       .filter((t) => t.type === 'Receber')
       .filter((t) => {
         const d = new Date(t.dueDate + 'T12:00:00')
@@ -188,7 +201,7 @@ export function useSimplesNacional() {
       if (!faixaAtual) return null
 
       const aliquotaEfetiva = calcularAliquotaEfetiva(faixaAtual, rbt12)
-      const receitaMes = transactions
+      const receitaMes = transactionsReais
         .filter((t) => t.type === 'Receber' && t.dueDate.slice(0, 7) === competenciaRef)
         // Mesma exclusão do RBT12: juros/multa recebidos não são receita
         // operacional sujeita ao Simples Nacional.
@@ -204,7 +217,7 @@ export function useSimplesNacional() {
       return { rbt12, faixaAtual, aliquotaEfetiva, receitaMes, dasEstimado, breakdown, faltaProximaFaixa }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transactions, vigente, faixas, partilha])
+  }, [transactionsReais, vigente, faixas, partilha])
 
   return {
     faixas,

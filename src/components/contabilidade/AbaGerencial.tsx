@@ -7,7 +7,7 @@ import { useTransactions } from '../../hooks/useTransactions'
 import { useBiddings } from '../../hooks/useBiddings'
 import { useClients } from '../../hooks/useClients'
 import { useFinancialAccounts } from '../../hooks/useFinancialAccounts'
-import { useAccountBalances, formatBRL } from '../../hooks/useAccountBalances'
+import { useAccountBalances, formatBRL, contasInternasIds } from '../../hooks/useAccountBalances'
 import type { BiddingEtapa } from '../../types/domain'
 
 // Mesma sequência de etapas usada em LicitacaoPage.tsx/KanbanLicitacoesPage.tsx/
@@ -27,14 +27,22 @@ export default function AbaGerencial() {
   const { accounts } = useFinancialAccounts()
   const { patrimonioTotal } = useAccountBalances(accounts, transactions)
 
+  // Todo indicador desta aba é agregado/relatório (nenhum lista lançamentos
+  // individuais) — lançamentos de Caixa Interno (fictícia, controle
+  // pessoal) ficam fora de todos eles, mesma regra do Patrimônio acima.
+  const transactionsReais = useMemo(() => {
+    const internalIds = contasInternasIds(accounts)
+    return transactions.filter((t) => !internalIds.has(t.accountId ?? ''))
+  }, [transactions, accounts])
+
   const currentYear = new Date().getFullYear()
 
   const dre = useMemo(() => {
-    const receitas = transactions.filter((t) => t.type === 'Receber' && t.status === 'Pago' && t.paymentDate?.startsWith(String(currentYear))).reduce((s, t) => s + t.value, 0)
-    const despesas = transactions.filter((t) => t.type === 'Pagar' && t.status === 'Pago' && t.paymentDate?.startsWith(String(currentYear))).reduce((s, t) => s + t.value, 0)
+    const receitas = transactionsReais.filter((t) => t.type === 'Receber' && t.status === 'Pago' && t.paymentDate?.startsWith(String(currentYear))).reduce((s, t) => s + t.value, 0)
+    const despesas = transactionsReais.filter((t) => t.type === 'Pagar' && t.status === 'Pago' && t.paymentDate?.startsWith(String(currentYear))).reduce((s, t) => s + t.value, 0)
     const lucro = receitas - despesas
     return { receitas, despesas, lucro }
-  }, [transactions, currentYear])
+  }, [transactionsReais, currentYear])
 
   // --- Indicadores de Saúde Financeira -------------------------------------
 
@@ -49,19 +57,19 @@ export default function AbaGerencial() {
     for (let i = 1; i <= 3; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
       const prefix = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      total += transactions
+      total += transactionsReais
         .filter((t) => t.type === 'Pagar' && t.status === 'Pago' && t.paymentDate?.startsWith(prefix))
         .reduce((s, t) => s + t.value, 0)
     }
     const media = total / 3
     const runway = media > 0 ? patrimonioTotal / media : Infinity
     return { burnRate: media, runwayMeses: runway }
-  }, [transactions, patrimonioTotal])
+  }, [transactionsReais, patrimonioTotal])
 
   const concentracaoReceita = useMemo(() => {
     const recebidoPorCliente = new Map<string, number>()
     let totalRecebido = 0
-    for (const t of transactions) {
+    for (const t of transactionsReais) {
       if (t.type !== 'Receber' || t.status !== 'Pago' || !t.clientId) continue
       recebidoPorCliente.set(t.clientId, (recebidoPorCliente.get(t.clientId) ?? 0) + t.value)
       totalRecebido += t.value
@@ -74,17 +82,17 @@ export default function AbaGerencial() {
     }
     const clienteNome = clients.find((c) => c.id === maiorClienteId)?.name ?? null
     return { percentual: Math.round((maiorValor / totalRecebido) * 100), clienteNome }
-  }, [transactions, clients])
+  }, [transactionsReais, clients])
 
   const inadimplencia = useMemo(() => {
-    const pendente = transactions.filter((t) => t.type === 'Receber' && t.status !== 'Pago')
+    const pendente = transactionsReais.filter((t) => t.type === 'Receber' && t.status !== 'Pago')
     const totalPendente = pendente.reduce((s, t) => s + t.value, 0)
     const totalAtrasado = pendente.filter((t) => t.status === 'Atrasado').reduce((s, t) => s + t.value, 0)
     return totalPendente > 0 ? Math.round((totalAtrasado / totalPendente) * 100) : 0
-  }, [transactions])
+  }, [transactionsReais])
 
   const cicloMedioRecebimento = useMemo(() => {
-    const pagas = transactions.filter((t) => t.type === 'Receber' && t.status === 'Pago' && t.paymentDate)
+    const pagas = transactionsReais.filter((t) => t.type === 'Receber' && t.status === 'Pago' && t.paymentDate)
     if (pagas.length === 0) return null
     const dias = pagas.map((t) => {
       const venc = new Date(t.dueDate + 'T12:00:00').getTime()
@@ -92,7 +100,7 @@ export default function AbaGerencial() {
       return Math.round((pago - venc) / (1000 * 60 * 60 * 24))
     })
     return Math.round(dias.reduce((s, d) => s + d, 0) / dias.length)
-  }, [transactions])
+  }, [transactionsReais])
 
   const tendencia6Meses = useMemo(() => {
     const now = new Date()
@@ -100,10 +108,10 @@ export default function AbaGerencial() {
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
       const prefix = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      const receitas = transactions
+      const receitas = transactionsReais
         .filter((t) => t.type === 'Receber' && t.status === 'Pago' && t.paymentDate?.startsWith(prefix))
         .reduce((s, t) => s + t.value, 0)
-      const despesas = transactions
+      const despesas = transactionsReais
         .filter((t) => t.type === 'Pagar' && t.status === 'Pago' && t.paymentDate?.startsWith(prefix))
         .reduce((s, t) => s + t.value, 0)
       result.push({
@@ -112,16 +120,16 @@ export default function AbaGerencial() {
       })
     }
     return result
-  }, [transactions])
+  }, [transactionsReais])
 
   const composicaoReceitaPendente = useMemo(() => {
     const map = new Map<string, number>()
-    for (const t of transactions) {
+    for (const t of transactionsReais) {
       if (t.type !== 'Receber' || t.status === 'Pago') continue
       map.set(t.category, (map.get(t.category) ?? 0) + t.value)
     }
     return Array.from(map.entries()).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 6)
-  }, [transactions])
+  }, [transactionsReais])
 
   // Simulador de liquidez — campos editáveis pelo usuário
   const [ativoCirculante, setAtivoCirculante] = useState(0)

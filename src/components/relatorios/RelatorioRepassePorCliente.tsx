@@ -2,8 +2,8 @@ import { useMemo } from 'react'
 import { Landmark } from 'lucide-react'
 import { Card, EmptyState } from '../ui/Primitives'
 import TopScrollTable from '../ui/TopScrollTable'
-import { formatBRL } from '../../hooks/useAccountBalances'
-import type { Client, Transaction } from '../../types/domain'
+import { formatBRL, contasInternasIds } from '../../hooks/useAccountBalances'
+import type { Client, FinancialAccount, Transaction } from '../../types/domain'
 
 function diasEntre(dataInicial: string, dataFinal: string): number {
   return Math.floor(
@@ -30,8 +30,13 @@ interface ResumoRepasseCliente {
 // (empenhoId preenchido) com Liquidação na Prefeitura registrada. Sem essa
 // data o cliente nunca entra nesta lista — não tem como medir repasse sem
 // saber quando a prefeitura pagou ele.
-function calcularResumosPorCliente(transactions: Transaction[]): Map<string, ResumoRepasseCliente> {
+function calcularResumosPorCliente(transactions: Transaction[], accounts: FinancialAccount[]): Map<string, ResumoRepasseCliente> {
   const mapa = new Map<string, ResumoRepasseCliente>()
+  // Lançamento vinculado a uma conta Caixa Interno (fictícia, controle
+  // pessoal) não representa repasse de comissão de verdade — mesma regra
+  // já aplicada ao Patrimônio em useAccountBalances.ts.
+  const internalIds = contasInternasIds(accounts)
+  const transacoesReais = transactions.filter((t) => !internalIds.has(t.accountId ?? ''))
 
   const pegar = (clientId: string): ResumoRepasseCliente => {
     const existente = mapa.get(clientId)
@@ -46,7 +51,7 @@ function calcularResumosPorCliente(transactions: Transaction[]): Map<string, Res
   // cada lançamento novo do mesmo cliente.
   const somaDias = new Map<string, number>()
 
-  for (const t of transactions) {
+  for (const t of transacoesReais) {
     if (t.type !== 'Receber' || !t.empenhoId || !t.clientId || !t.dataLiquidacaoPrefeitura) continue
 
     if (t.status === 'Pago' && t.paymentDate) {
@@ -80,8 +85,8 @@ function corMediaDias(dias: number): string {
 // pra responder "quem demora a repassar a comissão depois que a
 // prefeitura já pagou ele" (ver TransactionFormModal.tsx, campos Vencimento
 // na Prefeitura / Liquidação na Prefeitura).
-export default function RelatorioRepassePorCliente({ clients, transactions }: { clients: Client[]; transactions: Transaction[] }) {
-  const resumos = useMemo(() => calcularResumosPorCliente(transactions), [transactions])
+export default function RelatorioRepassePorCliente({ clients, transactions, accounts }: { clients: Client[]; transactions: Transaction[]; accounts: FinancialAccount[] }) {
+  const resumos = useMemo(() => calcularResumosPorCliente(transactions, accounts), [transactions, accounts])
 
   const linhas = useMemo(() => {
     return Array.from(resumos.values())

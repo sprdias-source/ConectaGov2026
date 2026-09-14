@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Plus, Search, Pencil, Trash2, ArrowDownCircle, ArrowUpCircle, Check, Receipt, Repeat, Tags, CreditCard, Info } from 'lucide-react'
 import { Button, Input } from '../ui/FormControls'
 import { EmptyState, StatusBadge } from '../ui/Primitives'
-import { formatBRL } from '../../hooks/useAccountBalances'
+import { formatBRL, contasInternasIds } from '../../hooks/useAccountBalances'
 import { useTransactions } from '../../hooks/useTransactions'
 import { useClients } from '../../hooks/useClients'
 import { useFinancialAccounts } from '../../hooks/useFinancialAccounts'
@@ -142,13 +142,19 @@ export default function ContasLancamentosTab() {
     document.getElementById(`tx-${highlightId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }, [highlightId, paginated])
 
+  // Lançamentos vinculados a uma conta Caixa Interno (fictícia, controle
+  // pessoal) continuam aparecendo normalmente na tabela — só ficam de fora
+  // dos 4 totais do resumo, mesma regra já aplicada ao Patrimônio/saldo das
+  // contas em useAccountBalances.ts.
   const summary = useMemo(() => {
-    const aPagar = periodTxs.filter((t) => t.type === 'Pagar' && t.status !== 'Pago').reduce((s, t) => s + t.value, 0)
-    const pagoPagar = periodTxs.filter((t) => t.type === 'Pagar' && t.status === 'Pago').reduce((s, t) => s + t.value, 0)
-    const aReceber = periodTxs.filter((t) => t.type === 'Receber' && t.status !== 'Pago').reduce((s, t) => s + t.value, 0)
-    const recebido = periodTxs.filter((t) => t.type === 'Receber' && t.status === 'Pago').reduce((s, t) => s + t.value, 0)
+    const internalIds = contasInternasIds(accounts)
+    const reais = periodTxs.filter((t) => !internalIds.has(t.accountId ?? ''))
+    const aPagar = reais.filter((t) => t.type === 'Pagar' && t.status !== 'Pago').reduce((s, t) => s + t.value, 0)
+    const pagoPagar = reais.filter((t) => t.type === 'Pagar' && t.status === 'Pago').reduce((s, t) => s + t.value, 0)
+    const aReceber = reais.filter((t) => t.type === 'Receber' && t.status !== 'Pago').reduce((s, t) => s + t.value, 0)
+    const recebido = reais.filter((t) => t.type === 'Receber' && t.status === 'Pago').reduce((s, t) => s + t.value, 0)
     return { aPagar, pagoPagar, aReceber, recebido }
-  }, [periodTxs])
+  }, [periodTxs, accounts])
 
   const handleSave = (data: Partial<Transaction>) => {
     if (editing) {

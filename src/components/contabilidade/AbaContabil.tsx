@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Printer, Pencil } from 'lucide-react'
 import { Card } from '../ui/Primitives'
 import { Select, Input, Button } from '../ui/FormControls'
-import { formatBRL } from '../../hooks/useAccountBalances'
+import { formatBRL, contasInternasIds } from '../../hooks/useAccountBalances'
 import { useTransactions } from '../../hooks/useTransactions'
 import { useCategories } from '../../hooks/useCategories'
 import { useGruposContabeis } from '../../hooks/useGruposContabeis'
@@ -29,6 +29,10 @@ export default function AbaContabil() {
   const { grupos } = useGruposContabeis()
   const { accounts } = useFinancialAccounts()
   const { patrimonioTotal } = useAccountBalances(accounts, transactions)
+  // Lançamento vinculado a uma conta Caixa Interno (fictícia, controle
+  // pessoal) não é resultado nem patrimônio da empresa — fica fora do DRE
+  // e do Balanço, mesma regra já aplicada ao Patrimônio Total acima.
+  const internalIds = useMemo(() => contasInternasIds(accounts), [accounts])
   const { perfil, salvarPerfil } = useEmpresaPerfil()
   const { conferenciaDas } = useSimplesNacional()
 
@@ -58,7 +62,7 @@ export default function AbaContabil() {
   // (data de pagamento), mesmo critério que a página já usava antes —
   // profissionalizar o visual não muda a base de apuração.
   const montarDreAno = (ano: number) => {
-    const pagas = transactions.filter((t) => t.status === 'Pago' && t.paymentDate?.startsWith(String(ano)))
+    const pagas = transactions.filter((t) => t.status === 'Pago' && t.paymentDate?.startsWith(String(ano)) && !internalIds.has(t.accountId ?? ''))
     const grupoIdPorCategoria = new Map(allCategories.map((c) => [`${c.type}::${c.name}`, c.grupoId]))
     const totalPorChave = new Map<string, number>()
     for (const t of pagas) {
@@ -107,7 +111,7 @@ export default function AbaContabil() {
   const dre = useMemo(
     () => montarDreAno(dreYear),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [transactions, allCategories, grupos, dreYear]
+    [transactions, allCategories, grupos, dreYear, internalIds]
   )
   const temDadosAnoAnterior = useMemo(
     () => transactions.some((t) => t.status === 'Pago' && t.paymentDate?.startsWith(String(dreYear - 1))),
@@ -116,12 +120,12 @@ export default function AbaContabil() {
   const dreAnterior = useMemo(
     () => (comparar && temDadosAnoAnterior ? montarDreAno(dreYear - 1) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [comparar, temDadosAnoAnterior, transactions, allCategories, grupos, dreYear]
+    [comparar, temDadosAnoAnterior, transactions, allCategories, grupos, dreYear, internalIds]
   )
 
   // --- Balanço Patrimonial simplificado -------------------------------------
-  const contasAReceber = transactions.filter((t) => t.type === 'Receber' && t.status !== 'Pago').reduce((s, t) => s + t.value, 0)
-  const contasAPagar = transactions.filter((t) => t.type === 'Pagar' && t.status !== 'Pago').reduce((s, t) => s + t.value, 0)
+  const contasAReceber = transactions.filter((t) => t.type === 'Receber' && t.status !== 'Pago' && !internalIds.has(t.accountId ?? '')).reduce((s, t) => s + t.value, 0)
+  const contasAPagar = transactions.filter((t) => t.type === 'Pagar' && t.status !== 'Pago' && !internalIds.has(t.accountId ?? '')).reduce((s, t) => s + t.value, 0)
   const competenciaAtual = todayLocalISO().slice(0, 7)
   const impostosARecolher = conferenciaDas(competenciaAtual)?.dasEstimado ?? 0
 
