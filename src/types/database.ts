@@ -939,6 +939,7 @@ export type Database = {
           responsavel_cpf: string | null
           responsavel_nome: string | null
           responsavel_rg: string | null
+          responsavel_endereco: string | null
           estado_civil: string | null
           porte_empresa: string | null
           cabecalho_declaracao: string | null
@@ -974,6 +975,7 @@ export type Database = {
           responsavel_cpf?: string | null
           responsavel_nome?: string | null
           responsavel_rg?: string | null
+          responsavel_endereco?: string | null
           estado_civil?: string | null
           porte_empresa?: string | null
           cabecalho_declaracao?: string | null
@@ -1009,6 +1011,7 @@ export type Database = {
           responsavel_cpf?: string | null
           responsavel_nome?: string | null
           responsavel_rg?: string | null
+          responsavel_endereco?: string | null
           estado_civil?: string | null
           porte_empresa?: string | null
           cabecalho_declaracao?: string | null
@@ -1187,6 +1190,11 @@ export type Database = {
           created_at: string
           id: string
           retentor_fixo_mensal: number | null
+          tipo: string
+          data_assinatura: string | null
+          data_inicio: string | null
+          vigencia_meses: number | null
+          status: string
           updated_at: string
           user_id: string
         }
@@ -1200,6 +1208,11 @@ export type Database = {
           created_at?: string
           id?: string
           retentor_fixo_mensal?: number | null
+          tipo?: string
+          data_assinatura?: string | null
+          data_inicio?: string | null
+          vigencia_meses?: number | null
+          status?: string
           updated_at?: string
           user_id: string
         }
@@ -1213,6 +1226,11 @@ export type Database = {
           created_at?: string
           id?: string
           retentor_fixo_mensal?: number | null
+          tipo?: string
+          data_assinatura?: string | null
+          data_inicio?: string | null
+          vigencia_meses?: number | null
+          status?: string
           updated_at?: string
           user_id?: string
         }
@@ -2361,6 +2379,15 @@ export type Database = {
           endereco: string | null
           id: string
           razao_social: string | null
+          representante_nome: string | null
+          representante_cpf: string | null
+          representante_estado_civil: string | null
+          representante_endereco: string | null
+          banco_nome: string | null
+          banco_agencia: string | null
+          banco_conta: string | null
+          chave_pix: string | null
+          comarca_foro_padrao: string | null
           updated_at: string
           user_id: string
         }
@@ -2371,6 +2398,15 @@ export type Database = {
           endereco?: string | null
           id?: string
           razao_social?: string | null
+          representante_nome?: string | null
+          representante_cpf?: string | null
+          representante_estado_civil?: string | null
+          representante_endereco?: string | null
+          banco_nome?: string | null
+          banco_agencia?: string | null
+          banco_conta?: string | null
+          chave_pix?: string | null
+          comarca_foro_padrao?: string | null
           updated_at?: string
           user_id: string
         }
@@ -2381,6 +2417,15 @@ export type Database = {
           endereco?: string | null
           id?: string
           razao_social?: string | null
+          representante_nome?: string | null
+          representante_cpf?: string | null
+          representante_estado_civil?: string | null
+          representante_endereco?: string | null
+          banco_nome?: string | null
+          banco_agencia?: string | null
+          banco_conta?: string | null
+          chave_pix?: string | null
+          comarca_foro_padrao?: string | null
           updated_at?: string
           user_id?: string
         }

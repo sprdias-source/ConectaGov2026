@@ -21,10 +21,25 @@ export function useEmpresaPerfil() {
   })
 
   const salvarPerfil = useMutation({
-    mutationFn: async (dados: { razaoSocial: string; cnpj: string; endereco: string; capitalSocial: number }) => {
+    mutationFn: async (dados: {
+      razaoSocial: string; cnpj: string; endereco: string; capitalSocial: number
+      representanteNome?: string; representanteCpf?: string; representanteEstadoCivil?: string; representanteEndereco?: string
+      bancoNome?: string; bancoAgencia?: string; bancoConta?: string; chavePix?: string; comarcaForoPadrao?: string
+    }) => {
       if (!user) throw new Error('Usuário não autenticado')
       const { error } = await supabase.from('empresa_perfil').upsert(
-        { user_id: user.id, razao_social: dados.razaoSocial, cnpj: dados.cnpj, endereco: dados.endereco, capital_social: dados.capitalSocial },
+        {
+          user_id: user.id, razao_social: dados.razaoSocial, cnpj: dados.cnpj, endereco: dados.endereco, capital_social: dados.capitalSocial,
+          representante_nome: dados.representanteNome ?? null,
+          representante_cpf: dados.representanteCpf ?? null,
+          representante_estado_civil: dados.representanteEstadoCivil ?? null,
+          representante_endereco: dados.representanteEndereco ?? null,
+          banco_nome: dados.bancoNome ?? null,
+          banco_agencia: dados.bancoAgencia ?? null,
+          banco_conta: dados.bancoConta ?? null,
+          chave_pix: dados.chavePix ?? null,
+          comarca_foro_padrao: dados.comarcaForoPadrao ?? null,
+        },
         { onConflict: 'user_id' }
       )
       if (error) throw error

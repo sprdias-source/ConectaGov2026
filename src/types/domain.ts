@@ -56,6 +56,7 @@ export interface Client {
   responsavelCpf: string | null
   responsavelCargo: string | null
   responsavelRg: string | null
+  responsavelEndereco: string | null
   estadoCivil: string | null
   porteEmpresa: string | null
   cabecalhoDeclaracao: string | null
@@ -319,16 +320,33 @@ export interface Employee {
   updatedAt: string
 }
 
+export type ContractTipo = 'mensalista' | 'individual'
+export type ContractStatus = 'ativo' | 'rescindido'
+
 export interface Contract {
   id: string
   userId: string
   clientId: string
   biddingId: string | null
+  tipo: ContractTipo
   retentorFixoMensal: number | null
   comissaoExito: number | null
   comarcaForo: string | null
   clausulaAdicional: string | null
   conteudoGerado: string
+  dataAssinatura: string | null
+  // Vigência só se aplica a contratos Mensalista — Individual não tem
+  // prazo em meses (o "prazo" é a própria licitação vinculada). A data de
+  // término nunca é gravada: é sempre dataInicio + vigenciaMeses,
+  // calculada em código (ver calcContratoTermino em useContracts.ts).
+  dataInicio: string | null
+  vigenciaMeses: number | null
+  // Só 'rescindido' é gravado por ação manual do usuário — o resto do
+  // status exibido (Ativo/Vencendo/Vencido, ou o andamento da licitação
+  // vinculada) é sempre calculado, nunca lido daqui (ver
+  // calcContratoStatus em useContracts.ts), mesmo padrão de
+  // Empenho.status/statusExibidoEmpenho.
+  status: ContractStatus
   createdAt: string
   updatedAt: string
 }
@@ -850,6 +868,17 @@ export interface EmpresaPerfil {
   cnpj: string | null
   endereco: string | null
   capitalSocial: number | null
+  // Dados usados no Módulo de Contratos (contratada = a própria empresa) —
+  // preenchidos uma vez só aqui, em vez de redigitados em cada contrato.
+  representanteNome: string | null
+  representanteCpf: string | null
+  representanteEstadoCivil: string | null
+  representanteEndereco: string | null
+  bancoNome: string | null
+  bancoAgencia: string | null
+  bancoConta: string | null
+  chavePix: string | null
+  comarcaForoPadrao: string | null
   createdAt: string
   updatedAt: string
 }
