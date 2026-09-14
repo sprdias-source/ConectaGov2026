@@ -215,3 +215,30 @@ export function useBiddingIdsComDocumentosFinais() {
     isLoading: query.isLoading,
   }
 }
+
+// Mesmo padrão de useBiddingIdsComDocumentosFinais, mas pra saber quais
+// Oportunidades já têm o Edital anexado — usado no quadro (Kanban) de
+// Oportunidades pra mostrar o selo "Edital" em cada card sem precisar de
+// uma consulta por oportunidade.
+export function useOpportunityIdsComEdital() {
+  const { user } = useAuth()
+
+  const query = useQuery({
+    queryKey: [...QUERY_KEY, 'edital-por-oportunidade'],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('attached_files')
+        .select('entity_id')
+        .eq('entity_type', 'oportunidade')
+        .eq('category', 'Edital')
+      if (error) throw error
+      return new Set(data.map((row) => row.entity_id).filter((id): id is string => !!id))
+    },
+  })
+
+  return {
+    opportunityIdsComEdital: query.data ?? new Set<string>(),
+    isLoading: query.isLoading,
+  }
+}
