@@ -81,6 +81,40 @@ export function certidaoDisponivelParaItem(item: BiddingChecklistItem, clientDoc
   return null
 }
 
+// Minúsculo e sem acento, só pra comparar texto — não precisa remover
+// pontuação, os dois usos abaixo só se importam com a sequência de letras.
+const normalizarTexto = (texto: string) => texto.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+
+// Mesma ideia de certidaoDisponivelParaItem, mas pro resto do repositório
+// do cliente — documentos fora das 7 certidões padrão (Contrato Social,
+// Procuração etc., normalmente organizados em pastas como "Habilitação
+// Jurídica") não têm um `tipo` fixo pra casar (todos ficam como 'manual'),
+// só um nome livre. Sugere quando o NOME do documento aparece, delimitado
+// por borda de palavra, dentro da descrição do item — ex: doc "Contrato
+// Social" dentro do item "5.2 Contrato Social ou Estatuto e suas
+// alterações posteriores, devidamente registrado na Junta Comercial".
+// Exige um nome com pelo menos 5 caracteres (sem isso um nome curto tipo
+// "RG" casaria solto em qualquer frase) e pula itens de Atestado Técnico
+// (resolvidos por uma tabela própria, nunca pelo repositório de
+// documentos do cliente). Mesmo cuidado de certidaoDisponivelParaItem:
+// só SUGERE — exige o clique em "Usar este documento" pra valer.
+export function sugerirDocumentoManualParaItem(item: BiddingChecklistItem, clientDocs: ClientDocument[]): ClientDocument | null {
+  if (item.clientDocumentTipo || item.clientDocumentId || item.attachedFileId || item.atestadoId) return null
+  if (/atestado/i.test(item.descricao)) return null
+  const descricaoNormalizada = normalizarTexto(item.descricao)
+  return clientDocs.find((d) => {
+    if (d.tipo !== 'manual' || !d.storagePath) return false
+    const nomeNormalizado = normalizarTexto(d.nome)
+    if (nomeNormalizado.length < 5) return false
+    if (d.dataValidade) {
+      const status = calcDocStatus(d.dataValidade)
+      if (status !== 'valido' && status !== 'vencendo') return false
+    }
+    const regex = new RegExp(`\\b${nomeNormalizado.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
+    return regex.test(descricaoNormalizada)
+  }) ?? null
+}
+
 // Acha o arquivo de verdade que satisfaz um item — pra "Ver PDF" e pro
 // resumo em Documentos Finais. Prioriza os vínculos com o repositório do
 // cliente (reaproveitáveis); attachedFileId é só o fallback legado. Só
