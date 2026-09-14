@@ -11,7 +11,7 @@ import { useAllClientDocuments, calcDocStatus, diasRestantes } from '../hooks/us
 import { useAllClientPlatforms, calcPlatformStatus, diasParaVencer } from '../hooks/useClientPlatforms'
 import { usePlatforms } from '../hooks/usePlatforms'
 import { useOpportunities, calcOpportunityStatus, diasParaSessao } from '../hooks/useOpportunities'
-import { useEmpenhos, calcEmpenhoVencimentoStatus, diasParaVencerEmpenho } from '../hooks/useEmpenhos'
+import { useEmpenhos, calcEmpenhoVencimentoStatus, diasParaVencerEmpenho, statusExibidoEmpenho } from '../hooks/useEmpenhos'
 import { formatBRL } from '../hooks/useAccountBalances'
 import { CERT_CONFIG } from '../types/domain'
 import { todayLocalISO } from '../lib/dateUtils'
@@ -204,9 +204,11 @@ export default function CentralPrazosPage() {
     // que a prefeitura deveria pagar. Vencimento é opcional no cadastro:
     // empenho sem data nunca aparece aqui (calcEmpenhoVencimentoStatus
     // devolve 'sem_vencimento'), em vez de virar um falso "vencido".
-    // Cancelado e inativo ficam de fora — não há mais nada a cobrar.
+    // Cancelado, inativo e já Faturado (todas as parcelas de comissão
+    // vinculadas já pagas em Transações — ver statusExibidoEmpenho) ficam
+    // de fora: não há mais nada a cobrar desses.
     for (const e of empenhos) {
-      if (!e.isActive || e.status === 'Cancelado') continue
+      if (!e.isActive || statusExibidoEmpenho(e, transactions) !== 'Pendente') continue
       const status = calcEmpenhoVencimentoStatus(e.dataVencimento)
       if (status !== 'vencendo' && status !== 'vencido') continue
       lista.push({
