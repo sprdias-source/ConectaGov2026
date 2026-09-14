@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { todayLocalISO, dateToLocalISO } from '../lib/dateUtils'
 import { supabase } from '../lib/supabase'
 import { fromEmpenhoRow, toEmpenhoInsert, toTransactionInsert } from '../lib/mappers'
-import type { Empenho, Transaction } from '../types/domain'
+import type { Empenho, EmpenhoStatus, Transaction } from '../types/domain'
 import { useAuth } from './useAuth'
 import { useAuditLog } from './useAuditLog'
 
@@ -74,6 +74,22 @@ export function diasParaVencerEmpenho(dataVencimento: string | null): number | n
   const hoje = new Date(todayLocalISO() + 'T00:00:00')
   const vencimento = new Date(dataVencimento + 'T00:00:00')
   return Math.floor((vencimento.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+// Status exibido do empenho, calculado a partir das próprias parcelas de
+// comissão vinculadas a ELE (nunca de outros empenhos da mesma série ou
+// grupo de recorrência — cada número de empenho é avaliado sozinho).
+// 'Cancelado' continua sendo o único valor gravado manualmente (ação
+// explícita do usuário). Fora isso, o empenho vira 'Faturado' assim que
+// TODAS as parcelas de comissão vinculadas a ele estiverem 'Pago' — sem
+// isso, marcar a baixa em Transações nunca refletia de volta aqui, e o
+// antigo botão "Marcar como faturado" deixava o status desencontrado do
+// que realmente foi recebido.
+export function statusExibidoEmpenho(empenho: Empenho, transactions: Transaction[]): EmpenhoStatus {
+  if (empenho.status === 'Cancelado') return 'Cancelado'
+  const parcelas = transactions.filter((t) => t.empenhoId === empenho.id)
+  if (parcelas.length > 0 && parcelas.every((t) => t.status === 'Pago')) return 'Faturado'
+  return 'Pendente'
 }
 
 // Gera as transações de comissão de um empenho, de acordo com o modo de

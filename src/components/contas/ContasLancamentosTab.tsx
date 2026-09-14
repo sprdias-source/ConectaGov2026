@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Plus, Search, Pencil, Trash2, ArrowDownCircle, ArrowUpCircle, Check, Receipt, Repeat, Tags, CreditCard } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2, ArrowDownCircle, ArrowUpCircle, Check, Receipt, Repeat, Tags, CreditCard, Info } from 'lucide-react'
 import { Button, Input } from '../ui/FormControls'
 import { EmptyState, StatusBadge } from '../ui/Primitives'
 import { formatBRL } from '../../hooks/useAccountBalances'
@@ -20,6 +20,25 @@ import MonthHorizontalPicker from '../ui/MonthHorizontalPicker'
 import TopScrollTable from '../ui/TopScrollTable'
 import { usePagination, PaginationControls } from '../../hooks/usePagination'
 import type { Transaction } from '../../types/domain'
+
+// Três formas de ler a mesma lista de lançamentos, pensando como o
+// financeiro de uma empresa: Competência é o que fecha o resultado do mês
+// (obrigatório pra DRE/Balanço/Simples Nacional — RBT12/DAS continuam
+// SEMPRE em competência em useSimplesNacional.ts, este seletor não altera
+// aquele cálculo). Caixa Realizado é o extrato de caixa puro, só o que já
+// foi liquidado de verdade. Caixa Projetado mistura os dois (pago pela
+// liquidação + pendente pelo vencimento) — é a visão de fluxo de caixa do
+// dia a dia, mesma regra de liquidados/previstos já usada e comentada em
+// FluxoCaixaPage.tsx, pra nunca contar o mesmo lançamento duas vezes.
+type RegimeTransacoes = 'competencia' | 'realizado' | 'projetado'
+
+const REGIME_STORAGE_KEY = 'cg_regime_transacoes'
+
+const REGIME_INFO: Record<RegimeTransacoes, string> = {
+  competencia: 'Mostrando pelo vencimento — inclui pendentes e já pagos deste mês, mesmo que o pagamento tenha acontecido depois.',
+  realizado: 'Mostrando só o pago de verdade neste mês, pela data do pagamento — pendentes ficam de fora até serem liquidados.',
+  projetado: 'Pagos pela data do pagamento + pendentes pela data de vencimento — a visão mais completa pra saber o que já moveu e o que ainda vai mover este mês.',
+}
 
 export default function ContasLancamentosTab() {
   const { transactions, isLoading, addTransactions, updateTransaction, updateTransactionStatus, deleteTransaction } = useTransactions()
@@ -47,6 +66,15 @@ export default function ContasLancamentosTab() {
     return ano !== null ? parseInt(ano, 10) : now.getFullYear()
   })
   const [filter, setFilter] = useState<'todos' | 'atrasados' | 'vence_hoje'>('todos')
+  const [regime, setRegime] = useState<RegimeTransacoes>(() => {
+    try {
+      const salvo = localStorage.getItem(REGIME_STORAGE_KEY)
+      if (salvo === 'competencia' || salvo === 'realizado' || salvo === 'projetado') return salvo
+    } catch {
+      // Navegação privada ou storage bloqueado — usa o padrão (Competência).
+    }
+    return 'competencia'
+  })
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Transaction | null>(null)
@@ -57,11 +85,28 @@ export default function ContasLancamentosTab() {
 
   const clientName = (id: string | null) => clients.find((c) => c.id === id)?.name ?? '—'
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(REGIME_STORAGE_KEY, regime)
+    } catch {
+      // Navegação privada ou quota cheia — perde só a preferência salva.
+    }
+  }, [regime])
+
   const monthStr = String(month + 1).padStart(2, '0')
-  const periodTxs = useMemo(
-    () => transactions.filter((t) => t.dueDate.startsWith(`${year}-${monthStr}`)),
-    [transactions, year, monthStr]
-  )
+  const prefix = `${year}-${monthStr}`
+  const periodTxs = useMemo(() => {
+    if (regime === 'realizado') {
+      return transactions.filter((t) => t.status === 'Pago' && t.paymentDate?.startsWith(prefix))
+    }
+    if (regime === 'projetado') {
+      return transactions.filter((t) =>
+        (t.status === 'Pago' && t.paymentDate?.startsWith(prefix)) ||
+        (t.status !== 'Pago' && t.dueDate.startsWith(prefix))
+      )
+    }
+    return transactions.filter((t) => t.dueDate.startsWith(prefix))
+  }, [transactions, prefix, regime])
 
   const filtered = useMemo(() => {
     return periodTxs.filter((t) => {
@@ -79,7 +124,7 @@ export default function ContasLancamentosTab() {
 
   useEffect(() => {
     setPage(1)
-  }, [month, year, filter, search, setPage])
+  }, [month, year, regime, filter, search, setPage])
 
   // Depois do reset acima, pula direto pra página onde o lançamento
   // destacado está — sem isso, ele pode ficar numa página seguinte, fora
@@ -132,13 +177,36 @@ export default function ContasLancamentosTab() {
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-4 w-full">
+      <div className="flex items-center gap-3 mb-4 w-full flex-wrap">
         <MonthHorizontalPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-base-500">Regime</span>
+          <div className="flex bg-base-850 border border-base-700 rounded-lg p-0.5 text-[12px] font-semibold">
+            <button onClick={() => setRegime('competencia')} className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${regime === 'competencia' ? 'bg-base-700 text-accent-300' : 'text-base-400'}`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-accent-400" /> Competência
+            </button>
+            <button onClick={() => setRegime('realizado')} className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${regime === 'realizado' ? 'bg-base-700 text-warning-400' : 'text-base-400'}`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-warning-400" /> Caixa Realizado
+            </button>
+            <button onClick={() => setRegime('projetado')} className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${regime === 'projetado' ? 'bg-base-700 text-positive-400' : 'text-base-400'}`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-positive-400" /> Caixa Projetado
+            </button>
+          </div>
+        </div>
         {!podeEditar && (
           <span className="ml-auto text-[11px] font-semibold text-base-500 bg-base-850 border border-base-700 rounded-full px-3 py-1">
             Somente visualização
           </span>
         )}
+      </div>
+
+      <div className={`flex items-start gap-2 rounded-lg px-3.5 py-2.5 mb-4 text-[12px] leading-relaxed ${
+        regime === 'competencia' ? 'bg-accent-500/10 text-accent-400' :
+        regime === 'realizado' ? 'bg-warning-500/10 text-warning-400' :
+        'bg-positive-500/10 text-positive-400'
+      }`}>
+        <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+        <span>{REGIME_INFO[regime]}</span>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
@@ -147,9 +215,9 @@ export default function ContasLancamentosTab() {
             <ArrowDownCircle className="w-5 h-5 text-negative-400" />
           </div>
           <div>
-            <p className="text-[10px] uppercase tracking-wider font-bold text-base-500">A Pagar do Mês</p>
-            <p className="text-xl font-extrabold font-mono text-negative-300">{formatBRL(summary.aPagar)}</p>
-            <p className="text-[11px] text-base-500">Pago: {formatBRL(summary.pagoPagar)}</p>
+            <p className="text-[10px] uppercase tracking-wider font-bold text-base-500">{regime === 'realizado' ? 'Pago no Mês' : 'A Pagar do Mês'}</p>
+            <p className="text-xl font-extrabold font-mono text-negative-300">{formatBRL(regime === 'realizado' ? summary.pagoPagar : summary.aPagar)}</p>
+            {regime !== 'realizado' && <p className="text-[11px] text-base-500">Pago: {formatBRL(summary.pagoPagar)}</p>}
           </div>
         </div>
         <div className="bg-base-900/60 border border-base-700/50 rounded-xl p-4 flex items-center gap-3">
@@ -157,9 +225,9 @@ export default function ContasLancamentosTab() {
             <ArrowUpCircle className="w-5 h-5 text-positive-400" />
           </div>
           <div>
-            <p className="text-[10px] uppercase tracking-wider font-bold text-base-500">A Receber do Mês</p>
-            <p className="text-xl font-extrabold font-mono text-positive-400">{formatBRL(summary.aReceber)}</p>
-            <p className="text-[11px] text-base-500">Recebido: {formatBRL(summary.recebido)}</p>
+            <p className="text-[10px] uppercase tracking-wider font-bold text-base-500">{regime === 'realizado' ? 'Recebido no Mês' : 'A Receber do Mês'}</p>
+            <p className="text-xl font-extrabold font-mono text-positive-400">{formatBRL(regime === 'realizado' ? summary.recebido : summary.aReceber)}</p>
+            {regime !== 'realizado' && <p className="text-[11px] text-base-500">Recebido: {formatBRL(summary.recebido)}</p>}
           </div>
         </div>
       </div>
