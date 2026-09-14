@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Plus, Search, Pencil, Trash2, ArrowDownCircle, ArrowUpCircle, Check, Receipt, Repeat, Tags, CreditCard, Info } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2, ArrowDownCircle, ArrowUpCircle, Check, Receipt, Repeat, Tags, CreditCard } from 'lucide-react'
 import { Button, Input } from '../ui/FormControls'
 import { EmptyState, StatusBadge } from '../ui/Primitives'
 import { formatBRL, contasInternasIds } from '../../hooks/useAccountBalances'
@@ -18,6 +18,8 @@ import ConfirmDialog from '../ui/ConfirmDialog'
 import ErrorAlert from '../ui/ErrorAlert'
 import MonthHorizontalPicker from '../ui/MonthHorizontalPicker'
 import TopScrollTable from '../ui/TopScrollTable'
+import FilterDropdown, { type FilterDropdownOption } from '../ui/FilterDropdown'
+import ActionsMenu from '../ui/ActionsMenu'
 import { usePagination, PaginationControls } from '../../hooks/usePagination'
 import type { Transaction } from '../../types/domain'
 
@@ -31,14 +33,21 @@ import type { Transaction } from '../../types/domain'
 // dia a dia, mesma regra de liquidados/previstos já usada e comentada em
 // FluxoCaixaPage.tsx, pra nunca contar o mesmo lançamento duas vezes.
 type RegimeTransacoes = 'competencia' | 'realizado' | 'projetado'
+type FiltroStatus = 'todos' | 'atrasados' | 'vence_hoje'
 
 const REGIME_STORAGE_KEY = 'cg_regime_transacoes'
 
-const REGIME_INFO: Record<RegimeTransacoes, string> = {
-  competencia: 'Mostrando pelo vencimento — inclui pendentes e já pagos deste mês, mesmo que o pagamento tenha acontecido depois.',
-  realizado: 'Mostrando só o pago de verdade neste mês, pela data do pagamento — pendentes ficam de fora até serem liquidados.',
-  projetado: 'Pagos pela data do pagamento + pendentes pela data de vencimento — a visão mais completa pra saber o que já moveu e o que ainda vai mover este mês.',
-}
+const REGIME_OPTIONS: FilterDropdownOption<RegimeTransacoes>[] = [
+  { value: 'competencia', label: 'Competência', dotClassName: 'bg-accent-400', description: 'Pelo vencimento — inclui pendentes e já pagos deste mês.' },
+  { value: 'realizado', label: 'Caixa Realizado', dotClassName: 'bg-warning-400', description: 'Só o que já foi pago de verdade, pela data do pagamento.' },
+  { value: 'projetado', label: 'Caixa Projetado', dotClassName: 'bg-positive-400', description: 'Pagos pelo pagamento + pendentes pelo vencimento — a visão mais completa.' },
+]
+
+const STATUS_OPTIONS: FilterDropdownOption<FiltroStatus>[] = [
+  { value: 'todos', label: 'Todos' },
+  { value: 'atrasados', label: 'Atrasados', dotClassName: 'bg-negative-400' },
+  { value: 'vence_hoje', label: 'Vence Hoje', dotClassName: 'bg-warning-400' },
+]
 
 export default function ContasLancamentosTab() {
   const { transactions, isLoading, addTransactions, updateTransaction, updateTransactionStatus, deleteTransaction } = useTransactions()
@@ -65,7 +74,7 @@ export default function ContasLancamentosTab() {
     const ano = searchParams.get('ano')
     return ano !== null ? parseInt(ano, 10) : now.getFullYear()
   })
-  const [filter, setFilter] = useState<'todos' | 'atrasados' | 'vence_hoje'>('todos')
+  const [filter, setFilter] = useState<FiltroStatus>('todos')
   const [regime, setRegime] = useState<RegimeTransacoes>(() => {
     try {
       const salvo = localStorage.getItem(REGIME_STORAGE_KEY)
@@ -185,20 +194,6 @@ export default function ContasLancamentosTab() {
     <div>
       <div className="flex items-center gap-3 mb-4 w-full flex-wrap">
         <MonthHorizontalPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-base-500">Regime</span>
-          <div className="flex bg-base-850 border border-base-700 rounded-lg p-0.5 text-[12px] font-semibold">
-            <button onClick={() => setRegime('competencia')} className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${regime === 'competencia' ? 'bg-base-700 text-accent-300' : 'text-base-400'}`}>
-              <span className="w-1.5 h-1.5 rounded-full bg-accent-400" /> Competência
-            </button>
-            <button onClick={() => setRegime('realizado')} className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${regime === 'realizado' ? 'bg-base-700 text-warning-400' : 'text-base-400'}`}>
-              <span className="w-1.5 h-1.5 rounded-full bg-warning-400" /> Caixa Realizado
-            </button>
-            <button onClick={() => setRegime('projetado')} className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${regime === 'projetado' ? 'bg-base-700 text-positive-400' : 'text-base-400'}`}>
-              <span className="w-1.5 h-1.5 rounded-full bg-positive-400" /> Caixa Projetado
-            </button>
-          </div>
-        </div>
         {!podeEditar && (
           <span className="ml-auto text-[11px] font-semibold text-base-500 bg-base-850 border border-base-700 rounded-full px-3 py-1">
             Somente visualização
@@ -206,13 +201,26 @@ export default function ContasLancamentosTab() {
         )}
       </div>
 
-      <div className={`flex items-start gap-2 rounded-lg px-3.5 py-2.5 mb-4 text-[12px] leading-relaxed ${
-        regime === 'competencia' ? 'bg-accent-500/10 text-accent-400' :
-        regime === 'realizado' ? 'bg-warning-500/10 text-warning-400' :
-        'bg-positive-500/10 text-positive-400'
-      }`}>
-        <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-        <span>{REGIME_INFO[regime]}</span>
+      <div className="flex flex-wrap items-center gap-2 mb-5">
+        <FilterDropdown label="Regime" value={regime} options={REGIME_OPTIONS} onChange={setRegime} />
+        <FilterDropdown label="Status" value={filter} options={STATUS_OPTIONS} onChange={setFilter} />
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-base-500" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar lançamentos..." className="pl-8 w-52" />
+        </div>
+        {podeEditar && (
+          <div className="flex items-center gap-2 ml-auto">
+            <ActionsMenu
+              items={[
+                { key: 'categorias', label: 'Categorias', icon: <Tags className="w-4 h-4" />, onClick: () => setCategoryManagerOpen(true) },
+                { key: 'formas-pagamento', label: 'Formas de Pagamento', icon: <CreditCard className="w-4 h-4" />, onClick: () => setPaymentMethodManagerOpen(true) },
+              ]}
+            />
+            <Button onClick={() => { setEditing(null); setModalOpen(true) }}>
+              <Plus className="w-4 h-4" /> Novo Lançamento
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
@@ -236,39 +244,6 @@ export default function ContasLancamentosTab() {
             {regime !== 'realizado' && <p className="text-[11px] text-base-500">Recebido: {formatBRL(summary.recebido)}</p>}
           </div>
         </div>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-2">
-          <div className="flex bg-base-850 border border-base-700 rounded-lg p-0.5 text-[12px] font-semibold">
-            <button onClick={() => setFilter('todos')} className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${filter === 'todos' ? 'bg-base-700 text-accent-300' : 'text-base-400'}`}>
-              <span className="w-1.5 h-1.5 rounded-full bg-accent-400" /> Mostrar Tudo
-            </button>
-            <button onClick={() => setFilter('atrasados')} className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${filter === 'atrasados' ? 'bg-base-700 text-negative-400' : 'text-base-400'}`}>
-              <span className="w-1.5 h-1.5 rounded-full bg-negative-400" /> Atrasados
-            </button>
-            <button onClick={() => setFilter('vence_hoje')} className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${filter === 'vence_hoje' ? 'bg-base-700 text-warning-400' : 'text-base-400'}`}>
-              <span className="w-1.5 h-1.5 rounded-full bg-warning-400" /> Vence Hoje
-            </button>
-          </div>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-base-500" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar lançamentos..." className="pl-8 w-52" />
-          </div>
-        </div>
-        {podeEditar && (
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" onClick={() => setCategoryManagerOpen(true)}>
-              <Tags className="w-4 h-4" /> Categorias
-            </Button>
-            <Button variant="secondary" onClick={() => setPaymentMethodManagerOpen(true)}>
-              <CreditCard className="w-4 h-4" /> Formas de Pagamento
-            </Button>
-            <Button onClick={() => { setEditing(null); setModalOpen(true) }}>
-              <Plus className="w-4 h-4" /> Novo Lançamento
-            </Button>
-          </div>
-        )}
       </div>
 
       <ErrorAlert error={updateTransactionStatus.error || deleteTransaction.error} />
