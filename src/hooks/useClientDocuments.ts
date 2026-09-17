@@ -5,6 +5,7 @@ import { enviarParaDrive, baixarDoDrive, excluirNoDrive, ehArquivoDrive } from '
 import { mensagemDeErro } from '../lib/errors'
 import { useAuth } from './useAuth'
 import { todayLocalISO } from '../lib/dateUtils'
+import { CERT_CONFIG } from '../types/domain'
 import type { ClientDocument, DocumentTipo, DocumentStatus } from '../types/domain'
 
 const QUERY_KEY = ['client_documents']
@@ -19,6 +20,18 @@ export function calcDocStatus(dataValidade: string | null, alertaDias = 15): Doc
   if (diffDays < 0) return 'vencido'
   if (diffDays <= alertaDias) return 'vencendo'
   return 'valido'
+}
+
+// Janela de alerta (dias antes do vencimento pra virar "vencendo") varia
+// por tipo de certidão padrão — CERT_CONFIG define, por exemplo, 10 dias
+// pro FGTS (validade curta, 30 dias) contra 15 dos outros 6 tipos. Vários
+// lugares que chamam calcDocStatus com um ClientDocument em mãos usavam o
+// default de 15 sem olhar o tipo, fazendo a mesma certidão aparecer
+// "válida" numa tela e "vencendo" em outra no mesmo dia. Documento
+// 'manual' não tem entrada em CERT_CONFIG (não é um dos 7 tipos padrão) —
+// usa o mesmo default de calcDocStatus.
+export function alertaDiasDoTipo(tipo: DocumentTipo): number {
+  return tipo === 'manual' ? 15 : CERT_CONFIG[tipo].alertaDias
 }
 
 // Retorna quantos dias restam de validade de uma certidão (-N se vencida)
@@ -70,7 +83,7 @@ export function useClientDocuments(clientId?: string) {
       pasta?: string | null
     }) => {
       if (!user || !clientId) throw new Error('Não autenticado')
-      const status = calcDocStatus(doc.dataValidade ?? null)
+      const status = calcDocStatus(doc.dataValidade ?? null, alertaDiasDoTipo(doc.tipo))
       const payload = {
         user_id: user.id,
         client_id: clientId,

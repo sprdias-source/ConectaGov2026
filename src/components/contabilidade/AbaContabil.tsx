@@ -73,9 +73,22 @@ export default function AbaContabil() {
   const montarDreAno = (ano: number) => {
     const pagas = transactions.filter((t) => t.status === 'Pago' && t.paymentDate?.startsWith(String(ano)) && !internalIds.has(t.accountId ?? ''))
     const grupoIdPorCategoria = new Map(allCategories.map((c) => [`${c.type}::${c.name}`, c.grupoId]))
+    // Mesmo fallback "Outras Despesas"/"Outras Receitas" que
+    // useGruposContabeis.ts já aplica em segundo plano pra categoria nova
+    // sem grupo — usado aqui também, direto na montagem da DRE, em vez de
+    // só confiar naquele reagrupamento já ter rodado. Sem isso, uma
+    // categoria criada e usada num lançamento ANTES do reagrupamento em
+    // segundo plano persistir o grupo_id ficava de fora do total
+    // operacional da DRE (o `continue` abaixo pulava o lançamento
+    // inteiro), enquanto o Resultado Financeiro (juros/multa) do MESMO
+    // lançamento já contava normalmente — um "meio-lançamento" na DRE.
+    const grupoPadraoId = {
+      Pagar: grupos.find((g) => g.type === 'Pagar' && g.nome === 'Outras Despesas')?.id,
+      Receber: grupos.find((g) => g.type === 'Receber' && g.nome === 'Outras Receitas')?.id,
+    }
     const totalPorChave = new Map<string, number>()
     for (const t of pagas) {
-      const grupoId = grupoIdPorCategoria.get(`${t.type}::${t.category}`)
+      const grupoId = grupoIdPorCategoria.get(`${t.type}::${t.category}`) ?? grupoPadraoId[t.type]
       if (!grupoId) continue
       const chave = `${grupoId}::${t.category}`
       // Juros e multa embutidos no "value" do lançamento vão pro Resultado
