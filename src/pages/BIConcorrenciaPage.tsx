@@ -17,7 +17,12 @@ export default function BIConcorrenciaPage() {
 
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? '—'
 
-  const finalized = useMemo(() => biddings.filter((b) => b.status === 'Ganhou' || b.status === 'Perdeu'), [biddings])
+  // Licitação inativada (excluída logicamente) não pode continuar
+  // alimentando nenhuma métrica de concorrência — mesmo filtro que o
+  // Kanban de Licitações já aplica, faltando aqui antes desta correção.
+  const ativas = useMemo(() => biddings.filter((b) => b.isActive), [biddings])
+
+  const finalized = useMemo(() => ativas.filter((b) => b.status === 'Ganhou' || b.status === 'Perdeu'), [ativas])
 
   const overallWinRate = finalized.length > 0
     ? Math.round((finalized.filter((b) => b.status === 'Ganhou').length / finalized.length) * 100)
@@ -58,11 +63,19 @@ export default function BIConcorrenciaPage() {
   // Prefeitura e Secretaria de Educação), eles somam juntos aqui. Licitação
   // sem município preenchido cai de volta no nome do órgão, pra nunca sumir
   // do ranking.
+  //
+  // A CHAVE de agrupamento é separada do RÓTULO exibido: dois municípios
+  // homônimos em UFs diferentes (ex: "Bom Jesus/PI" e "Bom Jesus/RS"), se
+  // nenhum dos dois tiver UF preenchida, não podem colapsar na mesma chave
+  // só porque a string final ficaria igual — por isso a chave sempre leva
+  // um delimitador fixo entre município e UF (mesmo quando UF está vazia),
+  // que nunca aparece dentro de nenhum dos dois campos.
   const byMunicipio = useMemo(() => {
-    const map = new Map<string, { total: number; ganhou: number; valorGanho: number }>()
+    const map = new Map<string, { rotulo: string; total: number; ganhou: number; valorGanho: number }>()
     for (const b of finalized) {
-      const chave = b.municipio ? `${b.municipio}${b.uf ? `/${b.uf}` : ''}` : b.orgao
-      const entry = map.get(chave) ?? { total: 0, ganhou: 0, valorGanho: 0 }
+      const chave = b.municipio ? `${b.municipio}::${b.uf ?? ''}` : `orgao::${b.orgao}`
+      const rotulo = b.municipio ? `${b.municipio}${b.uf ? `/${b.uf}` : ''}` : b.orgao
+      const entry = map.get(chave) ?? { rotulo, total: 0, ganhou: 0, valorGanho: 0 }
       entry.total++
       if (b.status === 'Ganhou') {
         entry.ganhou++
@@ -71,28 +84,28 @@ export default function BIConcorrenciaPage() {
       map.set(chave, entry)
     }
     return Array.from(map.entries())
-      .map(([municipio, v]) => ({ municipio, taxa: Math.round((v.ganhou / v.total) * 100), total: v.total, valorGanho: v.valorGanho }))
+      .map(([chave, v]) => ({ chave, municipio: v.rotulo, taxa: Math.round((v.ganhou / v.total) * 100), total: v.total, valorGanho: v.valorGanho }))
       .sort((a, b) => b.valorGanho - a.valorGanho)
       .slice(0, 8)
   }, [finalized])
 
   const margemCompetitiva = useMemo(() => {
-    const won = biddings.filter((b) => b.status === 'Ganhou' && b.valorOfertadoReal && b.valorLicitado > 0)
+    const won = ativas.filter((b) => b.status === 'Ganhou' && b.valorOfertadoReal && b.valorLicitado > 0)
     if (won.length === 0) return null
     const margens = won.map((b) => ((b.valorLicitado - (b.valorOfertadoReal ?? 0)) / b.valorLicitado) * 100)
     const media = margens.reduce((s, m) => s + m, 0) / margens.length
     return { media, amostras: won.length }
-  }, [biddings])
+  }, [ativas])
 
   const byEtapa = useMemo(() => {
-    const emAndamento = biddings.filter((b) => b.status === 'Em Andamento')
+    const emAndamento = ativas.filter((b) => b.status === 'Em Andamento')
     const map = new Map<string, number>()
     for (const b of emAndamento) {
       const etapa = b.etapa ?? 'Sem etapa definida'
       map.set(etapa, (map.get(etapa) ?? 0) + 1)
     }
     return Array.from(map.entries()).map(([name, value]) => ({ name, value }))
-  }, [biddings])
+  }, [ativas])
 
   const byCliente = useMemo(() => {
     const map = new Map<string, { total: number; ganhou: number; valorGanho: number }>()
@@ -163,7 +176,7 @@ export default function BIConcorrenciaPage() {
 
   const radarData = useMemo(() => {
     if (finalized.length === 0) return []
-    const portais = new Set(biddings.map((b) => b.portal).filter(Boolean))
+    const portais = new Set(ativas.map((b) => b.portal).filter(Boolean))
     return [
       { dimensao: 'Taxa de Êxito', valor: overallWinRate },
       { dimensao: 'Diversificação de Portais', valor: Math.min(100, portais.size * 20) },
@@ -171,7 +184,7 @@ export default function BIConcorrenciaPage() {
       { dimensao: 'Margem Competitiva', valor: margemCompetitiva ? Math.min(100, Math.round(margemCompetitiva.media * 3)) : 0 },
       { dimensao: 'Clientes Ativos', valor: Math.min(100, clients.filter((c) => c.isActive).length * 10) },
     ]
-  }, [finalized, biddings, overallWinRate, margemCompetitiva, clients])
+  }, [finalized, ativas, overallWinRate, margemCompetitiva, clients])
 
   if (biddings.length === 0) {
     return (
@@ -209,12 +222,12 @@ export default function BIConcorrenciaPage() {
         </Card>
         <Card className="p-4">
           <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Licitações Ativas</p>
-          <p className="text-2xl font-extrabold font-mono text-warning-400">{biddings.filter((b) => b.status === 'Em Andamento').length}</p>
+          <p className="text-2xl font-extrabold font-mono text-warning-400">{ativas.filter((b) => b.status === 'Em Andamento').length}</p>
           <p className="text-[11px] text-base-500">em disputa neste momento</p>
         </Card>
         <Card className="p-4">
           <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Órgãos Diferentes</p>
-          <p className="text-2xl font-extrabold font-mono text-base-100">{new Set(biddings.map((b) => b.orgao)).size}</p>
+          <p className="text-2xl font-extrabold font-mono text-base-100">{new Set(ativas.map((b) => b.orgao)).size}</p>
           <p className="text-[11px] text-base-500">prefeituras/entidades atendidas</p>
         </Card>
       </div>
@@ -299,7 +312,7 @@ export default function BIConcorrenciaPage() {
           ) : (
             <div className="flex flex-col gap-2 max-h-[240px] overflow-y-auto">
               {byMunicipio.map((m) => (
-                <div key={m.municipio} className="flex items-center justify-between gap-2 bg-base-850/60 rounded-lg px-3 py-2">
+                <div key={m.chave} className="flex items-center justify-between gap-2 bg-base-850/60 rounded-lg px-3 py-2">
                   <div className="min-w-0">
                     <p className="text-[12px] font-medium text-base-200 truncate">{m.municipio}</p>
                     <p className="text-[10px] text-base-500">{m.total} disputa(s) · {m.taxa}% de êxito</p>

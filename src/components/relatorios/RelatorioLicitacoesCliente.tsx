@@ -123,9 +123,18 @@ export default function RelatorioLicitacoesCliente({ clients, biddings }: { clie
     // licitações Ganhas: os mesmos 3 campos do formulário de Nova
     // Licitação (Valor Total do Edital, Valor que Vamos Participar, Valor
     // Ganho de Fato), só que somados entre as licitações vencidas.
+    //
+    // Somados a partir de `resumos` (a mesma fonte que já alimenta a
+    // tabela Consolidada logo abaixo) — antes esses cards liam
+    // valorParticipacao/valorOfertadoReal direto da licitação, com
+    // fallback pra 0, enquanto a tabela (via resumoItensBidding) caía pro
+    // valor licitado quando a licitação não tinha itens cadastrados. Pra
+    // uma licitação Ganha sem itens e sem esses dois campos preenchidos,
+    // os cards mostravam R$ 0,00 e a tabela, na mesma tela, mostrava o
+    // valor total do edital pra mesma linha.
     const valorTotalEdital = doCliente.reduce((s, b) => s + b.valorLicitado, 0)
-    const valorParticipadoGanhas = ganhou.reduce((s, b) => s + (b.valorParticipacao ?? 0), 0)
-    const valorGanhoDeFato = ganhou.reduce((s, b) => s + (b.valorOfertadoReal ?? 0), 0)
+    const valorParticipadoGanhas = ganhou.reduce((s, b) => s + (resumos.get(b.id)?.valorParticipado ?? 0), 0)
+    const valorGanhoDeFato = ganhou.reduce((s, b) => s + (resumos.get(b.id)?.valorGanho ?? 0), 0)
     // "Quanto deixou de ganhar" = soma do valor das oportunidades perdidas.
     const valorPerdido = perdeu.reduce((s, b) => s + valorRelevante(b), 0)
     const valorEmAndamento = emAndamento.reduce((s, b) => s + b.valorLicitado, 0)
@@ -146,7 +155,7 @@ export default function RelatorioLicitacoesCliente({ clients, biddings }: { clie
       totalEmAndamento: emAndamento.length,
       valorEmAndamento,
     }
-  }, [doCliente])
+  }, [doCliente, resumos])
 
   return (
     <div className="flex flex-col gap-4">
