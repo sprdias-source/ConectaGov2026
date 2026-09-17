@@ -288,8 +288,23 @@ export default function AbaFiscal() {
                 Algumas faixas ainda não foram conferidas contra a Resolução CGSN 140/2018 — a Faixa 1 foi validada contra um DAS real, as demais precisam de revisão antes de confiar 100%.
               </p>
             )}
+            {conferencia.acimaDoSublimite && (
+              <p className="text-[10.5px] text-warning-400 mt-2 flex items-start gap-1.5">
+                <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                RBT12 acima de {formatBRL(3_600_000)} (sublimite) — a partir daqui o ISS/ICMS pode passar a ser recolhido fora do DAS, e este detalhamento por tributo não reproduz essa regra. Não confie neste breakdown sem revisão de um contador.
+              </p>
+            )}
           </Card>
         </>
+      )}
+
+      {vigente?.regime === 'simples_nacional' && !conferencia && (
+        <Card className="p-5">
+          <p className="text-[12.5px] text-base-400 flex items-start gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-warning-400" />
+            A competência {competencia} não estava sob o Simples Nacional (ou não há faixa cadastrada pra ela) — a conferência de RBT12/DAS usa sempre o regime que estava vigente NA competência escolhida, não o regime de hoje.
+          </p>
+        </Card>
       )}
 
       {vigente?.regime !== 'simples_nacional' && vigente && (

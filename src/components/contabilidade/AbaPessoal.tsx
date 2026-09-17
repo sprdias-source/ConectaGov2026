@@ -9,7 +9,11 @@ import { useSimplesNacional } from '../../hooks/useSimplesNacional'
 import { useRegimeTributario } from '../../hooks/useRegimeTributario'
 import { todayLocalISO } from '../../lib/dateUtils'
 
-const CATEGORIAS_FOLHA = ['Folha de Pagamento', 'Pró-Labore']
+// "Folha de salários, incluídos encargos" pro Fator R (LC 123/2006 art.
+// 18 §5º-J) inclui o FGTS efetivamente recolhido, não só Folha + Pró-labore
+// — sem ele, o Fator R sai sistematicamente abaixo do real e pode indicar
+// uma troca de anexo tributário (III → V) que na verdade não é devida.
+const CATEGORIAS_FOLHA = ['Folha de Pagamento', 'Pró-Labore', 'FGTS a Recolher']
 
 export default function AbaPessoal() {
   const { employees } = useEmployees()
