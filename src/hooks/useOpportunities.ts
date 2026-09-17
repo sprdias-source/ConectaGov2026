@@ -227,45 +227,79 @@ export function useOpportunities() {
       if (biddingError) throw biddingError
       const novoBiddingId = biddingRow.id as string
 
-      if (itens?.length) {
-        const { error: itensError } = await supabase
-          .from('bidding_items')
-          .insert(itens.map((i) => toBiddingItemInsert({ ...i, biddingId: novoBiddingId }, user.id)))
-        if (itensError) throw itensError
-      }
+      // Daqui em diante são vários passos sequenciais e independentes —
+      // sem uma transação de verdade no banco. Se qualquer um falhar no
+      // meio, desfaz manualmente o que já rodou (devolve os arquivos pra
+      // "oportunidade" e apaga a licitação recém-criada, que já leva
+      // junto itens/análise por cascade) antes de propagar o erro — sem
+      // isso, uma falha no meio deixava uma licitação órfã sem ninguém
+      // saber que veio de uma conversão, e como a oportunidade continuava
+      // sem bidding_id, um novo clique em "Converter" criava uma SEGUNDA
+      // licitação completa pra mesma oportunidade.
+      let arquivosMovidos = false
+      try {
+        if (itens?.length) {
+          const { error: itensError } = await supabase
+            .from('bidding_items')
+            .insert(itens.map((i) => toBiddingItemInsert({ ...i, biddingId: novoBiddingId }, user.id)))
+          if (itensError) throw itensError
+        }
 
-      // Move a referência dos arquivos (edital/TR) — mesmo storage_path,
-      // sem reenviar nada.
-      const { error: arquivosError } = await supabase
-        .from('attached_files')
-        .update({ entity_type: 'licitacao', entity_id: novoBiddingId })
-        .eq('entity_type', 'oportunidade')
-        .eq('entity_id', opportunity.id)
-      if (arquivosError) throw arquivosError
+        // Move a referência dos arquivos (edital/TR) — mesmo storage_path,
+        // sem reenviar nada.
+        const { error: arquivosError } = await supabase
+          .from('attached_files')
+          .update({ entity_type: 'licitacao', entity_id: novoBiddingId })
+          .eq('entity_type', 'oportunidade')
+          .eq('entity_id', opportunity.id)
+        if (arquivosError) throw arquivosError
+        arquivosMovidos = true
 
-      if (analise) {
-        const { error: analiseError } = await supabase
-          .from('bidding_analysis')
-          .insert({ user_id: user.id, bidding_id: novoBiddingId, status: 'concluido', analise: analiseRow!.analise })
-        if (analiseError) throw analiseError
-      }
+        if (analise) {
+          const { error: analiseError } = await supabase
+            .from('bidding_analysis')
+            .insert({ user_id: user.id, bidding_id: novoBiddingId, status: 'concluido', analise: analiseRow!.analise })
+          if (analiseError) throw analiseError
+        }
 
-      const { error: opportunityError } = await supabase
-        .from('opportunities')
-        .update({ bidding_id: novoBiddingId })
-        .eq('id', opportunity.id)
-      if (opportunityError) throw opportunityError
+        const { error: opportunityError } = await supabase
+          .from('opportunities')
+          .update({ bidding_id: novoBiddingId })
+          .eq('id', opportunity.id)
+        if (opportunityError) throw opportunityError
 
-      // Fecha o ciclo do edital Licitei que originou esta oportunidade (se
-      // houver): vira 'aceito' e grava o bidding_id de verdade — é assim
-      // que a aba Editais Licitei sabe que este edital não é mais uma
-      // oportunidade pendente, virou uma licitação de fato.
-      if (opportunity.licitaiEditalId) {
-        const { error: licitaiError } = await supabase
-          .from('licitei_editais')
-          .update({ status: 'aceito', bidding_id: novoBiddingId })
-          .eq('id', opportunity.licitaiEditalId)
-        if (licitaiError) throw licitaiError
+        // Fecha o ciclo do edital Licitei que originou esta oportunidade
+        // (se houver): vira 'aceito' e grava o bidding_id de verdade — é
+        // assim que a aba Editais Licitei sabe que este edital não é mais
+        // uma oportunidade pendente, virou uma licitação de fato.
+        if (opportunity.licitaiEditalId) {
+          const { error: licitaiError } = await supabase
+            .from('licitei_editais')
+            .update({ status: 'aceito', bidding_id: novoBiddingId })
+            .eq('id', opportunity.licitaiEditalId)
+          if (licitaiError) throw licitaiError
+        }
+      } catch (err) {
+        if (arquivosMovidos) {
+          try {
+            await supabase
+              .from('attached_files')
+              .update({ entity_type: 'oportunidade', entity_id: opportunity.id })
+              .eq('entity_type', 'licitacao')
+              .eq('entity_id', novoBiddingId)
+          } catch {
+            // best-effort — o passo seguinte (apagar a licitação) é o que
+            // garante que a conversão possa ser tentada de novo do zero.
+          }
+        }
+        try {
+          await supabase.from('biddings').delete().eq('id', novoBiddingId)
+        } catch {
+          // best-effort — se nem isso funcionar, a licitação órfã fica
+          // visível no Kanban (mesma tela usada pra qualquer licitação),
+          // não escondida silenciosamente.
+        }
+        throw err
       }
 
       return { biddingId: novoBiddingId, objeto: biddingPartial.objeto, orgao: biddingPartial.orgao, licitaiEditalId: opportunity.licitaiEditalId }

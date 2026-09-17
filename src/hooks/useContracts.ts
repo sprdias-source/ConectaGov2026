@@ -78,7 +78,14 @@ export function useContracts() {
       if (error) throw error
       return fromContractRow(data)
     },
-    onSuccess: () => {
+    // Escreve o contrato recém-criado no cache NA HORA, além de invalidar
+    // (que dispara um refetch em segundo plano, mas não é síncrono) —
+    // sem isso, a checagem de contrato duplicado em ContratosPage.tsx
+    // (que lê `contracts` deste mesmo cache) tinha uma janela em que um
+    // segundo clique bem cedo, antes do refetch terminar, não via o
+    // contrato que acabou de ser salvo e não detectava a duplicata.
+    onSuccess: (novo) => {
+      queryClient.setQueryData<Contract[]>(QUERY_KEY, (old) => old ? [novo, ...old] : [novo])
       queryClient.invalidateQueries({ queryKey: QUERY_KEY })
       logEvent('Gerou Contrato', 'Criou um novo contrato de prestação de serviços')
     },
@@ -86,17 +93,26 @@ export function useContracts() {
 
   const deleteContract = useMutation({
     mutationFn: async (contract: Contract) => {
-      // O "Contrato Assinado" anexado (ver DocumentUploader em
-      // ContratosPage.tsx) é uma referência solta por entity_type/entity_id
-      // em attached_files, não uma FK de verdade pro contrato — sem essa
-      // limpeza explícita, excluir o contrato deixava o arquivo órfão pra
-      // sempre no Drive/Storage, sem nenhuma tela pra achá-lo de novo.
+      // Apaga o CONTRATO primeiro — é o passo que decide de verdade se a
+      // exclusão aconteceu (RLS, rede etc. podem barrar bem aqui). Só
+      // depois de confirmado que o contrato já não existe mais é que
+      // limpamos o "Contrato Assinado" anexado (ver DocumentUploader em
+      // ContratosPage.tsx) — uma referência solta por
+      // entity_type/entity_id em attached_files, não uma FK de verdade
+      // pro contrato. Nessa ordem, se a limpeza do anexo falhar no meio,
+      // o pior caso é um arquivo órfão consumindo espaço; na ordem
+      // inversa (como era antes), uma falha bem aqui podia apagar o
+      // arquivo assinado de um contrato que continuava existindo, sem
+      // nenhum jeito de recuperar.
+      const { error } = await supabase.from('contracts').delete().eq('id', contract.id)
+      if (error) throw error
+
       const { data: anexos, error: anexosError } = await supabase
         .from('attached_files')
         .select('id, storage_path')
         .eq('entity_type', 'contrato')
         .eq('entity_id', contract.id)
-      if (anexosError) throw anexosError
+      if (anexosError) return
 
       for (const anexo of anexos ?? []) {
         if (!anexo.storage_path) continue
@@ -109,9 +125,6 @@ export function useContracts() {
       if (anexos && anexos.length > 0) {
         await supabase.from('attached_files').delete().eq('entity_type', 'contrato').eq('entity_id', contract.id)
       }
-
-      const { error } = await supabase.from('contracts').delete().eq('id', contract.id)
-      if (error) throw error
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEY })

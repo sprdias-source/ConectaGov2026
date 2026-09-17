@@ -85,6 +85,19 @@ export function certidaoDisponivelParaItem(item: BiddingChecklistItem, clientDoc
 // pontuação, os dois usos abaixo só se importam com a sequência de letras.
 const normalizarTexto = (texto: string) => texto.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 
+// Nomes curtos e genéricos demais pra confiar numa sugestão só por eles
+// aparecerem na descrição — um cliente pode ter só UM documento manual
+// chamado "Declaração" (na real, "Declaração de não emprego de menor"),
+// mas um edital comum pede várias declarações DIFERENTES ("Declaração de
+// não emprego de menor", "Declaração de inexistência de fatos
+// impeditivos" etc.) — sugerir o mesmo arquivo pras duas é o tipo de
+// vínculo errado que a migração 044 tentou eliminar. Fica de fora quando
+// o nome do documento É (sozinho, sem mais nenhuma palavra) um destes.
+const NOMES_GENERICOS_DEMAIS = new Set([
+  'declaracao', 'certidao', 'documento', 'documentos', 'anexo', 'anexos',
+  'comprovante', 'ficha', 'formulario', 'termo', 'outro', 'outros',
+])
+
 // Mesma ideia de certidaoDisponivelParaItem, mas pro resto do repositório
 // do cliente — documentos fora das 7 certidões padrão (Contrato Social,
 // Procuração etc., normalmente organizados em pastas como "Habilitação
@@ -94,25 +107,31 @@ const normalizarTexto = (texto: string) => texto.toLowerCase().normalize('NFD').
 // Social" dentro do item "5.2 Contrato Social ou Estatuto e suas
 // alterações posteriores, devidamente registrado na Junta Comercial".
 // Exige um nome com pelo menos 5 caracteres (sem isso um nome curto tipo
-// "RG" casaria solto em qualquer frase) e pula itens de Atestado Técnico
-// (resolvidos por uma tabela própria, nunca pelo repositório de
-// documentos do cliente). Mesmo cuidado de certidaoDisponivelParaItem:
-// só SUGERE — exige o clique em "Usar este documento" pra valer.
+// "RG" casaria solto em qualquer frase), pula nomes genéricos demais sem
+// nenhuma palavra extra que os torne específicos (NOMES_GENERICOS_DEMAIS),
+// e pula itens de Atestado Técnico (resolvidos por uma tabela própria,
+// nunca pelo repositório de documentos do cliente). Se MAIS DE UM
+// documento do cliente bate na mesma descrição, não arrisca escolher um —
+// devolve null (ambíguo é melhor que confiante e errado). Mesmo cuidado
+// de certidaoDisponivelParaItem: só SUGERE — exige o clique em "Usar este
+// documento" pra valer.
 export function sugerirDocumentoManualParaItem(item: BiddingChecklistItem, clientDocs: ClientDocument[]): ClientDocument | null {
   if (item.clientDocumentTipo || item.clientDocumentId || item.attachedFileId || item.atestadoId) return null
   if (/atestado/i.test(item.descricao)) return null
   const descricaoNormalizada = normalizarTexto(item.descricao)
-  return clientDocs.find((d) => {
+  const candidatos = clientDocs.filter((d) => {
     if (d.tipo !== 'manual' || !d.storagePath) return false
-    const nomeNormalizado = normalizarTexto(d.nome)
+    const nomeNormalizado = normalizarTexto(d.nome).trim()
     if (nomeNormalizado.length < 5) return false
+    if (NOMES_GENERICOS_DEMAIS.has(nomeNormalizado)) return false
     if (d.dataValidade) {
       const status = calcDocStatus(d.dataValidade)
       if (status !== 'valido' && status !== 'vencendo') return false
     }
     const regex = new RegExp(`\\b${nomeNormalizado.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
     return regex.test(descricaoNormalizada)
-  }) ?? null
+  })
+  return candidatos.length === 1 ? candidatos[0] : null
 }
 
 // Acha o arquivo de verdade que satisfaz um item — pra "Ver PDF" e pro

@@ -81,6 +81,20 @@ export function somarValorGanho(itens: Partial<BiddingItem>[]): number {
   return itensGanhosOuTodos.reduce((s, i) => s + (i.quantidade ?? 0) * (i.valorUnitarioOfertado ?? i.valorUnitarioLicitado ?? 0), 0)
 }
 
+// Mesma soma de somarValorGanho, mas SEM o fallback "soma tudo" quando
+// nenhum item ainda foi marcado "Ganhou?" — só itens de fato confirmados
+// contam, e devolve 0 se nenhum foi marcado ainda. Usar SEMPRE que o
+// resultado for GRAVADO como fato (nunca como estimativa de tela): o
+// fallback amplo de somarValorGanho é uma aproximação aceitável pra
+// exibir num card do Kanban antes da disputa por item ser resolvida, mas
+// gravar essa aproximação como "Valor Ganho de Fato" permanente é
+// diferente — ficava gravado errado pra sempre quando a licitação virava
+// Ganhou+Homologada antes de os itens serem marcados um a um (fluxo
+// comum: primeiro registra o resultado, só depois ajusta os itens).
+export function somarValorGanhoConfirmado(itens: Partial<BiddingItem>[]): number {
+  return itens.filter((i) => i.ganhou).reduce((s, i) => s + (i.quantidade ?? 0) * (i.valorUnitarioOfertado ?? i.valorUnitarioLicitado ?? 0), 0)
+}
+
 // Todo campo que mapearCamposDaAnalise é capaz de preencher — usado só pra
 // saber quais chaves marcar/desmarcar com o selo "IA" (ver
 // Bidding.camposPreenchidosPorIa), nunca pra decidir o que gravar.
