@@ -21,7 +21,12 @@ const MONTH_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'S
 
 export default function DashboardPage() {
   const { clients } = useClients()
-  const { biddings } = useBiddings()
+  const { biddings: todasBiddings } = useBiddings()
+  // Licitação inativada (excluída logicamente) não pode continuar contando
+  // no funil, na taxa de êxito nem no "pulso da operação" — mesmo filtro
+  // que o Kanban de Licitações já aplica, faltando aqui antes desta
+  // correção.
+  const biddings = useMemo(() => todasBiddings.filter((b) => b.isActive), [todasBiddings])
   const { transactions } = useTransactions()
   const { accounts } = useFinancialAccounts()
   const { patrimonioTotal } = useAccountBalances(accounts, transactions)
