@@ -382,15 +382,20 @@ export function useEmpenhos() {
       // independente que se repete (não uma fatia de um total único), então
       // o filtro por projectionMonthNumber acima já evita duplicar sozinho.
       if ((updated.modoParcelamento === 'quantidade_fixa' || updated.modoParcelamento === 'integral') && paidNumbers.size > 0) {
-        const totalJaPago = (paidTxs ?? []).reduce((s, p) => s + (p.value ?? 0), 0)
-        const restante = Math.max(0, updated.valorComissaoTotal - totalJaPago)
+        // Soma em centavos (inteiro) antes de converter de volta — mesmo
+        // cuidado de useAccountBalances.ts: somar valores em float puro
+        // pode deixar um resíduo de ponto flutuante que faz `restante`
+        // ficar levemente acima de zero quando deveria ser exatamente
+        // zero, disparando o ramo de "gerar complemento" por engano.
+        const totalJaPagoCents = (paidTxs ?? []).reduce((s, p) => s + Math.round((p.value ?? 0) * 100), 0)
+        const restante = Math.max(0, Math.round(updated.valorComissaoTotal * 100 - totalJaPagoCents) / 100)
         if (updated.modoParcelamento === 'integral') {
           // Modo integral nunca divide — só ajusta o valor da transação
           // única (ou remove ela, se o total já pago cobrir tudo). Usa
           // allTxs[0] como molde (em vez de txsToInsert[0]) porque, com a
           // única parcela já paga, txsToInsert já chega vazio aqui.
           txsToInsert = restante > 0 && allTxs[0] ? [{ ...allTxs[0], value: Math.round(restante * 100) / 100 }] : []
-        } else if (txsToInsert.length > 0) {
+        } else if (restante > 0 && txsToInsert.length > 0) {
           const splitValue = Math.round((restante / txsToInsert.length) * 100) / 100
           txsToInsert = txsToInsert.map((t, idx) => ({
             ...t,
@@ -416,6 +421,13 @@ export function useEmpenhos() {
             dueDate: todayLocalISO(),
             status: statusForDate(todayLocalISO()),
           }]
+        } else {
+          // restante <= 0 (o total já pago cobre ou ultrapassa o novo
+          // valorComissaoTotal) — sem este caso, txsToInsert continuava
+          // com o valor ORIGINAL (pré-ajuste) das parcelas ainda não
+          // pagas, gerando parcela de sobra/valor errado em vez de
+          // simplesmente não gerar nada.
+          txsToInsert = []
         }
       }
 

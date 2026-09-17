@@ -10,7 +10,7 @@ import NotificationBell from './NotificationBell'
 import { useAuth } from '../../hooks/useAuth'
 import { useTheme } from '../../hooks/useTheme'
 import { useFinancialAccounts } from '../../hooks/useFinancialAccounts'
-import { useTransactions, isRepasseAtrasado } from '../../hooks/useTransactions'
+import { useTransactions, isRepasseAtrasado, statusExibidoTransacao } from '../../hooks/useTransactions'
 import { useAccountBalances, formatBRL } from '../../hooks/useAccountBalances'
 import { useBackup } from '../../hooks/useBackup'
 import { useAllClientDocuments } from '../../hooks/useClientDocuments'
@@ -120,7 +120,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   // fica só na própria tela, aqui é só o "chame a atenção".
   const alertasUrgentes =
     clientDocuments.filter((d) => d.status === 'vencendo' || d.status === 'vencido').length +
-    transactions.filter((t) => t.status === 'Atrasado').length +
+    transactions.filter((t) => statusExibidoTransacao(t) === 'Atrasado').length +
     clientPlatforms.filter((cp) => {
       const status = calcPlatformStatus(cp.dataVencimento, cp.diasAvisoVencimento)
       return status === 'vencendo' || status === 'vencida'

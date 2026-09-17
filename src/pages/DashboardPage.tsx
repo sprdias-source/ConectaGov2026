@@ -13,7 +13,7 @@ import AlertaSessaoRisco from '../components/dashboard/AlertaSessaoRisco'
 import { todayLocalISO } from '../lib/dateUtils'
 import { useClients } from '../hooks/useClients'
 import { useBiddings } from '../hooks/useBiddings'
-import { useTransactions } from '../hooks/useTransactions'
+import { useTransactions, statusExibidoTransacao } from '../hooks/useTransactions'
 import { useFinancialAccounts } from '../hooks/useFinancialAccounts'
 import { useAccountBalances, formatBRL, contasInternasIds } from '../hooks/useAccountBalances'
 
@@ -53,7 +53,7 @@ export default function DashboardPage() {
       .filter((t) => t.type === 'Pagar' && t.status !== 'Pago')
       .reduce((sum, t) => sum + t.value, 0)
 
-    const atrasados = transactionsReais.filter((t) => t.status === 'Atrasado')
+    const atrasados = transactionsReais.filter((t) => statusExibidoTransacao(t) === 'Atrasado')
     const atrasadosValor = atrasados.reduce((sum, t) => sum + t.value, 0)
 
     const comissaoProjetada = transactionsReais
@@ -320,7 +320,7 @@ export default function DashboardPage() {
                     <p className={`text-[12px] font-bold font-mono ${t.type === 'Receber' ? 'text-positive-400' : 'text-negative-300'}`}>
                       {t.type === 'Receber' ? '+' : '−'}{formatBRL(t.value)}
                     </p>
-                    <StatusBadge status={t.status} />
+                    <StatusBadge status={statusExibidoTransacao(t)} />
                   </div>
                 </div>
               ))}
