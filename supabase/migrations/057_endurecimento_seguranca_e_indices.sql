@@ -25,8 +25,10 @@
 --      tabelas da migração 034 (nenhuma tinha índice em user_id nem nas
 --      FKs) e as colunas de data das migrações 054/055 (Central de
 --      Prazos, Repasse por Cliente).
---   4) UNIQUE em licitacoes_pncp pra nunca duplicar o mesmo processo
---      encontrado pela mesma busca.
+--
+-- (O item 4 original — UNIQUE em licitacoes_pncp pra nunca duplicar o
+-- mesmo processo do PNCP — foi removido: a busca automática do PNCP não
+-- é uma função que este sistema atende.)
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -160,14 +162,7 @@ create index if not exists idx_empenhos_data_vencimento on empenhos(data_vencime
 create index if not exists idx_transactions_data_vencimento_prefeitura on transactions(data_vencimento_prefeitura) where data_vencimento_prefeitura is not null;
 create index if not exists idx_transactions_data_liquidacao_prefeitura on transactions(data_liquidacao_prefeitura) where data_liquidacao_prefeitura is not null;
 
--- ----------------------------------------------------------------------------
--- 4) Evita duplicar o mesmo processo do PNCP encontrado pela mesma busca
--- ----------------------------------------------------------------------------
-do $$
-begin
-  if not exists (select 1 from pg_constraint where conname = 'licitacoes_pncp_busca_numero_key') then
-    alter table licitacoes_pncp
-      add constraint licitacoes_pncp_busca_numero_key
-      unique (busca_config_id, numero_controle_pncp);
-  end if;
-end $$;
+-- Item 4 da perícia original (UNIQUE em licitacoes_pncp pra nunca duplicar
+-- o mesmo processo do PNCP encontrado pela mesma busca) foi removido —
+-- a busca automática do PNCP não é uma função que este sistema atende,
+-- então não faz sentido corrigir uma constraint pra ela.
