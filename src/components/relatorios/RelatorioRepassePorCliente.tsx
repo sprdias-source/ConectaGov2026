@@ -95,7 +95,18 @@ export default function RelatorioRepassePorCliente({ clients, transactions, acco
       // Pior primeiro: quem não tem nenhum repasse concluído ainda (só em
       // aberto) fica no topo — é o caso mais urgente de acompanhar, ainda
       // sem histórico nenhum de quanto tempo costuma levar.
-      .sort((a, b) => (b.mediaDias ?? Infinity) - (a.mediaDias ?? Infinity))
+      // Comparador explícito em vez de (b.mediaDias ?? Infinity) -
+      // (a.mediaDias ?? Infinity): quando os dois lados são null, isso
+      // calculava Infinity - Infinity = NaN — inofensivo hoje (V8 trata
+      // como empate e mantém a ordem de inserção), mas não é um
+      // comparador correto pela especificação, e não é garantido em
+      // todo runtime/versão de engine.
+      .sort((a, b) => {
+        if (a.mediaDias === null && b.mediaDias === null) return 0
+        if (a.mediaDias === null) return -1
+        if (b.mediaDias === null) return 1
+        return b.mediaDias - a.mediaDias
+      })
   }, [resumos, clients])
 
   if (linhas.length === 0) {

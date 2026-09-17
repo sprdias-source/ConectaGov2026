@@ -7,7 +7,7 @@ import { useBiddings } from '../hooks/useBiddings'
 import { useClients } from '../hooks/useClients'
 import { useTransactions, diasDesdeLiquidacaoPrefeitura, isRepasseAtrasado } from '../hooks/useTransactions'
 import { useAllBiddingChecklistItems } from '../hooks/useBiddingChecklist'
-import { useAllClientDocuments, calcDocStatus, diasRestantes } from '../hooks/useClientDocuments'
+import { useAllClientDocuments, calcDocStatus, alertaDiasDoTipo, diasRestantes } from '../hooks/useClientDocuments'
 import { useAllClientPlatforms, calcPlatformStatus, diasParaVencer } from '../hooks/useClientPlatforms'
 import { usePlatforms } from '../hooks/usePlatforms'
 import { useOpportunities, calcOpportunityStatus, diasParaSessao } from '../hooks/useOpportunities'
@@ -89,7 +89,13 @@ export default function CentralPrazosPage() {
       const candidatasVinculadas = doc.tipo !== 'manual'
         ? biddings.filter((b) =>
             b.isActive && b.status === 'Em Andamento' && b.clientId === doc.clientId && b.dataAbertura >= hoje &&
-            allChecklistItems.some((i) => i.biddingId === b.id && i.clientDocumentTipo === doc.tipo)
+            // Item marcado "não aplicável" (ver marcarNaoAplicavel em
+            // useBiddingChecklist.ts) não exige mais essa certidão — sem
+            // este filtro, a mesma checagem que calcularHabilitacao já
+            // ignora (obrigatorio && !naoAplicavel) gerava aqui um alarme
+            // falso vinculando a certidão a uma licitação que na prática
+            // não precisa dela.
+            allChecklistItems.some((i) => i.biddingId === b.id && i.clientDocumentTipo === doc.tipo && !i.naoAplicavel)
           )
         : []
 
@@ -125,7 +131,7 @@ export default function CentralPrazosPage() {
       // upload/upsert e nunca é atualizada depois, então uma certidão
       // avulsa (sem sessão vinculada) salva como "válido" meses atrás
       // nunca aparecia aqui de novo, mesmo já tendo vencido de verdade.
-      const statusAtual = calcDocStatus(doc.dataValidade)
+      const statusAtual = calcDocStatus(doc.dataValidade, alertaDiasDoTipo(doc.tipo))
       if (statusAtual !== 'vencendo' && statusAtual !== 'vencido') continue
       lista.push({
         key: `doc-${doc.id}`,

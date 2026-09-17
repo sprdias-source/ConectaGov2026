@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { fromBiddingChecklistItemRow, toBiddingChecklistItemInsert } from '../lib/mappers'
 import { useAuth } from './useAuth'
-import { calcDocStatus, useAllClientDocuments } from './useClientDocuments'
+import { calcDocStatus, alertaDiasDoTipo, useAllClientDocuments } from './useClientDocuments'
 import type { AtestadoTecnico, AttachedFile, Bidding, BiddingChecklistItem, ClientDocument, DocumentTipo } from '../types/domain'
 
 const QUERY_KEY = ['bidding_checklist_items']
@@ -48,7 +48,7 @@ export function statusItemChecklist(item: BiddingChecklistItem, clientDocs: Clie
       // usuário confirmou (item.atendido), senão o item ficava "faltando"
       // pra sempre mesmo com o arquivo certo já anexado.
       if (!doc.dataValidade) return item.atendido ? 'atendido' : 'faltando'
-      const status = calcDocStatus(doc.dataValidade)
+      const status = calcDocStatus(doc.dataValidade, alertaDiasDoTipo(doc.tipo))
       if (status === 'valido') return 'atendido'
       if (status === 'vencendo') return 'vencendo'
       // 'vencido' cai aqui — a certidão vinculada não serve mais, então o
@@ -76,7 +76,7 @@ export function certidaoDisponivelParaItem(item: BiddingChecklistItem, clientDoc
   if (!item.clientDocumentTipo || item.clientDocumentId || item.attachedFileId) return null
   const doc = clientDocs.find((d) => d.tipo === item.clientDocumentTipo)
   if (!doc?.storagePath) return null
-  const status = calcDocStatus(doc.dataValidade)
+  const status = calcDocStatus(doc.dataValidade, alertaDiasDoTipo(doc.tipo))
   if (status === 'valido' || status === 'vencendo') return doc
   return null
 }
@@ -455,7 +455,7 @@ export interface PendenciaChecklist extends BiddingChecklistItem {
 
 type PendenciaRow = Parameters<typeof fromBiddingChecklistItemRow>[0] & {
   biddings: { objeto: string; orgao: string; client_id: string; clients: { name: string } | null } | null
-  client_documents: { data_validade: string | null; storage_path: string | null } | null
+  client_documents: { data_validade: string | null; storage_path: string | null; tipo: DocumentTipo } | null
 }
 
 // "Motor de Pendências" — todos os itens de checklist NÃO atendidos, de
@@ -481,7 +481,7 @@ export function usePendenciasChecklist() {
       // de verdade abaixo) em vez de excluí-los de cara.
       const { data, error } = await supabase
         .from('bidding_checklist_items')
-        .select('*, biddings(objeto, orgao, client_id, clients(name)), client_documents(data_validade, storage_path)')
+        .select('*, biddings(objeto, orgao, client_id, clients(name)), client_documents(data_validade, storage_path, tipo)')
         .eq('nao_aplicavel', false)
         .is('attached_file_id', null)
         .is('atestado_id', null)
@@ -495,7 +495,7 @@ export function usePendenciasChecklist() {
           // 'vencido' ou sem arquivo continuam como pendência.
           const doc = row.client_documents
           if (!doc?.storage_path) return true
-          return calcDocStatus(doc.data_validade) !== 'valido'
+          return calcDocStatus(doc.data_validade, alertaDiasDoTipo(doc.tipo)) !== 'valido'
         })
         .map((row) => ({
           ...fromBiddingChecklistItemRow(row),
