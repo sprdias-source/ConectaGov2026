@@ -37,6 +37,22 @@ export function isRepasseAtrasado(t: Transaction): boolean {
   return dias !== null && dias >= LIMIAR_REPASSE_ATRASADO_DIAS
 }
 
+// Pendente/Atrasado/Vence Hoje é calculado UMA VEZ, na criação do
+// lançamento, e gravado — diferente do resto do sistema (Empenho,
+// Contrato, Oportunidade), nada recalcula isso depois. Um lançamento
+// criado "Pendente" pra vencer em 20 dias fica gravado como "Pendente"
+// pra sempre, mesmo 25 dias depois já vencido — os alertas de atraso
+// (badge da sidebar, Dashboard, DRE) que confiam nesse campo bruto
+// subcontam atrasados reais. Mesmo padrão de "calcula pelo dado bruto,
+// nunca por um status gravado" já usado em diasDesdeLiquidacaoPrefeitura
+// acima: só 'Pago' é lido do banco, o resto é sempre recomputado a partir
+// de dueDate.
+export function statusExibidoTransacao(t: Transaction): Transaction['status'] {
+  if (t.status === 'Pago') return 'Pago'
+  const hoje = todayLocalISO()
+  return t.dueDate < hoje ? 'Atrasado' : t.dueDate === hoje ? 'Vence Hoje' : 'Pendente'
+}
+
 export function useTransactions() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -70,8 +86,14 @@ export function useTransactions() {
       // do motor de recorrência rodar depois.
       const HORIZON = 3
       const expanded: Partial<Transaction>[] = []
-      for (const t of txs) {
+      // Guarda, por posição em `expanded`, de qual item ORIGINAL do lote
+      // (índice em `txs`) aquela linha veio — usado depois do insert pra
+      // ligar cada filho gerado ao PRÓPRIO pai, não ao primeiro lançamento
+      // recorrente do lote inteiro (ver correlação abaixo).
+      const grupoPorPosicao: number[] = []
+      txs.forEach((t, grupoIdx) => {
         expanded.push(t)
+        grupoPorPosicao.push(grupoIdx)
         if (t.isRecurring && t.dueDate) {
           const day = t.recurringDay ?? Number(t.dueDate.slice(8, 10))
           let parentDueDate = t.dueDate
@@ -94,10 +116,11 @@ export function useTransactions() {
               status: 'Pendente',
               paymentDate: null,
             })
+            grupoPorPosicao.push(grupoIdx)
             parentDueDate = nextDueDate
           }
         }
-      }
+      })
 
       const { data, error } = await supabase
         .from('transactions')
@@ -106,11 +129,23 @@ export function useTransactions() {
       if (error) throw error
       const createdRows = data.map(fromTransactionRow)
 
-      // A primeira linha criada que for recorrente é o "modelo" — as
-      // demais geradas a partir dela apontam recurringParentId para ela.
-      const parent = createdRows.find((c) => c.isRecurring)
-      if (parent) {
-        const childrenIds = createdRows.filter((c) => !c.isRecurring && c.dueDate > parent.dueDate).map((c) => c.id)
+      // Cada linha criada aponta pro mesmo índice de `txs` que a originou
+      // (insert único preserva a ordem de envio) — agrupa por esse índice
+      // em vez de "o primeiro item recorrente do lote inteiro", que
+      // vinculava tudo a um só pai quando o lote tinha mais de um
+      // lançamento recorrente (nenhum chamador atual passa mais de um,
+      // mas um futuro fluxo de importação em lote passaria).
+      const porGrupo = new Map<number, Transaction[]>()
+      createdRows.forEach((row, i) => {
+        const grupo = grupoPorPosicao[i]
+        const lista = porGrupo.get(grupo) ?? []
+        lista.push(row)
+        porGrupo.set(grupo, lista)
+      })
+      for (const linhas of porGrupo.values()) {
+        const parent = linhas.find((c) => c.isRecurring)
+        if (!parent) continue
+        const childrenIds = linhas.filter((c) => !c.isRecurring).map((c) => c.id)
         if (childrenIds.length > 0) {
           await supabase.from('transactions').update({ recurring_parent_id: parent.id }).in('id', childrenIds)
         }

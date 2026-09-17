@@ -6,7 +6,7 @@ import TopScrollTable from '../components/ui/TopScrollTable'
 import { SkeletonTableRows } from '../components/ui/Skeleton'
 import { Field, Select, Input, Button } from '../components/ui/FormControls'
 import { useEmployees } from '../hooks/useEmployees'
-import { useTransactions } from '../hooks/useTransactions'
+import { useTransactions, statusExibidoTransacao } from '../hooks/useTransactions'
 import { useFinancialAccounts } from '../hooks/useFinancialAccounts'
 import { formatBRL, contasInternasIds } from '../hooks/useAccountBalances'
 import { usePermissaoFerramenta } from '../hooks/usePermissaoFerramenta'
@@ -374,7 +374,7 @@ export default function FuncionariosPage() {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="font-mono font-bold text-[12px] text-negative-300">{formatBRL(t.value)}</span>
-                          <StatusBadge status={t.status} />
+                          <StatusBadge status={statusExibidoTransacao(t)} />
                         </div>
                       </div>
                     ))}

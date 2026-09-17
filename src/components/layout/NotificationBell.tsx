@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Bell, AlertOctagon, FileWarning, Clock, Globe, Send } from 'lucide-react'
 import { useSessoesDeRisco } from '../../hooks/useSessoesDeRisco'
 import { useAllClientDocuments } from '../../hooks/useClientDocuments'
-import { useTransactions } from '../../hooks/useTransactions'
+import { useTransactions, statusExibidoTransacao } from '../../hooks/useTransactions'
 import { useFinancialAccounts } from '../../hooks/useFinancialAccounts'
 import { contasInternasIds } from '../../hooks/useAccountBalances'
 import { useAllClientPlatforms, calcPlatformStatus } from '../../hooks/useClientPlatforms'
@@ -45,7 +45,7 @@ export default function NotificationBell() {
   // pessoal) não deve gerar alerta financeiro — mesma regra do Patrimônio
   // em useAccountBalances.ts.
   const internalIds = contasInternasIds(accounts)
-  const financeiroAtrasado = transactions.filter((t) => t.status === 'Atrasado' && !internalIds.has(t.accountId ?? '')).length
+  const financeiroAtrasado = transactions.filter((t) => statusExibidoTransacao(t) === 'Atrasado' && !internalIds.has(t.accountId ?? '')).length
   const plataformasVencendo = clientPlatforms.filter((cp) => {
     const status = calcPlatformStatus(cp.dataVencimento, cp.diasAvisoVencimento)
     return status === 'vencendo' || status === 'vencida'

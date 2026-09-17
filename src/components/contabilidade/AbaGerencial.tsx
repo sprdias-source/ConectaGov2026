@@ -3,7 +3,7 @@ import { TrendingUp, Target, Scale, ShieldCheck, Activity, AlertTriangle, PieCha
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { Card } from '../ui/Primitives'
 import { Field, Input } from '../ui/FormControls'
-import { useTransactions } from '../../hooks/useTransactions'
+import { useTransactions, statusExibidoTransacao } from '../../hooks/useTransactions'
 import { useBiddings } from '../../hooks/useBiddings'
 import { useClients } from '../../hooks/useClients'
 import { useFinancialAccounts } from '../../hooks/useFinancialAccounts'
@@ -87,7 +87,7 @@ export default function AbaGerencial() {
   const inadimplencia = useMemo(() => {
     const pendente = transactionsReais.filter((t) => t.type === 'Receber' && t.status !== 'Pago')
     const totalPendente = pendente.reduce((s, t) => s + t.value, 0)
-    const totalAtrasado = pendente.filter((t) => t.status === 'Atrasado').reduce((s, t) => s + t.value, 0)
+    const totalAtrasado = pendente.filter((t) => statusExibidoTransacao(t) === 'Atrasado').reduce((s, t) => s + t.value, 0)
     return totalPendente > 0 ? Math.round((totalAtrasado / totalPendente) * 100) : 0
   }, [transactionsReais])
 

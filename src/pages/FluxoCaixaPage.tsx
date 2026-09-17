@@ -3,7 +3,7 @@ import { CalendarRange, ArrowUpCircle, ArrowDownCircle, ChevronLeft, ChevronRigh
 import { PageHeader, Card, StatusBadge } from '../components/ui/Primitives'
 import TopScrollTable from '../components/ui/TopScrollTable'
 import { formatBRL, contasInternasIds } from '../hooks/useAccountBalances'
-import { useTransactions } from '../hooks/useTransactions'
+import { useTransactions, statusExibidoTransacao } from '../hooks/useTransactions'
 import { useFinancialAccounts } from '../hooks/useFinancialAccounts'
 import { useClients } from '../hooks/useClients'
 
@@ -210,7 +210,7 @@ export default function FluxoCaixaPage() {
                         <p className="text-[10px] text-base-500">{new Date(t.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <StatusBadge status={t.status} />
+                        <StatusBadge status={statusExibidoTransacao(t)} />
                         <span className="font-mono font-bold text-[12px] text-base-300">{formatBRL(t.value)}</span>
                       </div>
                     </div>

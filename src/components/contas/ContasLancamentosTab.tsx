@@ -4,7 +4,7 @@ import { Plus, Search, Pencil, Trash2, ArrowDownCircle, ArrowUpCircle, Check, Re
 import { Button, Input } from '../ui/FormControls'
 import { EmptyState, StatusBadge } from '../ui/Primitives'
 import { formatBRL, contasInternasIds } from '../../hooks/useAccountBalances'
-import { useTransactions } from '../../hooks/useTransactions'
+import { useTransactions, statusExibidoTransacao } from '../../hooks/useTransactions'
 import { useClients } from '../../hooks/useClients'
 import { useFinancialAccounts } from '../../hooks/useFinancialAccounts'
 import { useCategories } from '../../hooks/useCategories'
@@ -119,8 +119,8 @@ export default function ContasLancamentosTab() {
 
   const filtered = useMemo(() => {
     return periodTxs.filter((t) => {
-      if (filter === 'atrasados' && t.status !== 'Atrasado') return false
-      if (filter === 'vence_hoje' && t.status !== 'Vence Hoje') return false
+      if (filter === 'atrasados' && statusExibidoTransacao(t) !== 'Atrasado') return false
+      if (filter === 'vence_hoje' && statusExibidoTransacao(t) !== 'Vence Hoje') return false
       if (search) {
         const q = search.toLowerCase()
         return t.description.toLowerCase().includes(q) || clientName(t.clientId).toLowerCase().includes(q)
@@ -304,7 +304,7 @@ export default function ContasLancamentosTab() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
+                    <td className="px-4 py-3"><StatusBadge status={statusExibidoTransacao(t)} /></td>
                     {podeEditar && (
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">

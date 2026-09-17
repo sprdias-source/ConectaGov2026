@@ -4,7 +4,7 @@ import { PageHeader, Card, StatusBadge, EmptyState } from '../components/ui/Prim
 import TopScrollTable from '../components/ui/TopScrollTable'
 import { Select } from '../components/ui/FormControls'
 import { formatBRL, contasInternasIds } from '../hooks/useAccountBalances'
-import { useTransactions } from '../hooks/useTransactions'
+import { useTransactions, statusExibidoTransacao } from '../hooks/useTransactions'
 import { useFinancialAccounts } from '../hooks/useFinancialAccounts'
 import { useClients } from '../hooks/useClients'
 import { useCategories } from '../hooks/useCategories'
@@ -211,7 +211,7 @@ export default function RelatoriosPage() {
                         {tipo === 'Receber' && <td className="px-4 py-2.5 font-semibold text-base-200 text-[12px]">{clientName(t.clientId)}</td>}
                         <td className="px-4 py-2.5 text-base-400 text-[12px]">{t.category}</td>
                         <td className="px-4 py-2.5 text-base-400 text-[12px] max-w-[220px] truncate">{t.description}</td>
-                        <td className="px-4 py-2.5"><StatusBadge status={t.status} /></td>
+                        <td className="px-4 py-2.5"><StatusBadge status={statusExibidoTransacao(t)} /></td>
                         <td className={`px-4 py-2.5 text-right font-mono font-bold text-[12px] bg-base-850/25 ${tipo === 'Pagar' ? 'text-negative-400' : 'text-positive-400'}`}>{formatBRL(t.value)}</td>
                       </tr>
                     ))}
