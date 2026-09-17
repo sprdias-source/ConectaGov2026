@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { todayLocalISO } from '../lib/dateUtils'
 import { supabase } from '../lib/supabase'
 import { fromBiddingRow, fromBiddingItemRow, toBiddingInsert, toBiddingItemInsert, toTransactionInsert } from '../lib/mappers'
-import { somarValorGanho } from '../lib/analiseEdital'
+import { somarValorGanhoConfirmado } from '../lib/analiseEdital'
 import { licitacaoBloqueadaPorResultado } from '../lib/biddingLock'
 import type { Bidding, BiddingItem, BiddingStatus } from '../types/domain'
 import { useAuth } from './useAuth'
@@ -16,10 +16,13 @@ const QUERY_KEY = ['biddings']
 // uma vez pela edição manual — qualquer uma pode ser a última a chegar),
 // preenche sozinho dois campos que dependem exatamente dessa transição:
 // - Valor Ganho de Fato: calculado a partir dos itens marcados "Ganhou"
-//   (mesma regra de somarValorGanho). Só se: o campo ainda está vazio —
-//   nunca sobrescreve um valor já digitado ou já calculado antes, a única
-//   forma de mudar depois é editar manualmente — e há itens cadastrados
-//   somando mais que zero, pra nunca inventar um número sem itens.
+//   (somarValorGanhoConfirmado — NUNCA somarValorGanho aqui: essa outra
+//   soma TODOS os itens quando nenhum ainda foi marcado, o que é uma
+//   aproximação aceitável só pra exibir num card, não pra gravar como
+//   fato). Só se: o campo ainda está vazio — nunca sobrescreve um valor
+//   já digitado ou já calculado antes, a única forma de mudar depois é
+//   editar manualmente — e há itens cadastrados somando mais que zero,
+//   pra nunca inventar um número sem itens.
 // - Data de Homologação: normalmente já veio preenchida pelo próprio Kanban
 //   no momento em que o card entrou na etapa "Adjudicada e Homologada" (ver
 //   HomologacaoDialog em KanbanLicitacoesPage.tsx). Serve de rede de
@@ -42,7 +45,7 @@ export async function tentarPreencherValorGanhoAutomatico(bidding: Bidding): Pro
       .select('*')
       .eq('bidding_id', bidding.id)
     if (!error && itensRows && itensRows.length > 0) {
-      const valorGanho = somarValorGanho(itensRows.map(fromBiddingItemRow))
+      const valorGanho = somarValorGanhoConfirmado(itensRows.map(fromBiddingItemRow))
       if (valorGanho > 0) updates.valor_ofertado_real = valorGanho
     }
   }
