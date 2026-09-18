@@ -882,8 +882,15 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   // desta licitação direto, em vez de receber por prop — "Proposta
   // Readequada" veio de Documentos Finais pra cá, porque é aqui que faz
   // sentido acessá-la (é aqui que se mexe nos valores/itens da proposta).
-  const { files: anexosProposta, uploadFile: uploadAnexoProposta, deleteFile: deleteAnexoProposta, getDownloadUrl: getAnexoUrlProposta } = useAttachedFiles('licitacao', bidding.id)
+  const { files: anexosProposta, uploadFile: uploadAnexoProposta, deleteFile: deleteAnexoProposta, recategorizarFile: recategorizarAnexoProposta, getDownloadUrl: getAnexoUrlProposta } = useAttachedFiles('licitacao', bidding.id)
   const propostaReadequada = anexosProposta.find((f) => f.category === 'Proposta Readequada')
+  // Versões que já foram "arquivadas" em vez de excluídas — ver
+  // guardarVersaoAnterior (toggle manual em gerarWord) e
+  // handleImportarPropostaAssinada (sempre arquiva, automático).
+  const versoesAnterioresProposta = anexosProposta
+    .filter((f) => f.category === 'Proposta Readequada (versão anterior)')
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const [guardarVersaoAnterior, setGuardarVersaoAnterior] = useState(false)
 
   const [gerandoDocx, setGerandoDocx] = useState<'novo' | 'ajustado' | null>(null)
   const [erroDocx, setErroDocx] = useState<string | null>(null)
@@ -1003,7 +1010,18 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
       const arquivoAntigo = propostaReadequada
       const file = new File([blob], resultado.fileName || 'proposta-readequada.docx', { type: resultado.mimeType })
       await uploadAnexoProposta.mutateAsync({ file, category: 'Proposta Readequada' })
-      if (arquivoAntigo) await deleteAnexoProposta.mutateAsync(arquivoAntigo)
+      if (arquivoAntigo) {
+        // Com o toggle "Guardar versão anterior" ligado, a versão que
+        // estava aqui antes não é excluída — só recategorizada, pra ficar
+        // disponível em "Versões anteriores" (útil quando essa geração é
+        // pra refletir um item novo assumido de outro fornecedor
+        // inabilitado, por exemplo, e vale guardar o que foi enviado antes).
+        if (guardarVersaoAnterior) {
+          await recategorizarAnexoProposta.mutateAsync({ file: arquivoAntigo, novaCategoria: 'Proposta Readequada (versão anterior)' })
+        } else {
+          await deleteAnexoProposta.mutateAsync(arquivoAntigo)
+        }
+      }
       if (pdfPropostaPreview) URL.revokeObjectURL(pdfPropostaPreview.url)
       setPdfPropostaPreview(null)
     } catch (err) {
@@ -1078,7 +1096,10 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
     try {
       const antigo = propostaReadequada
       await uploadAnexoProposta.mutateAsync({ file, category: 'Proposta Readequada' })
-      if (antigo) await deleteAnexoProposta.mutateAsync(antigo)
+      // Diferente do toggle de gerarWord, aqui não é opcional: o rascunho
+      // que existia antes da assinatura sempre fica guardado em "Versões
+      // anteriores" — é o registro do que foi a base pra proposta assinada.
+      if (antigo) await recategorizarAnexoProposta.mutateAsync({ file: antigo, novaCategoria: 'Proposta Readequada (versão anterior)' })
       await updateBidding.mutateAsync({ bidding: { ...bidding, propostaReadequadaAssinadaEm: new Date().toISOString() }, items: [] })
       showToast('Proposta assinada importada — já disponível no ZIP de Documentos Finais.')
     } catch (err) {
@@ -1304,8 +1325,35 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
               </button>
             )}
           </div>
+          {podeEditar && propostaReadequada && statusProposta === 'rascunho' && (
+            <label className="flex items-center gap-2 text-[11px] text-base-400 cursor-pointer w-fit">
+              <input
+                type="checkbox" checked={guardarVersaoAnterior}
+                onChange={(e) => setGuardarVersaoAnterior(e.target.checked)}
+                className="w-3.5 h-3.5 rounded border-base-600 bg-base-900 accent-accent-500"
+              />
+              Guardar versão anterior ao gerar de novo
+              <span className="text-base-600">— por padrão, gerar substitui o arquivo anterior</span>
+            </label>
+          )}
           {erroDocx && <p className="text-[11.5px] text-negative-400">{erroDocx}</p>}
           {erroPdfProposta && <p className="text-[11.5px] text-negative-400">{erroPdfProposta}</p>}
+          {versoesAnterioresProposta.length > 0 && (
+            <div className="flex flex-col gap-1 pt-2 mt-1 border-t border-base-800">
+              <p className="text-[10px] font-bold text-base-500 uppercase tracking-wider">Versões anteriores</p>
+              {versoesAnterioresProposta.map((v) => (
+                <div key={v.id} className="flex items-center justify-between gap-2 text-[11px] text-base-400">
+                  <span className="truncate">{v.name}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-base-600 font-mono">{new Date(v.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                    <button onClick={() => handleAbrirAnexoProposta(v)} className="flex items-center gap-1 text-accent-400 hover:text-accent-300 font-semibold">
+                      <Download className="w-3 h-3" /> Baixar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {items.length > 0 && (

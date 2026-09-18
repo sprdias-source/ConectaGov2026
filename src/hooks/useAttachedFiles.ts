@@ -168,6 +168,22 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
     },
   })
 
+  // Recategoriza um anexo já existente sem apagar nem reenviar o arquivo
+  // (só muda a etiqueta em attached_files.category) — usado pra "arquivar"
+  // a versão anterior da Proposta Readequada em vez de excluí-la, tanto no
+  // toggle "Guardar versão anterior" (gerarWord) quanto, sempre, ao importar
+  // a proposta assinada (handleImportarPropostaAssinada), ver LicitacaoPage.tsx.
+  const recategorizarFile = useMutation({
+    mutationFn: async ({ file, novaCategoria }: { file: AttachedFile; novaCategoria: FileCategory }) => {
+      const { error } = await supabase.from('attached_files').update({ category: novaCategoria }).eq('id', file.id)
+      if (error) throw error
+    },
+    onSuccess: () => invalidate(),
+    onError: (error) => {
+      showToast(error instanceof Error ? error.message : 'Falha ao arquivar a versão anterior.', 'error')
+    },
+  })
+
   const getDownloadUrl = async (storagePath: string) => {
     if (ehArquivoDrive(storagePath)) {
       return baixarDoDrive('attached_files', storagePath)
@@ -185,6 +201,7 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
     uploadFile,
     uploadProgress,
     deleteFile,
+    recategorizarFile,
     getDownloadUrl,
   }
 }

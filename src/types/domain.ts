@@ -370,7 +370,7 @@ export interface Receipt {
   createdAt: string
 }
 
-export type FileCategory = 'Edital' | 'Termo de Referência' | 'Contrato' | 'Recibo' | 'Certidão' | 'Outro' | 'Checklist' | 'Proposta' | 'Proposta Readequada' | 'Declaração' | 'Modelo Portal Compras' | 'Empenho' | 'Ata de Sessão'
+export type FileCategory = 'Edital' | 'Termo de Referência' | 'Contrato' | 'Recibo' | 'Certidão' | 'Outro' | 'Checklist' | 'Proposta' | 'Proposta Readequada' | 'Declaração' | 'Modelo Portal Compras' | 'Empenho' | 'Ata de Sessão' | 'Proposta Readequada (versão anterior)'
 export type FileEntityType = 'licitacao' | 'contrato' | 'recibo' | 'cliente' | 'funcionario' | 'empenho' | 'oportunidade'
 
 export interface AttachedFile {
