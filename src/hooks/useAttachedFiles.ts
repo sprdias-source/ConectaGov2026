@@ -143,8 +143,16 @@ export function useAttachedFiles(entityType: FileEntityType, entityId?: string) 
       const { error } = await supabase.from('attached_files').delete().eq('id', file.id)
       if (error) throw error
 
+      // O registro no banco já foi apagado acima (esse é o ponto de
+      // confirmação da exclusão) — a partir daqui é limpeza best-effort do
+      // arquivo físico. Se ele já não existir mais no Drive/Storage (por
+      // qualquer motivo — removido manualmente, path antigo etc.), o pior
+      // caso é um arquivo órfão consumindo espaço, não um erro pro usuário:
+      // sem o catch aqui, um "arquivo não encontrado" nessa limpeza surgia
+      // como toast de erro mesmo com a exclusão (e, em gerarWord, o upload
+      // do novo arquivo) já tendo dado certo.
       if (ehArquivoDrive(file.storagePath)) {
-        await excluirNoDrive('attached_files', file.storagePath)
+        await excluirNoDrive('attached_files', file.storagePath).catch(() => {})
       } else {
         await supabase.storage.from('client-documents').remove([file.storagePath])
       }
