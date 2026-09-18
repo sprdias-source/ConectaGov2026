@@ -891,12 +891,6 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   const [erroPdfProposta, setErroPdfProposta] = useState<string | null>(null)
   const [pdfPropostaPreview, setPdfPropostaPreview] = useState<{ url: string; nome: string } | null>(null)
   const [enviandoPropostaAssinada, setEnviandoPropostaAssinada] = useState(false)
-  // Trava/destrava a prévia editável: "Gerar Proposta Prévia" marca como
-  // gerada (desabilita o próprio botão); qualquer edição nos itens ou nos
-  // textos de abertura/fechamento destrava de novo. É um estado só de UI —
-  // não precisa persistir, a prévia em si já é sempre recalculada ao vivo
-  // a partir de items/textoAbertura/textoFechamento.
-  const [previaGerada, setPreviaGerada] = useState(false)
 
   // Texto editável que entra no Word e no PDF gerados (abertura antes da
   // tabela de itens, fechamento depois). Pré-preenchido com o mesmo texto
@@ -926,11 +920,11 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
     || bancoAgencia !== (bidding.propostaBancoAgencia ?? bancoAgenciaPadrao)
     || bancoConta !== (bidding.propostaBancoConta ?? bancoContaPadrao)
 
-  const handleTextoAberturaChange = (v: string) => { setTextoAbertura(v); setPreviaGerada(false) }
-  const handleTextoFechamentoChange = (v: string) => { setTextoFechamento(v); setPreviaGerada(false) }
-  const handleBancoNomeChange = (v: string) => { setBancoNome(v); setPreviaGerada(false) }
-  const handleBancoAgenciaChange = (v: string) => { setBancoAgencia(v); setPreviaGerada(false) }
-  const handleBancoContaChange = (v: string) => { setBancoConta(v); setPreviaGerada(false) }
+  const handleTextoAberturaChange = (v: string) => { setTextoAbertura(v) }
+  const handleTextoFechamentoChange = (v: string) => { setTextoFechamento(v) }
+  const handleBancoNomeChange = (v: string) => { setBancoNome(v) }
+  const handleBancoAgenciaChange = (v: string) => { setBancoAgencia(v) }
+  const handleBancoContaChange = (v: string) => { setBancoConta(v) }
 
   const handleSalvarTextoProposta = () => {
     updateBidding.mutate(
@@ -1011,7 +1005,6 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
       if (arquivoAntigo) await deleteAnexoProposta.mutateAsync(arquivoAntigo)
       if (pdfPropostaPreview) URL.revokeObjectURL(pdfPropostaPreview.url)
       setPdfPropostaPreview(null)
-      setPreviaGerada(true)
     } catch (err) {
       setErroDocx(err instanceof Error ? err.message : String(err))
     } finally {
@@ -1060,7 +1053,6 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
       const blob = new Blob([bytes], { type: resultado.mimeType })
       if (pdfPropostaPreview) URL.revokeObjectURL(pdfPropostaPreview.url)
       setPdfPropostaPreview({ url: URL.createObjectURL(blob), nome: resultado.fileName || 'Proposta_Readequada.pdf' })
-      setPreviaGerada(true)
     } catch (err) {
       setErroPdfProposta(err instanceof Error ? err.message : String(err))
     } finally {
@@ -1133,7 +1125,6 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   const handleItemsChange = (novosItems: Partial<BiddingItem>[]) => {
     pendenteRef.current = novosItems
     setStatusSalvamento('pendente')
-    setPreviaGerada(false)
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
     timeoutRef.current = setTimeout(dispararSincronizacao, 1200)
   }
@@ -1254,15 +1245,6 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
           <p className="text-[10px] font-bold text-base-500 uppercase tracking-wider">Proposta Readequada</p>
           <div className="flex items-center gap-2 flex-wrap">
             {podeEditar && items.length > 0 && statusProposta === 'rascunho' && (
-              <button
-                onClick={() => setPreviaGerada(true)} disabled={previaGerada}
-                className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {previaGerada ? <Check className="w-3.5 h-3.5 text-positive-400" /> : <Wand2 className="w-3.5 h-3.5" />}
-                {previaGerada ? 'Prévia Gerada' : 'Gerar Proposta Prévia'}
-              </button>
-            )}
-            {podeEditar && items.length > 0 && statusProposta === 'rascunho' && (
               <button onClick={handleGerarWord} disabled={!!gerandoDocx} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-900 border border-base-700 rounded-lg px-2.5 py-1.5 transition disabled:opacity-60">
                 {gerandoDocx === 'ajustado' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
                 {gerandoDocx === 'ajustado' ? 'Gerando...' : 'Gerar Word'}
@@ -1314,7 +1296,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
           {erroPdfProposta && <p className="text-[11.5px] text-negative-400">{erroPdfProposta}</p>}
         </div>
 
-        {propostaReadequada && items.length > 0 && (
+        {items.length > 0 && (
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <p className="text-[10px] font-bold text-base-500 uppercase tracking-wider">Prévia — cópia fiel do Word gerado</p>
@@ -1502,7 +1484,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
             </p>
             <BiddingItemsEditor
               items={items} onChange={handleItemsChange} tipoDisputa={bidding.tipoDisputa}
-              travarValorLicitado onGerarPrevia={() => setPreviaGerada(true)} previaGerada={previaGerada}
+              travarValorLicitado
             />
           </>
         ) : (

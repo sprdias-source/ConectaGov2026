@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Trash2, Upload, FileSpreadsheet, Lock, Wand2, Check } from 'lucide-react'
+import { Plus, Trash2, Upload, FileSpreadsheet, Lock } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { Input } from '../ui/FormControls'
 import { parseFlexibleNumber, compararNumeroItem } from '../../lib/numberParsing'
@@ -134,7 +134,7 @@ function CampoQuantidade({
 }
 
 export default function BiddingItemsEditor({
-  items, onChange, tipoDisputa, travarValorLicitado, onGerarPrevia, previaGerada,
+  items, onChange, tipoDisputa, travarValorLicitado,
 }: {
   items: Partial<BiddingItem>[]
   onChange: (items: Partial<BiddingItem>[]) => void
@@ -144,10 +144,6 @@ export default function BiddingItemsEditor({
   // sem querer. No cadastro inicial da licitação (BiddingFormModal) esse
   // valor ainda está sendo digitado pela primeira vez, então continua editável.
   travarValorLicitado?: boolean
-  // Botão "Gerar Proposta Prévia" só aparece quando o pai (AbaProposta)
-  // passa esse callback — ele é quem controla o estado de trava/destrava.
-  onGerarPrevia?: () => void
-  previaGerada?: boolean
 }) {
   const { showToast } = useToast()
   const [drafts, setDrafts] = useState<ItemDraft[]>([])
@@ -489,15 +485,6 @@ export default function BiddingItemsEditor({
           <button type="button" onClick={addRow} className="flex items-center gap-1.5 text-[11px] font-semibold text-base-950 bg-accent-500 hover:bg-accent-400 rounded-lg px-3 py-1.5 transition">
             <Plus className="w-3.5 h-3.5" /> Adicionar Item
           </button>
-          {onGerarPrevia && (
-            <button
-              type="button" onClick={onGerarPrevia} disabled={previaGerada}
-              className="flex items-center gap-1.5 text-[11px] font-semibold text-base-300 hover:text-base-100 bg-base-850 border border-base-700 rounded-lg px-3 py-1.5 transition disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {previaGerada ? <Check className="w-3.5 h-3.5 text-positive-400" /> : <Wand2 className="w-3.5 h-3.5" />}
-              {previaGerada ? 'Prévia Gerada' : 'Gerar Proposta Prévia'}
-            </button>
-          )}
         </div>
       </div>
 
