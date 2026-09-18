@@ -964,6 +964,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
     setGerandoDocx(opts.resetarTexto ? 'novo' : 'ajustado')
     setErroDocx(null)
     try {
+      await flushItensPendentes()
       const atualizacaoBidding: Partial<Bidding> = { propostaReadequadaAssinadaEm: null }
       if (opts.resetarTexto) {
         atualizacaoBidding.propostaTextoAbertura = null
@@ -1027,6 +1028,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
     setGerandoPdfProposta(true)
     setErroPdfProposta(null)
     try {
+      await flushItensPendentes()
       if (textoPropostaMudou || bancoPropostaMudou) {
         await updateBidding.mutateAsync({
           bidding: {
@@ -1104,29 +1106,39 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   // verdade (a mesma dúvida que gera "será que salvou mesmo?").
   const [statusSalvamento, setStatusSalvamento] = useState<'idle' | 'pendente' | 'salvando' | 'salvo'>('idle')
 
-  const dispararSincronizacao = () => {
-    if (sincronizarItens.isPending) {
-      timeoutRef.current = setTimeout(dispararSincronizacao, 300)
-      return
+  // Garante que qualquer edição de item ainda não gravada (a sincronização é
+  // debounçada 1,2s, ver handleItemsChange logo abaixo) já esteja no banco
+  // antes de seguir em frente — usada tanto pelo timer do debounce quanto,
+  // diretamente, por "Gerar Word"/"Gerar PDF" (ver gerarWord/
+  // handleGerarPdfProposta) — sem isso, marcar "Ganhou" num item e gerar o
+  // documento em seguida (dentro da mesma janela de 1,2s) fazia a geração
+  // ler o banco ainda com o estado ANTIGO do item, caindo no fallback de
+  // "nenhum item marcado ganhou" e trazendo todos os itens da licitação em
+  // vez de só o(s) marcado(s).
+  const flushItensPendentes = async () => {
+    if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null }
+    while (sincronizarItens.isPending) {
+      await new Promise((resolve) => setTimeout(resolve, 150))
     }
     const dados = pendenteRef.current
-    if (!dados) { setStatusSalvamento('idle'); return }
+    if (!dados) return
     pendenteRef.current = null
     setStatusSalvamento('salvando')
-    sincronizarItens.mutate(dados, {
-      onSuccess: () => {
-        setStatusSalvamento((s) => (s === 'salvando' ? 'salvo' : s))
-        setTimeout(() => setStatusSalvamento((s) => (s === 'salvo' ? 'idle' : s)), 2000)
-      },
-      onError: () => setStatusSalvamento((s) => (s === 'salvando' ? 'idle' : s)),
-    })
+    try {
+      await sincronizarItens.mutateAsync(dados)
+      setStatusSalvamento('salvo')
+      setTimeout(() => setStatusSalvamento((s) => (s === 'salvo' ? 'idle' : s)), 2000)
+    } catch (err) {
+      setStatusSalvamento('idle')
+      throw err
+    }
   }
 
   const handleItemsChange = (novosItems: Partial<BiddingItem>[]) => {
     pendenteRef.current = novosItems
     setStatusSalvamento('pendente')
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
-    timeoutRef.current = setTimeout(dispararSincronizacao, 1200)
+    timeoutRef.current = setTimeout(() => { flushItensPendentes().catch(() => {}) }, 1200)
   }
 
   // Edição direta na tabela da prévia do documento — mesmo pipeline de
