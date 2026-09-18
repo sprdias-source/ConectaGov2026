@@ -272,9 +272,11 @@ Deno.serve(async (req) => {
       cliente_cidade: escapeXml(client.cidade ?? ''),
       cliente_telefone: escapeXml(client.phone ?? ''),
       cliente_email: escapeXml(client.email ?? ''),
-      cliente_banco: escapeXml(client.banco_nome ?? ''),
-      cliente_agencia: escapeXml(client.banco_agencia ?? ''),
-      cliente_conta: escapeXml(client.banco_conta ?? ''),
+      // proposta_banco_* sobrescreve, só nesta licitação, o cadastro do
+      // cliente — editável na aba Proposta Readequada (migração 059).
+      cliente_banco: escapeXml((bidding.proposta_banco_nome as string | null) ?? client.banco_nome ?? ''),
+      cliente_agencia: escapeXml((bidding.proposta_banco_agencia as string | null) ?? client.banco_agencia ?? ''),
+      cliente_conta: escapeXml((bidding.proposta_banco_conta as string | null) ?? client.banco_conta ?? ''),
 
       responsavel_nome: escapeXml(client.responsavel_nome ?? ''),
       responsavel_cpf: escapeXml(client.responsavel_cpf ?? ''),

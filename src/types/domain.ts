@@ -116,6 +116,13 @@ export interface Bidding {
   propostaReadequadaAssinadaEm: string | null
   propostaTextoAbertura: string | null
   propostaTextoFechamento: string | null
+  // Sobrescreve, só nesta licitação, os dados bancários do cadastro do
+  // cliente (Client.bancoNome/bancoAgencia/bancoConta) — null usa o
+  // cadastro normalmente. Mesmo mecanismo de propostaTextoAbertura/
+  // Fechamento: um "Restaurar padrão" limpa de volta pra null.
+  propostaBancoNome: string | null
+  propostaBancoAgencia: string | null
+  propostaBancoConta: string | null
   modeloCustomizadoPath: string | null
   motivoPerda: string | null
   motivoDesistencia: string | null
