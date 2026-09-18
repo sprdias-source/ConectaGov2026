@@ -128,7 +128,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: bidding, error: biddingError } = await supabase
       .from('biddings')
-      .select('id, user_id, client_id, orgao, modalidade, numero_edital, tipo_disputa, dias_validade_proposta, proposta_texto_abertura, proposta_texto_fechamento')
+      .select('id, user_id, client_id, orgao, modalidade, numero_edital, tipo_disputa, dias_validade_proposta, proposta_texto_abertura, proposta_texto_fechamento, proposta_banco_nome, proposta_banco_agencia, proposta_banco_conta')
       .eq('id', biddingId)
       .single()
     if (biddingError || !bidding) return json({ error: 'Licitação não encontrada' }, 404)
@@ -310,7 +310,9 @@ Deno.serve(async (req: Request) => {
       [{ texto: `I.E: ${client.inscricao_estadual ?? '—'}` }, { texto: `Endereço: ${extrairLogradouro(client.address ?? '', client.bairro)}` }],
       [{ texto: `Bairro: ${client.bairro ?? ''}` }, { texto: `Cidade: ${client.cidade ?? ''}` }],
       [{ texto: `Telefone: ${client.phone ?? ''}` }, { texto: `E-mail: ${client.email ?? ''}` }],
-      [{ texto: `Conta Bancária: ${client.banco_nome ?? ''}` }, { texto: `Ag: ${client.banco_agencia ?? ''}  Conta Corrente: ${client.banco_conta ?? ''}` }],
+      // proposta_banco_* sobrescreve, só nesta licitação, o cadastro do
+      // cliente — editável na aba Proposta Readequada (migração 059).
+      [{ texto: `Conta Bancária: ${bidding.proposta_banco_nome ?? client.banco_nome ?? ''}` }, { texto: `Ag: ${bidding.proposta_banco_agencia ?? client.banco_agencia ?? ''}  Conta Corrente: ${bidding.proposta_banco_conta ?? client.banco_conta ?? ''}` }],
     ], { tamanho: 9 })
     y -= 10
 

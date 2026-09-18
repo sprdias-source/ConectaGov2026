@@ -912,12 +912,39 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   const [textoFechamento, setTextoFechamento] = useState(bidding.propostaTextoFechamento ?? textoFechamentoPadrao)
   const textoPropostaMudou = textoAbertura !== (bidding.propostaTextoAbertura ?? textoAberturaPadrao) || textoFechamento !== (bidding.propostaTextoFechamento ?? textoFechamentoPadrao)
 
+  // Dados bancários da proposta: nascem do cadastro do cliente, mas podem
+  // ser sobrescritos só nesta licitação (mesmo mecanismo do texto de
+  // abertura/fechamento acima) — pro cliente poder receber esta proposta
+  // específica numa conta diferente da cadastrada, sem mexer no cadastro.
+  const bancoNomePadrao = client?.bancoNome ?? ''
+  const bancoAgenciaPadrao = client?.bancoAgencia ?? ''
+  const bancoContaPadrao = client?.bancoConta ?? ''
+  const [bancoNome, setBancoNome] = useState(bidding.propostaBancoNome ?? bancoNomePadrao)
+  const [bancoAgencia, setBancoAgencia] = useState(bidding.propostaBancoAgencia ?? bancoAgenciaPadrao)
+  const [bancoConta, setBancoConta] = useState(bidding.propostaBancoConta ?? bancoContaPadrao)
+  const bancoPropostaMudou = bancoNome !== (bidding.propostaBancoNome ?? bancoNomePadrao)
+    || bancoAgencia !== (bidding.propostaBancoAgencia ?? bancoAgenciaPadrao)
+    || bancoConta !== (bidding.propostaBancoConta ?? bancoContaPadrao)
+
   const handleTextoAberturaChange = (v: string) => { setTextoAbertura(v); setPreviaGerada(false) }
   const handleTextoFechamentoChange = (v: string) => { setTextoFechamento(v); setPreviaGerada(false) }
+  const handleBancoNomeChange = (v: string) => { setBancoNome(v); setPreviaGerada(false) }
+  const handleBancoAgenciaChange = (v: string) => { setBancoAgencia(v); setPreviaGerada(false) }
+  const handleBancoContaChange = (v: string) => { setBancoConta(v); setPreviaGerada(false) }
 
   const handleSalvarTextoProposta = () => {
     updateBidding.mutate(
-      { bidding: { ...bidding, propostaTextoAbertura: textoAbertura, propostaTextoFechamento: textoFechamento }, items: [] },
+      {
+        bidding: {
+          ...bidding,
+          propostaTextoAbertura: textoAbertura,
+          propostaTextoFechamento: textoFechamento,
+          propostaBancoNome: bancoNome || null,
+          propostaBancoAgencia: bancoAgencia || null,
+          propostaBancoConta: bancoConta || null,
+        },
+        items: [],
+      },
       { onError: (err) => showToast(`Erro ao salvar: ${err instanceof Error ? err.message : String(err)}`, 'error') }
     )
   }
@@ -947,14 +974,23 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
       if (opts.resetarTexto) {
         atualizacaoBidding.propostaTextoAbertura = null
         atualizacaoBidding.propostaTextoFechamento = null
+        atualizacaoBidding.propostaBancoNome = null
+        atualizacaoBidding.propostaBancoAgencia = null
+        atualizacaoBidding.propostaBancoConta = null
       } else {
         atualizacaoBidding.propostaTextoAbertura = textoAbertura
         atualizacaoBidding.propostaTextoFechamento = textoFechamento
+        atualizacaoBidding.propostaBancoNome = bancoNome || null
+        atualizacaoBidding.propostaBancoAgencia = bancoAgencia || null
+        atualizacaoBidding.propostaBancoConta = bancoConta || null
       }
       await updateBidding.mutateAsync({ bidding: { ...bidding, ...atualizacaoBidding }, items: [] })
       if (opts.resetarTexto) {
         setTextoAbertura(textoAberturaPadrao)
         setTextoFechamento(textoFechamentoPadrao)
+        setBancoNome(bancoNomePadrao)
+        setBancoAgencia(bancoAgenciaPadrao)
+        setBancoConta(bancoContaPadrao)
       }
 
       const { data: { session } } = await supabase.auth.getSession()
@@ -998,8 +1034,18 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
     setGerandoPdfProposta(true)
     setErroPdfProposta(null)
     try {
-      if (textoPropostaMudou) {
-        await updateBidding.mutateAsync({ bidding: { ...bidding, propostaTextoAbertura: textoAbertura, propostaTextoFechamento: textoFechamento }, items: [] })
+      if (textoPropostaMudou || bancoPropostaMudou) {
+        await updateBidding.mutateAsync({
+          bidding: {
+            ...bidding,
+            propostaTextoAbertura: textoAbertura,
+            propostaTextoFechamento: textoFechamento,
+            propostaBancoNome: bancoNome || null,
+            propostaBancoAgencia: bancoAgencia || null,
+            propostaBancoConta: bancoConta || null,
+          },
+          items: [],
+        })
       }
       const { data: { session } } = await supabase.auth.getSession()
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
@@ -1294,6 +1340,43 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
                 </tbody>
               </table>
 
+              <div className="relative border-[1.5px] border-dashed border-accent-500/60 rounded px-2.5 pt-3 pb-2 mb-4">
+                {podeEditar && statusProposta === 'rascunho' && <span className="absolute -top-2 left-2 bg-accent-500 text-white text-[8.5px] font-mono font-bold px-1.5 rounded-full">editável — só nesta proposta</span>}
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[10.5px]">
+                  <div className="flex items-center gap-1.5">
+                    <b className="shrink-0">Conta Bancária:</b>
+                    <input
+                      value={bancoNome}
+                      onChange={(e) => handleBancoNomeChange(e.target.value)}
+                      disabled={!podeEditar || statusProposta !== 'rascunho'}
+                      placeholder="—"
+                      className="flex-1 min-w-0 bg-transparent border-b border-[#b9beb0] outline-none disabled:cursor-not-allowed"
+                      style={{ fontFamily: 'Georgia, serif' }}
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <b className="shrink-0">Ag:</b>
+                    <input
+                      value={bancoAgencia}
+                      onChange={(e) => handleBancoAgenciaChange(e.target.value)}
+                      disabled={!podeEditar || statusProposta !== 'rascunho'}
+                      placeholder="—"
+                      className="w-16 shrink-0 bg-transparent border-b border-[#b9beb0] outline-none disabled:cursor-not-allowed"
+                      style={{ fontFamily: 'Georgia, serif' }}
+                    />
+                    <b className="shrink-0">Conta Corrente:</b>
+                    <input
+                      value={bancoConta}
+                      onChange={(e) => handleBancoContaChange(e.target.value)}
+                      disabled={!podeEditar || statusProposta !== 'rascunho'}
+                      placeholder="—"
+                      className="flex-1 min-w-0 bg-transparent border-b border-[#b9beb0] outline-none disabled:cursor-not-allowed"
+                      style={{ fontFamily: 'Georgia, serif' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="relative border-[1.5px] border-dashed border-accent-500/60 rounded px-2.5 py-2 mb-4">
                 {podeEditar && statusProposta === 'rascunho' && <span className="absolute -top-2 left-2 bg-accent-500 text-white text-[8.5px] font-mono font-bold px-1.5 rounded-full">editável</span>}
                 <textarea
@@ -1378,9 +1461,9 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
                 Cargo: {client?.responsavelCargo ?? '—'}
               </div>
             </div>
-            {podeEditar && statusProposta === 'rascunho' && textoPropostaMudou && (
+            {podeEditar && statusProposta === 'rascunho' && (textoPropostaMudou || bancoPropostaMudou) && (
               <Button onClick={handleSalvarTextoProposta} disabled={updateBidding.isPending} className="self-start">
-                {updateBidding.isPending ? 'Salvando...' : 'Salvar Texto (sem gerar documento novo)'}
+                {updateBidding.isPending ? 'Salvando...' : 'Salvar Alterações (sem gerar documento novo)'}
               </Button>
             )}
             {pdfPropostaPreview && (

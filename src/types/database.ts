@@ -609,6 +609,9 @@ export type Database = {
           proposta_readequada_assinada_em: string | null
           proposta_texto_abertura: string | null
           proposta_texto_fechamento: string | null
+          proposta_banco_nome: string | null
+          proposta_banco_agencia: string | null
+          proposta_banco_conta: string | null
           etapa: string | null
           id: string
           is_active: boolean
@@ -651,6 +654,9 @@ export type Database = {
           proposta_readequada_assinada_em?: string | null
           proposta_texto_abertura?: string | null
           proposta_texto_fechamento?: string | null
+          proposta_banco_nome?: string | null
+          proposta_banco_agencia?: string | null
+          proposta_banco_conta?: string | null
           etapa?: string | null
           id?: string
           is_active?: boolean
@@ -693,6 +699,9 @@ export type Database = {
           proposta_readequada_assinada_em?: string | null
           proposta_texto_abertura?: string | null
           proposta_texto_fechamento?: string | null
+          proposta_banco_nome?: string | null
+          proposta_banco_agencia?: string | null
+          proposta_banco_conta?: string | null
           etapa?: string | null
           id?: string
           is_active?: boolean
