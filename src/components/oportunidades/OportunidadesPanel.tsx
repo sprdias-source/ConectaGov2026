@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
   Globe, MapPin, Plus, X, ChevronDown, ChevronRight, Upload, Eye, Trash2, Sparkles,
-  Check, XCircle, ArrowRight, ExternalLink, LayoutGrid, ClipboardList, FileText, Calendar,
+  Check, XCircle, ArrowRight, ExternalLink, LayoutGrid, ClipboardList, FileText, Calendar, RotateCcw,
 } from 'lucide-react'
 import { Button, Input, Select } from '../ui/FormControls'
 import { Card } from '../ui/Primitives'
@@ -317,18 +317,40 @@ function OportunidadeDetalhe({
         ) : opportunity.resposta === 'aceita' ? (
           podeEditar && (
             <div className="flex flex-col gap-1">
-              <Button onClick={() => setConfirmandoConversao(true)} disabled={!analise && !opportunity.titulo.trim()}>
-                <ArrowRight className="w-3.5 h-3.5" /> Converter em Licitação
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button onClick={() => setConfirmandoConversao(true)} disabled={!analise && !opportunity.titulo.trim()}>
+                  <ArrowRight className="w-3.5 h-3.5" /> Converter em Licitação
+                </Button>
+                <button
+                  onClick={() => marcarResposta.mutate({ opportunity, resposta: 'pendente' }, { onSuccess: onResolvida })}
+                  disabled={marcarResposta.isPending}
+                  className="flex items-center gap-1 text-[11px] text-base-500 hover:text-base-300 transition"
+                  title="Marcada como aceita por engano? Volta pra pendente pra escolher de novo."
+                >
+                  <RotateCcw className="w-3.5 h-3.5" /> Desfazer
+                </button>
+              </div>
               {!analise && !opportunity.titulo.trim() && (
                 <p className="text-[11px] text-base-500 italic">Defina um título ou rode a análise de IA antes de converter.</p>
               )}
             </div>
           )
         ) : (
-          <p className="text-[11.5px] text-base-500">
-            Recusada{opportunity.motivoRecusa ? ` — ${opportunity.motivoRecusa}` : ''}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-[11.5px] text-base-500">
+              Recusada{opportunity.motivoRecusa ? ` — ${opportunity.motivoRecusa}` : ''}
+            </p>
+            {podeEditar && (
+              <button
+                onClick={() => marcarResposta.mutate({ opportunity, resposta: 'pendente' }, { onSuccess: onResolvida })}
+                disabled={marcarResposta.isPending}
+                className="flex items-center gap-1 text-[11px] text-base-500 hover:text-base-300 transition"
+                title="Marcada como recusada por engano? Volta pra pendente pra escolher de novo."
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> Desfazer
+              </button>
+            )}
+          </div>
         )}
       </div>
 
