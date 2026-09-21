@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
   Globe, MapPin, Plus, X, ChevronDown, ChevronRight, Upload, Eye, Trash2, Sparkles,
-  Check, XCircle, ArrowRight, ExternalLink, LayoutGrid, ClipboardList, FileText, Calendar,
+  Check, XCircle, ArrowRight, ExternalLink, LayoutGrid, ClipboardList, FileText, Calendar, RotateCcw,
 } from 'lucide-react'
 import { Button, Input, Select } from '../ui/FormControls'
 import { Card } from '../ui/Primitives'
@@ -288,6 +288,72 @@ function OportunidadeDetalhe({
         )}
       </div>
 
+      <div className="flex items-center justify-between">
+        {opportunity.biddingId ? (
+          <button onClick={() => navigate(`/licitacoes/${opportunity.biddingId}`)} className="flex items-center gap-1.5 text-[12px] font-semibold text-accent-300 hover:text-accent-200">
+            Ver licitação <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        ) : opportunity.resposta === 'pendente' ? (
+          podeEditar && (
+            <div className="flex flex-col gap-2 w-full">
+              <div className="flex items-center gap-2">
+                <Button onClick={() => marcarResposta.mutate({ opportunity, resposta: 'aceita' }, { onSuccess: onResolvida })} disabled={marcarResposta.isPending}>
+                  <Check className="w-3.5 h-3.5" /> Cliente aceitou participar
+                </Button>
+                <Button variant="secondary" onClick={() => setMostrarRecusa((v) => !v)}>
+                  <XCircle className="w-3.5 h-3.5" /> Cliente recusou
+                </Button>
+              </div>
+              {mostrarRecusa && (
+                <div className="flex items-center gap-2">
+                  <Input placeholder="Motivo (opcional)" value={motivoRecusa} onChange={(e) => setMotivoRecusa(e.target.value)} />
+                  <Button variant="secondary" onClick={() => marcarResposta.mutate({ opportunity, resposta: 'recusada', motivoRecusa }, { onSuccess: onResolvida })} disabled={marcarResposta.isPending}>
+                    Confirmar recusa
+                  </Button>
+                </div>
+              )}
+            </div>
+          )
+        ) : opportunity.resposta === 'aceita' ? (
+          podeEditar && (
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <Button onClick={() => setConfirmandoConversao(true)} disabled={!analise && !opportunity.titulo.trim()}>
+                  <ArrowRight className="w-3.5 h-3.5" /> Converter em Licitação
+                </Button>
+                <button
+                  onClick={() => marcarResposta.mutate({ opportunity, resposta: 'pendente' }, { onSuccess: onResolvida })}
+                  disabled={marcarResposta.isPending}
+                  className="flex items-center gap-1 text-[11px] text-base-500 hover:text-base-300 transition"
+                  title="Marcada como aceita por engano? Volta pra pendente pra escolher de novo."
+                >
+                  <RotateCcw className="w-3.5 h-3.5" /> Desfazer
+                </button>
+              </div>
+              {!analise && !opportunity.titulo.trim() && (
+                <p className="text-[11px] text-base-500 italic">Defina um título ou rode a análise de IA antes de converter.</p>
+              )}
+            </div>
+          )
+        ) : (
+          <div className="flex items-center gap-2">
+            <p className="text-[11.5px] text-base-500">
+              Recusada{opportunity.motivoRecusa ? ` — ${opportunity.motivoRecusa}` : ''}
+            </p>
+            {podeEditar && (
+              <button
+                onClick={() => marcarResposta.mutate({ opportunity, resposta: 'pendente' }, { onSuccess: onResolvida })}
+                disabled={marcarResposta.isPending}
+                className="flex items-center gap-1 text-[11px] text-base-500 hover:text-base-300 transition"
+                title="Marcada como recusada por engano? Volta pra pendente pra escolher de novo."
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> Desfazer
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <div>
           <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold mb-1">Cliente</p>
@@ -420,50 +486,6 @@ function OportunidadeDetalhe({
       </div>
 
       {erro && <p className="text-[11px] text-negative-400">{erro}</p>}
-
-      <div className="flex items-center justify-between pt-1 border-t border-base-800/60">
-        {opportunity.biddingId ? (
-          <button onClick={() => navigate(`/licitacoes/${opportunity.biddingId}`)} className="flex items-center gap-1.5 text-[12px] font-semibold text-accent-300 hover:text-accent-200">
-            Ver licitação <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        ) : opportunity.resposta === 'pendente' ? (
-          podeEditar && (
-            <div className="flex flex-col gap-2 w-full">
-              <div className="flex items-center gap-2">
-                <Button onClick={() => marcarResposta.mutate({ opportunity, resposta: 'aceita' }, { onSuccess: onResolvida })} disabled={marcarResposta.isPending}>
-                  <Check className="w-3.5 h-3.5" /> Cliente aceitou participar
-                </Button>
-                <Button variant="secondary" onClick={() => setMostrarRecusa((v) => !v)}>
-                  <XCircle className="w-3.5 h-3.5" /> Cliente recusou
-                </Button>
-              </div>
-              {mostrarRecusa && (
-                <div className="flex items-center gap-2">
-                  <Input placeholder="Motivo (opcional)" value={motivoRecusa} onChange={(e) => setMotivoRecusa(e.target.value)} />
-                  <Button variant="secondary" onClick={() => marcarResposta.mutate({ opportunity, resposta: 'recusada', motivoRecusa }, { onSuccess: onResolvida })} disabled={marcarResposta.isPending}>
-                    Confirmar recusa
-                  </Button>
-                </div>
-              )}
-            </div>
-          )
-        ) : opportunity.resposta === 'aceita' ? (
-          podeEditar && (
-            <div className="flex flex-col gap-1">
-              <Button onClick={() => setConfirmandoConversao(true)} disabled={!analise && !opportunity.titulo.trim()}>
-                <ArrowRight className="w-3.5 h-3.5" /> Converter em Licitação
-              </Button>
-              {!analise && !opportunity.titulo.trim() && (
-                <p className="text-[11px] text-base-500 italic">Defina um título ou rode a análise de IA antes de converter.</p>
-              )}
-            </div>
-          )
-        ) : (
-          <p className="text-[11.5px] text-base-500">
-            Recusada{opportunity.motivoRecusa ? ` — ${opportunity.motivoRecusa}` : ''}
-          </p>
-        )}
-      </div>
 
       <ConfirmDialog
         open={confirmandoConversao}

@@ -115,30 +115,35 @@ export function useOpportunities() {
 
   // Só o registro da resposta — não mexe em nenhum outro campo, pra não
   // pisar em uma edição concorrente de outro campo do formulário.
+  // "pendente" desfaz uma resposta marcada por engano (aceita ou recusada) —
+  // só disponível enquanto a oportunidade ainda não virou licitação de
+  // verdade (opportunity.biddingId), ver o botão "Desfazer" em
+  // OportunidadesPanel.tsx.
   const marcarResposta = useMutation({
     mutationFn: async ({ opportunity, resposta, motivoRecusa }: {
       opportunity: Opportunity
-      resposta: 'aceita' | 'recusada'
+      resposta: 'aceita' | 'recusada' | 'pendente'
       motivoRecusa?: string | null
     }) => {
       const { error } = await supabase
         .from('opportunities')
         .update({
           resposta,
-          data_resposta: todayLocalISO(),
+          data_resposta: resposta === 'pendente' ? null : todayLocalISO(),
           motivo_recusa: resposta === 'recusada' ? (motivoRecusa ?? null) : null,
         })
         .eq('id', opportunity.id)
       if (error) throw error
 
-      // Reflete a recusa de volta no edital Licitei que originou esta
-      // oportunidade (se houver) — "aceita" só é refletida lá na conversão
-      // em licitação de verdade (ver converterEmLicitacao), já que só aí
-      // existe um bidding_id pra gravar junto.
-      if (resposta === 'recusada' && opportunity.licitaiEditalId) {
+      // Reflete a recusa (ou o desfazer de uma recusa) de volta no edital
+      // Licitei que originou esta oportunidade (se houver) — "aceita" só é
+      // refletida lá na conversão em licitação de verdade (ver
+      // converterEmLicitacao), já que só aí existe um bidding_id pra gravar
+      // junto — então desfazer uma "aceita" não precisa mexer aqui.
+      if (opportunity.licitaiEditalId && (resposta === 'recusada' || (resposta === 'pendente' && opportunity.resposta === 'recusada'))) {
         const { error: licitaiError } = await supabase
           .from('licitei_editais')
-          .update({ status: 'recusado' })
+          .update({ status: resposta === 'recusada' ? 'recusado' : 'oportunidade' })
           .eq('id', opportunity.licitaiEditalId)
         if (licitaiError) throw licitaiError
       }
