@@ -706,22 +706,39 @@ async function processarRespostaGemini(genRes: Response, provedor: 'gemini' | 'g
 async function realizarAnaliseJuridica(supabase: Supa, edital: Anexo, tr: Anexo | undefined, tipo: Tipo, signal: AbortSignal): Promise<{ resultado: ResultadoJuridico; provedor: string }> {
   const docs = [edital, tr].filter((d): d is Anexo => !!d)
 
-  const pistas: Promise<TentativaResultado>[] = [
+  // Mistral SÓ entra depois que todas as chaves do Gemini já falharam —
+  // mesmo bug encontrado e corrigido em Analisar-edital/index.ts: a
+  // extração estruturada da Mistral (JSON Schema em modo "strict") não tem
+  // nenhum sinal de corte por limite de tamanho — quando ela mesma estoura
+  // o próprio limite de geração no meio de uma lista longa, o schema ainda
+  // força o JSON a fechar "certinho" com o que já tinha sido gerado, um
+  // resultado sintaticamente válido mas incompleto, sem nenhum erro.
+  // Rodando em paralelo com Promise.any, esse resultado truncado podia
+  // "vencer" a corrida mesmo quando o Gemini teria terminado certo (ou ao
+  // menos avisado do corte via finishReason MAX_TOKENS) pouco depois.
+  const pistasGemini: Promise<TentativaResultado>[] = [
     tentarAnaliseComGemini(supabase, docs, tipo, GEMINI_API_KEY, signal).then((r) => processarRespostaGemini(r, 'gemini')),
   ]
   if (GEMINI_API_KEY_2) {
-    pistas.push(tentarAnaliseComGemini(supabase, docs, tipo, GEMINI_API_KEY_2, signal).then((r) => processarRespostaGemini(r, 'gemini-2')))
-  }
-  if (MISTRAL_API_KEY) {
-    pistas.push(tentarFallbackMistral(supabase, docs, tipo, signal).then((resultado) => ({ resultado, provedor: 'mistral' as const })))
+    pistasGemini.push(tentarAnaliseComGemini(supabase, docs, tipo, GEMINI_API_KEY_2, signal).then((r) => processarRespostaGemini(r, 'gemini-2')))
   }
 
   try {
-    return await Promise.any(pistas)
-  } catch (erroAgregado) {
-    const erros = erroAgregado instanceof AggregateError ? erroAgregado.errors : [erroAgregado]
-    const mensagens = erros.map((e) => (e instanceof Error ? e.message : String(e))).join(' | ')
-    throw new Error(`Nenhuma das fontes de IA configuradas conseguiu concluir a análise: ${mensagens}`, { cause: erroAgregado })
+    return await Promise.any(pistasGemini)
+  } catch (erroGemini) {
+    if (!MISTRAL_API_KEY) {
+      const erros = erroGemini instanceof AggregateError ? erroGemini.errors : [erroGemini]
+      const mensagens = erros.map((e) => (e instanceof Error ? e.message : String(e))).join(' | ')
+      throw new Error(`Nenhuma das fontes de IA configuradas conseguiu concluir a análise: ${mensagens}`, { cause: erroGemini })
+    }
+    try {
+      const resultado = await tentarFallbackMistral(supabase, docs, tipo, signal)
+      return { resultado, provedor: 'mistral' }
+    } catch (erroMistral) {
+      const errosGemini = erroGemini instanceof AggregateError ? erroGemini.errors : [erroGemini]
+      const mensagens = [...errosGemini, erroMistral].map((e) => (e instanceof Error ? e.message : String(e))).join(' | ')
+      throw new Error(`Nenhuma das fontes de IA configuradas conseguiu concluir a análise: ${mensagens}`, { cause: erroMistral })
+    }
   }
 }
 
