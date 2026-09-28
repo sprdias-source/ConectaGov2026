@@ -547,7 +547,11 @@ async function tentarAnaliseComGemini(supabase: Supa, docs: Anexo[], apiKey: str
         generationConfig: {
           response_mime_type: 'application/json',
           response_schema: ANALISE_SCHEMA,
-          maxOutputTokens: 8192,
+          // Editais com muitos itens (100+) geram um JSON grande — 8192
+          // tokens já se mostrou insuficiente na prática (edital de 107
+          // itens cortado em 10, sem erro nenhum: ver processarRespostaGemini,
+          // que só detecta esse corte quando finishReason é MAX_TOKENS).
+          maxOutputTokens: 32768,
         },
       }),
     },
@@ -776,22 +780,42 @@ async function processarRespostaGemini(genRes: Response, provedor: 'gemini' | 'g
 async function realizarAnalise(supabase: Supa, edital: Anexo, tr: Anexo | undefined, signal: AbortSignal): Promise<{ analise: AnaliseResultado; provedor: string }> {
   const docs = [edital, tr].filter((d): d is Anexo => !!d)
 
-  const pistas: Promise<TentativaResultado>[] = [
+  // Mistral SÓ entra depois que todas as chaves do Gemini já falharam — não
+  // pode competir na mesma corrida (Promise.any) com elas. Motivo real,
+  // visto em produção: um edital de 107 itens saiu com só 10, sem nenhum
+  // erro. O Gemini detecta e reporta corte por limite de tamanho
+  // (finishReason MAX_TOKENS, ver processarRespostaGemini) — a extração
+  // estruturada da Mistral (JSON Schema em modo "strict") não tem esse
+  // sinal em lugar nenhum da resposta: quando ela mesma estoura o próprio
+  // limite de geração no meio da lista de itens, o schema ainda força o
+  // JSON a fechar "certinho" com o que já tinha sido gerado — um resultado
+  // sintaticamente válido, mas incompleto, sem nenhum sinal de erro. Como
+  // Promise.any usa a PRIMEIRA que responder com sucesso, esse resultado
+  // truncado da Mistral podia "vencer" mesmo quando o Gemini teria
+  // terminado certo (ou ao menos avisado do corte) alguns segundos depois.
+  const pistasGemini: Promise<TentativaResultado>[] = [
     tentarAnaliseComGemini(supabase, docs, GEMINI_API_KEY, signal).then((r) => processarRespostaGemini(r, 'gemini')),
   ]
   if (GEMINI_API_KEY_2) {
-    pistas.push(tentarAnaliseComGemini(supabase, docs, GEMINI_API_KEY_2, signal).then((r) => processarRespostaGemini(r, 'gemini-2')))
-  }
-  if (MISTRAL_API_KEY) {
-    pistas.push(tentarFallbackMistral(supabase, edital, tr, signal).then((analise) => ({ analise, provedor: 'mistral' as const })))
+    pistasGemini.push(tentarAnaliseComGemini(supabase, docs, GEMINI_API_KEY_2, signal).then((r) => processarRespostaGemini(r, 'gemini-2')))
   }
 
   try {
-    return await Promise.any(pistas)
-  } catch (erroAgregado) {
-    const erros = erroAgregado instanceof AggregateError ? erroAgregado.errors : [erroAgregado]
-    const mensagens = erros.map((e) => (e instanceof Error ? e.message : String(e))).join(' | ')
-    throw new Error(`Nenhuma das fontes de IA configuradas conseguiu concluir a análise: ${mensagens}`, { cause: erroAgregado })
+    return await Promise.any(pistasGemini)
+  } catch (erroGemini) {
+    if (!MISTRAL_API_KEY) {
+      const erros = erroGemini instanceof AggregateError ? erroGemini.errors : [erroGemini]
+      const mensagens = erros.map((e) => (e instanceof Error ? e.message : String(e))).join(' | ')
+      throw new Error(`Nenhuma das fontes de IA configuradas conseguiu concluir a análise: ${mensagens}`, { cause: erroGemini })
+    }
+    try {
+      const analise = await tentarFallbackMistral(supabase, edital, tr, signal)
+      return { analise, provedor: 'mistral' }
+    } catch (erroMistral) {
+      const errosGemini = erroGemini instanceof AggregateError ? erroGemini.errors : [erroGemini]
+      const mensagens = [...errosGemini, erroMistral].map((e) => (e instanceof Error ? e.message : String(e))).join(' | ')
+      throw new Error(`Nenhuma das fontes de IA configuradas conseguiu concluir a análise: ${mensagens}`, { cause: erroMistral })
+    }
   }
 }
 
