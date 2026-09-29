@@ -30,6 +30,8 @@ import AcoesDocumentoManual from '../components/documentos/AcoesDocumentoManual'
 import DownloadDocumentosModal from '../components/licitacao/DownloadDocumentosModal'
 import DeclaracaoAnexosPanel from '../components/licitacao/DeclaracaoAnexosPanel'
 import { useBiddingAnalysis } from '../hooks/useBiddingAnalysis'
+import { useExtracaoItensEdital } from '../hooks/useExtracaoItensEdital'
+import type { ItemExtraido } from '../hooks/useExtracaoItensEdital'
 import { useAuditLogPorEntidade } from '../hooks/useAuditLog'
 import { useAnaliseJuridicaEdital, useLimparAnaliseJuridica } from '../hooks/useAnaliseJuridicaEdital'
 import type { TipoAnaliseJuridica } from '../hooks/useAnaliseJuridicaEdital'
@@ -2241,9 +2243,17 @@ function AbaSessaoAoVivo({ bidding }: { bidding: Bidding }) {
 }
 
 // Monta, a partir da análise de IA, só os campos que ela conseguiu
-// identificar (nunca sobrescreve com vazio) e a lista de itens — se a
-// análise não trouxe itens, mantém os já cadastrados em vez de apagá-los.
-function construirPreenchimento(analise: AnaliseEdital, itensAtuais: BiddingItem[]) {
+// identificar (nunca sobrescreve com vazio) e a lista de itens — se nem a
+// análise nem a extração dedicada trouxeram itens, mantém os já cadastrados
+// em vez de apagá-los.
+//
+// itensExtraidos (resultado do botão "Puxar Itens", ver
+// useExtracaoItensEdital) tem PRIORIDADE sobre os itens embutidos na análise
+// completa quando os dois existirem — a extração dedicada é o caminho
+// recomendado pra editais grandes (não compete por tempo de execução com
+// resumo/checklist/habilitação, ver Extrair-itens-edital), então tende a
+// estar mais completa/atualizada que os itens da análise geral.
+function construirPreenchimento(analise: AnaliseEdital, itensAtuais: BiddingItem[], itensExtraidos?: ItemExtraido[] | null) {
   // Diagnóstico: loga o item bruto exatamente como veio da análise de IA,
   // antes de qualquer transformação — usado pra confirmar se um valor
   // como quantidade/unidade errado (ex: "405"/"m³" virando "4"/"m") já
@@ -2265,7 +2275,7 @@ function construirPreenchimento(analise: AnaliseEdital, itensAtuais: BiddingItem
   if (campos.diasValidadeProposta) resumo.push('Validade da Proposta')
   if (campos.valorLicitado != null) resumo.push('Valor Total do Edital')
 
-  const itensMapeados = mapearItensDaAnalise(analise)
+  const itensMapeados = itensExtraidos?.length ? mapearItensDaAnalise({ itens: itensExtraidos }) : mapearItensDaAnalise(analise)
   const temItensNaAnalise = !!itensMapeados
   const itens: Partial<BiddingItem>[] = itensMapeados ?? itensAtuais
   if (temItensNaAnalise) {
@@ -2282,6 +2292,11 @@ function construirPreenchimento(analise: AnaliseEdital, itensAtuais: BiddingItem
 
 function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding; temEdital: boolean; podeEditar: boolean }) {
   const { analysis, analisar, travado, alternarItemParticipando, definirTodosParticipando } = useBiddingAnalysis(bidding.id)
+  const {
+    extracao, extrair, travado: travadoExtracao,
+    alternarItemParticipando: alternarItemExtraido,
+    definirTodosParticipando: definirTodosExtraidos,
+  } = useExtracaoItensEdital(bidding.id)
   const { updateBidding } = useBiddings()
   const { items: itensAtuais } = useBiddingItems(bidding.id)
   const { showToast } = useToast()
@@ -2293,7 +2308,12 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
   const status = analysis?.status
   const processando = (status === 'processando' && !travado) || analisar.isPending
   const analise = (analysis?.analise ?? null) as AnaliseEdital | null
-  const preenchimento = analise ? construirPreenchimento(analise, itensAtuais) : null
+  // Prioriza os itens da extração dedicada (botão "Puxar Itens") sobre os
+  // embutidos na análise completa — ver comentário de construirPreenchimento.
+  const preenchimento = analise ? construirPreenchimento(analise, itensAtuais, extracao?.itens) : null
+
+  const statusExtracao = extracao?.status
+  const extraindo = (statusExtracao === 'processando' && !travadoExtracao) || extrair.isPending
 
   const confirmarPreenchimento = () => {
     if (!preenchimento) return
@@ -2335,6 +2355,51 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
           <span className="text-[11px] text-base-500 italic">Pode levar até 2 minutos em editais grandes ou escaneados.</span>
         )}
       </div>
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <Button type="button" variant="secondary" onClick={() => extrair.mutate()} disabled={!temEdital || extraindo || bloqueada}>
+          {extraindo ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />}
+          {extraindo ? 'Puxando itens...' : statusExtracao === 'concluido' ? 'Puxar Itens Novamente' : 'Puxar Itens'}
+        </Button>
+        {temEdital && (
+          <span className="text-[11px] text-base-500 flex-1 min-w-[220px]">
+            Extrai só a lista de itens/lotes, numa chamada separada de "Analisar com IA" — recomendado pra editais com muitos itens (100+), que podem estourar o tempo da análise completa.
+          </span>
+        )}
+      </div>
+
+      {(statusExtracao === 'erro' || extrair.isError || travadoExtracao) && (() => {
+        const erroTecnicoExtracao = extracao?.erroMensagem || (extrair.error instanceof Error ? extrair.error.message : null)
+        return (
+          <div className="bg-negative-500/10 border border-negative-500/25 rounded-lg p-3 flex items-start gap-2">
+            <AlertCircle className="w-3.5 h-3.5 text-negative-400 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-[12px] text-negative-300">
+                {travadoExtracao
+                  ? 'A extração demorou demais e parece ter travado. Tente novamente.'
+                  : mensagemAmigavelErroAnalise(erroTecnicoExtracao)}
+              </p>
+              {!travadoExtracao && erroTecnicoExtracao && (
+                <details className="mt-1">
+                  <summary className="text-[10px] text-base-500 cursor-pointer hover:text-base-400">Detalhe técnico</summary>
+                  <p className="text-[10px] text-base-500 font-mono mt-1 break-all">{erroTecnicoExtracao}</p>
+                </details>
+              )}
+              <button onClick={() => extrair.mutate()} className="flex items-center gap-1.5 text-[11px] text-accent-300 hover:text-accent-200 transition mt-1.5">
+                <RefreshCw className="w-3 h-3" /> Tentar novamente
+              </button>
+            </div>
+          </div>
+        )
+      })()}
+
+      {statusExtracao === 'concluido' && !!extracao?.itens?.length && (
+        <AnaliseEditalResumo
+          analise={{ itens: extracao.itens } as AnaliseEdital}
+          onToggleItem={podeEditar ? (idx) => alternarItemExtraido.mutate(idx) : undefined}
+          onToggleTodos={podeEditar ? (participando) => definirTodosExtraidos.mutate(participando) : undefined}
+        />
+      )}
 
       {(status === 'erro' || analisar.isError || travado) && (() => {
         const erroTecnico = analysis?.erroMensagem || (analisar.error instanceof Error ? analisar.error.message : null)
@@ -2475,27 +2540,32 @@ export default function LicitacaoPage() {
   const clienteDaLicitacao = clients.find((c) => c.id === bidding?.clientId)
   const { buscando, errosBusca, avisosBusca, buscarAutomatico, limparAviso, limparErro } = useBuscaCertidaoAutomatica(bidding?.clientId, clienteDaLicitacao?.cnpj ?? undefined, podeEditar)
   const { analysis, limparAnalise } = useBiddingAnalysis(bidding?.id)
+  const { extracao: extracaoItens, limparExtracao: limparExtracaoItens } = useExtracaoItensEdital(bidding?.id)
   const { limpar: limparAnaliseJuridica } = useLimparAnaliseJuridica(bidding?.id)
   const { items: itensDaProposta, isLoading: carregandoItensProposta } = useBiddingItems(bidding?.id ?? null)
 
-  // Assim que a IA identifica os itens do edital, eles já entram
-  // automaticamente em Cadastrar Proposta / Proposta Readequada (ambas leem
-  // de bidding_items) — sem precisar clicar em "Preencher Licitação com
-  // estes Dados". Só roda enquanto a lista de itens estiver vazia: nunca
-  // sobrescreve item já cadastrado/editado manualmente (marca, valor
-  // ofertado etc.), e o botão manual continua disponível pra reimportar de
-  // propósito depois (ex: se a análise for refeita).
+  // Assim que a IA identifica os itens do edital (pela análise completa ou
+  // pelo botão dedicado "Puxar Itens" — este último tem prioridade, ver
+  // construirPreenchimento), eles já entram automaticamente em Cadastrar
+  // Proposta / Proposta Readequada (ambas leem de bidding_items) — sem
+  // precisar clicar em "Preencher Licitação com estes Dados". Só roda
+  // enquanto a lista de itens estiver vazia: nunca sobrescreve item já
+  // cadastrado/editado manualmente (marca, valor ofertado etc.), e o botão
+  // manual continua disponível pra reimportar de propósito depois (ex: se a
+  // análise for refeita).
   const itensJaImportadosParaRef = useRef<string | null>(null)
   useEffect(() => {
     if (!bidding || carregandoItensProposta) return
     if (itensJaImportadosParaRef.current === bidding.id) return
     const analise = (analysis?.analise ?? null) as AnaliseEdital | null
-    const itensDaAnalise = analise ? mapearItensDaAnalise(analise) : null
+    const itensDaAnalise = extracaoItens?.itens?.length
+      ? mapearItensDaAnalise({ itens: extracaoItens.itens })
+      : (analise ? mapearItensDaAnalise(analise) : null)
     if (itensDaAnalise && itensDaProposta.length === 0) {
       itensJaImportadosParaRef.current = bidding.id
       updateBidding.mutate({ bidding, items: itensDaAnalise })
     }
-  }, [bidding, analysis, itensDaProposta, carregandoItensProposta, updateBidding])
+  }, [bidding, analysis, extracaoItens, itensDaProposta, carregandoItensProposta, updateBidding])
 
   // Documentos sugeridos pela Análise de Edital pra habilitação — comparados
   // com os itens de checklist já existentes (mesma transformação de número
@@ -2594,16 +2664,17 @@ export default function LicitacaoPage() {
   }
 
   // Excluir o edital pode significar que o PDF errado foi enviado — nesse
-  // caso, tudo que foi lido automaticamente dele (análise, análise
-  // jurídica, itens de checklist sugeridos pela IA) fica errado junto e
-  // precisa sumir também. Itens de checklist adicionados manualmente
-  // (origem='manual') não têm relação com qual edital foi analisado, então
-  // ficam intactos.
+  // caso, tudo que foi lido automaticamente dele (análise, extração
+  // dedicada de itens, análise jurídica, itens de checklist sugeridos pela
+  // IA) fica errado junto e precisa sumir também. Itens de checklist
+  // adicionados manualmente (origem='manual') não têm relação com qual
+  // edital foi analisado, então ficam intactos.
   const handleExcluirEdital = () => {
     if (!edital) return
     deleteAnexo.mutate(edital, {
       onSuccess: () => {
         limparAnalise.mutate()
+        limparExtracaoItens.mutate()
         limparAnaliseJuridica.mutate()
         limparItensIA.mutate()
       },

@@ -17,6 +17,7 @@ import { usePerguntaOportunidade } from '../../hooks/usePerguntaEdital'
 import { AnaliseJuridicaTabs } from '../shared/AnaliseJuridicaTabs'
 import { useOpportunities, calcOpportunityStatus, diasParaSessao } from '../../hooks/useOpportunities'
 import { useOpportunityAnalysis } from '../../hooks/useOpportunityAnalysis'
+import { useExtracaoItensOportunidade } from '../../hooks/useExtracaoItensOportunidade'
 import { useAnaliseJuridicaOportunidade, useLimparAnaliseJuridicaOportunidade } from '../../hooks/useAnaliseJuridicaOportunidade'
 import type { TipoAnaliseJuridica } from '../../hooks/useAnaliseJuridicaEdital'
 import { usePlatforms } from '../../hooks/usePlatforms'
@@ -158,6 +159,10 @@ function OportunidadeDetalhe({
   const { clients } = useClients()
   const { files, uploadFile, deleteFile } = useAttachedFiles('oportunidade', opportunity.id)
   const { analysis, analisar, travado, limparAnalise, alternarItemParticipando, definirTodosParticipando, tentandoNovamenteAutomaticamente } = useOpportunityAnalysis(opportunity.id)
+  const {
+    extracao: extracaoItens, extrair: extrairItens, travado: travadoExtracao, limparExtracao: limparExtracaoItens,
+    alternarItemParticipando: alternarItemExtraido, definirTodosParticipando: definirTodosExtraidos,
+  } = useExtracaoItensOportunidade(opportunity.id)
   const { perguntar, isPending: perguntando } = usePerguntaOportunidade(opportunity.id)
   const [tipoJuridicoAtivo, setTipoJuridicoAtivo] = useState<TipoAnaliseJuridica>('esclarecimento')
   const { analysis: analiseJuridica, analisar: analisarJuridica, travado: travadoJuridica } = useAnaliseJuridicaOportunidade(opportunity.id, tipoJuridicoAtivo)
@@ -236,6 +241,7 @@ function OportunidadeDetalhe({
     deleteFile.mutate(edital, {
       onSuccess: () => {
         limparAnalise.mutate()
+        limparExtracaoItens.mutate()
         limparAnaliseJuridica.mutate()
       },
     })
@@ -461,6 +467,45 @@ function OportunidadeDetalhe({
             </details>
           )}
         </div>
+      )}
+
+      {edital && podeEditar && (() => {
+        const extraindo = (extracaoItens?.status === 'processando' && !travadoExtracao) || extrairItens.isPending
+        return (
+          <div className="flex items-center justify-between bg-base-850/60 border border-base-800 rounded-lg px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              <ClipboardList className="w-3.5 h-3.5 text-accent-400" />
+              <span className="text-[12px] text-base-300">
+                {extraindo ? 'Puxando itens...' : extracaoItens?.itens?.length ? `${extracaoItens.itens.length} item(ns) extraído(s)` : 'Itens ainda não extraídos'}
+              </span>
+              <span className="text-[11px] text-base-500 italic">chamada separada, recomendada pra editais com muitos itens (100+)</span>
+            </div>
+            <Button variant="secondary" onClick={() => extrairItens.mutate()} disabled={extraindo}>
+              {extraindo ? 'Puxando...' : extracaoItens?.status === 'concluido' ? 'Puxar Itens Novamente' : 'Puxar Itens'}
+            </Button>
+          </div>
+        )
+      })()}
+
+      {travadoExtracao && <p className="text-[11px] text-negative-400">A extração de itens travou (demorou demais). Tenta "Puxar Itens Novamente".</p>}
+      {extracaoItens?.status === 'erro' && (
+        <div className="text-[11px] text-negative-400">
+          <p>{mensagemAmigavelErroAnalise(extracaoItens.erroMensagem)}</p>
+          {extracaoItens.erroMensagem && (
+            <details className="mt-1">
+              <summary className="text-[10px] text-base-500 cursor-pointer hover:text-base-400">Detalhe técnico</summary>
+              <p className="text-[10px] text-base-500 font-mono mt-1 break-all">{extracaoItens.erroMensagem}</p>
+            </details>
+          )}
+        </div>
+      )}
+
+      {!!extracaoItens?.itens?.length && (
+        <AnaliseEditalResumo
+          analise={{ itens: extracaoItens.itens } as AnaliseEdital}
+          onToggleItem={podeEditar ? (idx) => alternarItemExtraido.mutate(idx) : undefined}
+          onToggleTodos={podeEditar ? (participando) => definirTodosExtraidos.mutate(participando) : undefined}
+        />
       )}
 
       {analise && (

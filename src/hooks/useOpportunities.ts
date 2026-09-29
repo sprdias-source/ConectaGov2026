@@ -206,8 +206,20 @@ export function useOpportunities() {
         .maybeSingle()
       const analise = (analiseRow?.status === 'concluido' ? analiseRow.analise : null) as AnaliseEdital | null
 
+      // Itens da extração dedicada (botão "Puxar Itens") têm prioridade
+      // sobre os embutidos na análise completa — mesmo critério de
+      // construirPreenchimento em LicitacaoPage.tsx.
+      const { data: extracaoRow } = await supabase
+        .from('opportunity_itens_extracao')
+        .select('itens, status')
+        .eq('opportunity_id', opportunity.id)
+        .maybeSingle()
+      const itensExtraidos = extracaoRow?.status === 'concluido' ? (extracaoRow.itens as AnaliseEdital['itens']) : null
+
       const campos = analise ? mapearCamposDaAnalise(analise) : {}
-      const itens = analise ? mapearItensDaAnalise(analise) : null
+      const itens = itensExtraidos?.length
+        ? mapearItensDaAnalise({ itens: itensExtraidos })
+        : (analise ? mapearItensDaAnalise(analise) : null)
       // "Valor que Vamos Participar" começa igual à soma dos itens extraídos
       // pela IA (mesma regra do botão "Preencher Licitação com estes Dados"
       // em LicitacaoPage.tsx) — editável depois na tela da licitação.
@@ -265,6 +277,13 @@ export function useOpportunities() {
             .from('bidding_analysis')
             .insert({ user_id: user.id, bidding_id: novoBiddingId, status: 'concluido', analise: analiseRow!.analise })
           if (analiseError) throw analiseError
+        }
+
+        if (itensExtraidos) {
+          const { error: extracaoError } = await supabase
+            .from('bidding_itens_extracao')
+            .insert({ user_id: user.id, bidding_id: novoBiddingId, status: 'concluido', itens: extracaoRow!.itens })
+          if (extracaoError) throw extracaoError
         }
 
         const { error: opportunityError } = await supabase
