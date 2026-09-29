@@ -596,6 +596,47 @@ export type Database = {
           },
         ]
       }
+      bidding_itens_extracao: {
+        Row: {
+          bidding_id: string
+          created_at: string
+          erro_mensagem: string | null
+          id: string
+          itens: Json | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bidding_id: string
+          created_at?: string
+          erro_mensagem?: string | null
+          id?: string
+          itens?: Json | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bidding_id?: string
+          created_at?: string
+          erro_mensagem?: string | null
+          id?: string
+          itens?: Json | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bidding_itens_extracao_bidding_id_fkey"
+            columns: ["bidding_id"]
+            isOneToOne: true
+            referencedRelation: "biddings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       biddings: {
         Row: {
           campos_preenchidos_por_ia: string[]
@@ -2010,6 +2051,47 @@ export type Database = {
             foreignKeyName: "opportunity_analysis_juridica_opportunity_id_fkey"
             columns: ["opportunity_id"]
             isOneToOne: false
+            referencedRelation: "opportunities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      opportunity_itens_extracao: {
+        Row: {
+          created_at: string
+          erro_mensagem: string | null
+          id: string
+          itens: Json | null
+          opportunity_id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          erro_mensagem?: string | null
+          id?: string
+          itens?: Json | null
+          opportunity_id: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          erro_mensagem?: string | null
+          id?: string
+          itens?: Json | null
+          opportunity_id?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opportunity_itens_extracao_opportunity_id_fkey"
+            columns: ["opportunity_id"]
+            isOneToOne: true
             referencedRelation: "opportunities"
             referencedColumns: ["id"]
           },
