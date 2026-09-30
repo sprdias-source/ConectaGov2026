@@ -224,7 +224,7 @@ Deno.serve(async (req) => {
     if (pdfBase64) {
       const bytes = Uint8Array.from(atob(pdfBase64), (c) => c.charCodeAt(0))
       const path = `${ownerId}/${clientId}/cnd_federal/cnd_federal_${dataEmissao}.pdf`
-      const { error } = await supabase.storage.from('documents')
+      const { error } = await supabase.storage.from('client-documents')
         .upload(path, bytes, { contentType: 'application/pdf', upsert: true })
       if (!error) storagePath = path
     }

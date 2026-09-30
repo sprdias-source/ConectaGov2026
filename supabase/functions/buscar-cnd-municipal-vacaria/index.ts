@@ -164,7 +164,7 @@ Deno.serve(async (req) => {
     const dataValidade = validade.toISOString().split('T')[0]
 
     const path = `${ownerId}/${clientId}/cnd_municipal_vacaria/cnd_municipal_${dataEmissao}.pdf`
-    const { error: uploadError } = await supabase.storage.from('documents')
+    const { error: uploadError } = await supabase.storage.from('client-documents')
       .upload(path, resultado.bytes, { contentType: 'application/pdf', upsert: true })
 
     if (uploadError) throw new Error(`Erro ao salvar PDF: ${uploadError.message}`)

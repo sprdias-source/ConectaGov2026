@@ -129,6 +129,19 @@ export function useRecurringEngine() {
               )
             )
             if (insertError) {
+              // Código 23505 = violação da constraint única (recurring_parent_id,
+              // due_date) — ver migração 062. Não é um erro de verdade: só
+              // significa que OUTRA aba/sessão já criou esta mesma parcela entre
+              // a leitura de existingDueDates acima e este insert (a checagem
+              // "já existe?" e a inserção não são atômicas sem essa constraint).
+              // Antes desta correção, cada aba concorrente duplicava o
+              // lançamento financeiro de verdade; agora a segunda simplesmente
+              // desiste desta parcela específica e segue pra próxima.
+              if (insertError.code === '23505') {
+                existingDueDates.add(next)
+                toCreate--
+                continue
+              }
               console.error('[Motor de Recorrência] Falha ao criar parcela recorrente:', insertError)
               setLastError(`Criar parcela recorrente: ${insertError.message}`)
               break
