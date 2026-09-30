@@ -339,6 +339,16 @@ function ResultadoLicitacao({ bidding }: { bidding: Bidding }) {
   const { marcarResultado } = useBiddings()
   const { nivel, carregando: carregandoPermissao } = usePermissaoFerramenta('licitacoes')
   const podeEditar = nivel === 'edicao' && !carregandoPermissao
+  // BUG CORRIGIDO (perícia técnica 2026-09): este era o único ponto de
+  // LicitacaoPage.tsx que mudava o resultado ("Ganhou"/"Perdeu"/"Cancelada"/
+  // "Desistiu") sem checar useBiddingEditLock — uma licitação já Ganhou +
+  // Adjudicada e Homologada (com empenho/comissão já lançados, às vezes já
+  // pagos) podia ter o resultado revertido pra Cancelada/Perdeu sem senha
+  // nenhuma, deixando o empenho da "vitória" órfão e ativo junto de um
+  // resultado que não é mais vitória. Mesmo padrão de trava já usado em
+  // AnaliseEditalIA (edital/itens) e no <fieldset> de BiddingFormModal.
+  const { bloqueada, desbloquear } = useBiddingEditLock(bidding)
+  const [mostrandoUnlock, setMostrandoUnlock] = useState(false)
   const [status, setStatus] = useState<BiddingStatus>(bidding.status)
   const [motivo, setMotivo] = useState(bidding.motivoPerda ?? '')
   const [motivoDesistencia, setMotivoDesistencia] = useState(bidding.motivoDesistencia ?? '')
@@ -363,9 +373,20 @@ function ResultadoLicitacao({ bidding }: { bidding: Bidding }) {
   return (
     <div className="bg-base-850/60 border border-base-800 rounded-xl p-4 flex flex-col gap-3">
       <p className="text-[10px] uppercase tracking-wider text-base-500 font-bold">Resultado da Licitação</p>
+
+      {bloqueada && (
+        <div className="flex items-center gap-3 bg-accent-500/10 border border-accent-500/30 rounded-lg p-3">
+          <Lock className="w-4 h-4 text-accent-400 shrink-0" />
+          <p className="flex-1 text-[12px] text-accent-200">
+            Esta licitação já está <strong>Ganhou</strong> e <strong>Adjudicada e Homologada</strong> — mudar o resultado exige senha.
+          </p>
+          <Button type="button" variant="secondary" onClick={() => setMostrandoUnlock(true)}>Desbloquear com senha</Button>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-end gap-3">
         <div className="w-48">
-          <Select value={status} onChange={(e) => setStatus(e.target.value as BiddingStatus)}>
+          <Select value={status} onChange={(e) => setStatus(e.target.value as BiddingStatus)} disabled={bloqueada}>
             <option value="Em Andamento">Em Andamento</option>
             <option value="Ganhou">Ganhou</option>
             <option value="Perdeu">Perdeu</option>
@@ -379,6 +400,7 @@ function ResultadoLicitacao({ bidding }: { bidding: Bidding }) {
               placeholder="Motivo da perda (preço, documentação, desclassificação técnica...)"
               value={motivo}
               onChange={(e) => setMotivo(e.target.value)}
+              disabled={bloqueada}
             />
           </div>
         )}
@@ -388,6 +410,7 @@ function ResultadoLicitacao({ bidding }: { bidding: Bidding }) {
               placeholder="Motivo da desistência do cliente"
               value={motivoDesistencia}
               onChange={(e) => setMotivoDesistencia(e.target.value)}
+              disabled={bloqueada}
             />
           </div>
         )}
@@ -397,12 +420,13 @@ function ResultadoLicitacao({ bidding }: { bidding: Bidding }) {
               placeholder="Motivo do cancelamento (órgão cancelou o edital)"
               value={motivoCancelamento}
               onChange={(e) => setMotivoCancelamento(e.target.value)}
+              disabled={bloqueada}
             />
           </div>
         )}
         <Button
           onClick={() => marcarResultado.mutate({ biddingId: bidding.id, status, motivoPerda: motivo, motivoDesistencia, motivoCancelamento })}
-          disabled={!mudou || marcarResultado.isPending}
+          disabled={!mudou || marcarResultado.isPending || bloqueada}
         >
           {marcarResultado.isPending ? 'Salvando...' : 'Salvar Resultado'}
         </Button>
@@ -410,6 +434,14 @@ function ResultadoLicitacao({ bidding }: { bidding: Bidding }) {
       <p className="text-[11px] text-base-500">
         Registrar o motivo quando perde ou o cliente desiste é o que alimenta o relatório mensal pro cliente depois — sem isso, o "porquê" se perde.
       </p>
+
+      <UnlockWithPasswordDialog
+        open={mostrandoUnlock}
+        entityLabel={`Licitação "${bidding.objeto}"`}
+        entityId={bidding.id}
+        onCancel={() => setMostrandoUnlock(false)}
+        onUnlocked={() => { desbloquear(); setMostrandoUnlock(false) }}
+      />
     </div>
   )
 }

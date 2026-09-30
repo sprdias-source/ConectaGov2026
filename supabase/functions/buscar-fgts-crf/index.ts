@@ -223,7 +223,7 @@ Deno.serve(async (req) => {
 
     const bytes = Uint8Array.from(atob(resultado.pdfBase64), (c) => c.charCodeAt(0))
     const path = `${ownerId}/${clientId}/fgts_crf/fgts_crf_${dataEmissao}.pdf`
-    const { error: uploadError } = await supabase.storage.from('documents')
+    const { error: uploadError } = await supabase.storage.from('client-documents')
       .upload(path, bytes, { contentType: 'application/pdf', upsert: true })
 
     if (uploadError) throw new Error(`Erro ao salvar PDF: ${uploadError.message}`)
