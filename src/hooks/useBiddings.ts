@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { fromBiddingRow, fromBiddingItemRow, toBiddingInsert, toBiddingItemInsert, toTransactionInsert } from '../lib/mappers'
 import { somarValorGanhoConfirmado } from '../lib/analiseEdital'
 import { licitacaoBloqueadaPorResultado } from '../lib/biddingLock'
+import { excluirNoDrive, ehArquivoDrive } from '../lib/driveStorage'
 import type { Bidding, BiddingItem, BiddingStatus } from '../types/domain'
 import { useAuth } from './useAuth'
 import { useAuditLog } from './useAuditLog'
@@ -265,6 +266,36 @@ export function useBiddings() {
         .update({ status: 'linkado' })
         .eq('bidding_id', bidding.id)
       if (licitaiError) throw licitaiError
+
+      // BUG CORRIGIDO (perícia técnica 2026-09): attached_files usa
+      // entity_type/entity_id polimórfico, sem FK nenhuma pra biddings —
+      // excluir a licitação deixava os metadados de edital/TR/propostas/
+      // declarações órfãos na tabela, e os arquivos de verdade nunca eram
+      // removidos do Drive/Storage. Mesmo padrão best-effort já usado em
+      // useAttachedFiles.ts: apaga primeiro os REGISTROS (ponto de
+      // confirmação), só depois tenta limpar os arquivos físicos — se a
+      // limpeza física falhar, o pior caso é um arquivo órfão consumindo
+      // espaço, nunca um erro bloqueando a exclusão da licitação.
+      const { data: anexos } = await supabase
+        .from('attached_files')
+        .select('id, storage_path')
+        .eq('entity_type', 'licitacao')
+        .eq('entity_id', bidding.id)
+
+      if (anexos?.length) {
+        const { error: anexosError } = await supabase
+          .from('attached_files')
+          .delete()
+          .eq('entity_type', 'licitacao')
+          .eq('entity_id', bidding.id)
+        if (anexosError) throw anexosError
+
+        await Promise.all(anexos.map((a) =>
+          ehArquivoDrive(a.storage_path)
+            ? excluirNoDrive('attached_files', a.storage_path).catch(() => {})
+            : supabase.storage.from('client-documents').remove([a.storage_path]).catch(() => {})
+        ))
+      }
 
       const { error } = await supabase.from('biddings').delete().eq('id', bidding.id)
       if (error) throw error

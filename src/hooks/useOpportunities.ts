@@ -199,6 +199,23 @@ export function useOpportunities() {
       if (!opportunity.clientId) throw new Error('Selecione um cliente antes de converter em licitação.')
       const clientId = opportunity.clientId
 
+      // BUG CORRIGIDO (perícia técnica 2026-09): a única proteção contra
+      // duplo clique era o botão desabilitado durante `isPending` — nada
+      // impedia duas chamadas de `converterEmLicitacao.mutate` disparadas
+      // quase juntas (ex: duplo clique bem rápido, antes do primeiro render
+      // com `disabled` chegar) de criarem DUAS licitações pra mesma
+      // oportunidade. Reconsulta o `bidding_id` direto no banco (não confia
+      // no objeto `opportunity` que veio do estado do React, que pode estar
+      // desatualizado no exato instante da corrida) e desiste cedo se já
+      // existe — mesmo dado que a Edge Function `Extrair-itens-edital` já
+      // resolve via `owner_efetivo` antes de gravar, aplicado aqui.
+      const { data: opportunityAtual } = await supabase
+        .from('opportunities')
+        .select('bidding_id')
+        .eq('id', opportunity.id)
+        .single()
+      if (opportunityAtual?.bidding_id) throw new Error('Esta oportunidade já foi convertida em licitação.')
+
       const { data: analiseRow } = await supabase
         .from('opportunity_analysis')
         .select('analise, status')
