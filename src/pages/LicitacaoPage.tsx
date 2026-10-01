@@ -2340,9 +2340,18 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
   const status = analysis?.status
   const processando = (status === 'processando' && !travado) || analisar.isPending
   const analise = (analysis?.analise ?? null) as AnaliseEdital | null
-  // Prioriza os itens da extração dedicada (botão "Puxar Itens") sobre os
-  // embutidos na análise completa — ver comentário de construirPreenchimento.
-  const preenchimento = analise ? construirPreenchimento(analise, itensAtuais, extracao?.itens) : null
+  // BUG CORRIGIDO (perícia técnica 2026-09): antes, "Preencher Licitação com
+  // estes Dados" só existia quando `analise` (a análise completa) não era
+  // nula — então quem usa SÓ o botão "Puxar Itens" (o caminho recomendado
+  // pra editais grandes, que nunca roda a análise completa) nunca tinha
+  // como levar uma reextração de itens corrigida pra Cadastrar Proposta
+  // depois da primeira importação automática. Agora cai pra `{}` quando não
+  // há análise completa, mas há itens extraídos — construirPreenchimento já
+  // tolera isso (AnaliseEdital é todo opcional) e simplesmente não oferece
+  // nenhum campo de licitação pra preencher, só os itens.
+  const preenchimento = (analise || extracao?.itens?.length)
+    ? construirPreenchimento(analise ?? {}, itensAtuais, extracao?.itens)
+    : null
 
   const statusExtracao = extracao?.status
   const extraindo = (statusExtracao === 'processando' && !travadoExtracao) || extrair.isPending
@@ -2433,6 +2442,26 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
         />
       )}
 
+      {/* Fora do bloco "status === 'concluido' && analise" de propósito (ver
+          comentário em `preenchimento` acima): precisa aparecer também pra
+          quem só usou "Puxar Itens", sem nunca ter rodado a análise completa. */}
+      {podeEditar && preenchimento && preenchimento.resumo.length > 0 && (
+        <div className="flex items-center gap-3 flex-wrap bg-accent-500/10 border border-accent-500/25 rounded-lg p-3">
+          <Button type="button" variant="secondary" onClick={() => setConfirmandoPreenchimento(true)} disabled={updateBidding.isPending || bloqueada}>
+            <Wand2 className="w-4 h-4" /> Preencher Licitação com estes Dados
+          </Button>
+          <span className="text-[11px] text-base-400 flex-1 min-w-[220px]">
+            Atualiza {preenchimento.resumo.join(', ')} desta licitação com o que foi identificado no edital.
+          </span>
+        </div>
+      )}
+
+      {updateBidding.isError && (
+        <div className="bg-negative-500/10 border border-negative-500/25 rounded-lg p-3 text-[12px] text-negative-300">
+          {updateBidding.error instanceof Error ? updateBidding.error.message : 'Não foi possível atualizar a licitação com os dados da análise.'}
+        </div>
+      )}
+
       {(status === 'erro' || analisar.isError || travado) && (() => {
         const erroTecnico = analysis?.erroMensagem || (analisar.error instanceof Error ? analisar.error.message : null)
         return (
@@ -2467,23 +2496,6 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
 
       {status === 'concluido' && analise && (
         <div className="flex flex-col gap-4">
-          {podeEditar && preenchimento && preenchimento.resumo.length > 0 && (
-            <div className="flex items-center gap-3 flex-wrap bg-accent-500/10 border border-accent-500/25 rounded-lg p-3">
-              <Button type="button" variant="secondary" onClick={() => setConfirmandoPreenchimento(true)} disabled={updateBidding.isPending || bloqueada}>
-                <Wand2 className="w-4 h-4" /> Preencher Licitação com estes Dados
-              </Button>
-              <span className="text-[11px] text-base-400 flex-1 min-w-[220px]">
-                Atualiza {preenchimento.resumo.join(', ')} desta licitação com o que foi identificado no edital.
-              </span>
-            </div>
-          )}
-
-          {updateBidding.isError && (
-            <div className="bg-negative-500/10 border border-negative-500/25 rounded-lg p-3 text-[12px] text-negative-300">
-              {updateBidding.error instanceof Error ? updateBidding.error.message : 'Não foi possível atualizar a licitação com os dados da análise.'}
-            </div>
-          )}
-
           <AnaliseEditalResumo
             analise={analise}
             onToggleItem={podeEditar ? (idx) => alternarItemParticipando.mutate(idx) : undefined}
@@ -2585,19 +2597,33 @@ export default function LicitacaoPage() {
   // cadastrado/editado manualmente (marca, valor ofertado etc.), e o botão
   // manual continua disponível pra reimportar de propósito depois (ex: se a
   // análise for refeita).
-  const itensJaImportadosParaRef = useRef<string | null>(null)
+  // BUG CORRIGIDO (perícia técnica 2026-09, race condition): o guard era um
+  // único `useRef<string | null>` guardando só o ÚLTIMO bidding.id — como
+  // esta página não desmonta ao trocar de licitação (só re-renderiza com um
+  // `bidding` novo pelo mesmo `:id` de rota), navegar rápido entre A e B e
+  // voltar pra A antes do cache do React Query invalidar (`onSuccess` da
+  // mutation ainda em voo) fazia o guard "esquecer" que A já tinha sido
+  // processada, disparando um SEGUNDO `updateBidding.mutate` pra A
+  // concorrente com o primeiro — `saveItems` faz delete-then-insert, então
+  // duas chamadas concorrentes podiam duplicar os itens. Trocado por um Set
+  // que lembra TODAS as licitações já processadas nesta sessão da página,
+  // não só a última. Também passou a respeitar `podeEditar` (os outros dois
+  // auto-preenchimentos da mesma tela, linhas abaixo, já faziam isso — só
+  // este tinha ficado de fora, permitindo que um usuário só-leitura
+  // disparasse uma escrita ao simplesmente abrir a licitação).
+  const itensJaImportadosParaRef = useRef<Set<string>>(new Set())
   useEffect(() => {
-    if (!bidding || carregandoItensProposta) return
-    if (itensJaImportadosParaRef.current === bidding.id) return
+    if (!bidding || !podeEditar || carregandoItensProposta) return
+    if (itensJaImportadosParaRef.current.has(bidding.id)) return
     const analise = (analysis?.analise ?? null) as AnaliseEdital | null
     const itensDaAnalise = extracaoItens?.itens?.length
       ? mapearItensDaAnalise({ itens: extracaoItens.itens })
       : (analise ? mapearItensDaAnalise(analise) : null)
     if (itensDaAnalise && itensDaProposta.length === 0) {
-      itensJaImportadosParaRef.current = bidding.id
+      itensJaImportadosParaRef.current.add(bidding.id)
       updateBidding.mutate({ bidding, items: itensDaAnalise })
     }
-  }, [bidding, analysis, extracaoItens, itensDaProposta, carregandoItensProposta, updateBidding])
+  }, [bidding, podeEditar, analysis, extracaoItens, itensDaProposta, carregandoItensProposta, updateBidding])
 
   // Documentos sugeridos pela Análise de Edital pra habilitação — comparados
   // com os itens de checklist já existentes (mesma transformação de número

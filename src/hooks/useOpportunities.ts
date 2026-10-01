@@ -216,6 +216,20 @@ export function useOpportunities() {
         .maybeSingle()
       const itensExtraidos = extracaoRow?.status === 'concluido' ? (extracaoRow.itens as AnaliseEdital['itens']) : null
 
+      // BUG CORRIGIDO (perícia técnica 2026-09): a Análise Jurídica
+      // (Esclarecimento/Impugnação/Raio-X, até 3 linhas — uma por tipo)
+      // nunca era copiada na conversão, embora handleExcluirEdital em
+      // LicitacaoPage.tsx já trate bidding_analysis_juridica como parte do
+      // mesmo pacote de dados derivados do edital que bidding_analysis e
+      // bidding_itens_extracao. Sem isso, rodar a análise jurídica ainda na
+      // fase de Oportunidade (pagando a chamada de IA) virava trabalho
+      // perdido: a Licitação nascia com a aba de Análise Jurídica vazia.
+      const { data: analiseJuridicaRows } = await supabase
+        .from('opportunity_analysis_juridica')
+        .select('tipo, status, resultado')
+        .eq('opportunity_id', opportunity.id)
+        .eq('status', 'concluido')
+
       const campos = analise ? mapearCamposDaAnalise(analise) : {}
       const itens = itensExtraidos?.length
         ? mapearItensDaAnalise({ itens: itensExtraidos })
@@ -284,6 +298,15 @@ export function useOpportunities() {
             .from('bidding_itens_extracao')
             .insert({ user_id: user.id, bidding_id: novoBiddingId, status: 'concluido', itens: extracaoRow!.itens })
           if (extracaoError) throw extracaoError
+        }
+
+        if (analiseJuridicaRows?.length) {
+          const { error: analiseJuridicaError } = await supabase
+            .from('bidding_analysis_juridica')
+            .insert(analiseJuridicaRows.map((r) => ({
+              user_id: user.id, bidding_id: novoBiddingId, tipo: r.tipo, status: 'concluido', resultado: r.resultado,
+            })))
+          if (analiseJuridicaError) throw analiseJuridicaError
         }
 
         const { error: opportunityError } = await supabase
