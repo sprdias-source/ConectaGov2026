@@ -10,8 +10,36 @@ const CORS = {
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
 
+  // BUG CORRIGIDO (perícia técnica 2026-09): diferente dos outros 6 robôs de
+  // certidão (buscar-cndt, buscar-cnd-federal etc.), esta function nunca
+  // gravava em document_logs — o card de habilitação (useUltimosLogsRobo)
+  // nunca tinha nenhum histórico pra mostrar quando a busca de FGTS falhava,
+  // só "Erro desconhecido" genérico. Mesmo padrão (inicio/registrarLog) já
+  // usado nas demais.
+  const inicio = Date.now()
+  let supabaseLog: ReturnType<typeof createClient> | null = null
+  let userIdLog: string | null = null
+  let clientIdLog: string | null = null
+
+  async function registrarLog(status: 'sucesso' | 'erro', erro: string | null) {
+    if (!supabaseLog || !userIdLog || !clientIdLog) return
+    try {
+      await supabaseLog.from('document_logs').insert({
+        user_id: userIdLog,
+        client_id: clientIdLog,
+        tipo: 'fgts',
+        status,
+        duracao_ms: Date.now() - inicio,
+        erro: erro ? erro.slice(0, 500) : null,
+      })
+    } catch (logErr) {
+      console.warn('buscar-fgts: falha ao gravar log:', logErr)
+    }
+  }
+
   try {
     const { cnpj, clientId } = await req.json()
+    clientIdLog = clientId ?? null
     if (!cnpj || !clientId) {
       return new Response(JSON.stringify({ error: 'cnpj e clientId são obrigatórios' }), {
         status: 400, headers: { ...CORS, 'Content-Type': 'application/json' },
@@ -38,6 +66,8 @@ serve(async (req) => {
     // usam o dono, já que clients.user_id também é sempre o dono.
     const { data: ownerId, error: ownerError } = await supabase.rpc('owner_efetivo', { usuario_id: user.id })
     if (ownerError || !ownerId) throw new Error('Não foi possível identificar a conta do usuário')
+    supabaseLog = supabase
+    userIdLog = ownerId as string
 
     // Confirma que o cliente pertence à conta de quem chamou (respeita
     // RLS) antes de gastar uma sessão paga do Browserless.
@@ -96,6 +126,7 @@ serve(async (req) => {
     const irregular = pageText.toLowerCase().includes('irregular')
 
     if (irregular) {
+      await registrarLog('erro', 'CRF FGTS irregular (pendências junto à Caixa)')
       return new Response(JSON.stringify({
         error: 'CRF FGTS IRREGULAR — o CNPJ possui pendências junto à Caixa Econômica Federal.',
         irregular: true,
@@ -123,10 +154,12 @@ serve(async (req) => {
       status: 'valido', auto_renovavel: true,
     }, { onConflict: 'user_id,client_id,tipo' })
 
+    await registrarLog('sucesso', null)
     return new Response(JSON.stringify({ success: true, dataEmissao, dataValidade }), {
       headers: { ...CORS, 'Content-Type': 'application/json' },
     })
   } catch (err) {
+    await registrarLog('erro', String(err))
     return new Response(JSON.stringify({ error: String(err) }), {
       status: 500, headers: { ...CORS, 'Content-Type': 'application/json' },
     })

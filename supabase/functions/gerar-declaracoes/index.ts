@@ -58,6 +58,11 @@ Deno.serve(async (req) => {
     const { data: bidding, error: biddingError } = await supabase
       .from('biddings').select('*').eq('id', biddingId).single()
     if (biddingError || !bidding) throw new Error('Licitação não encontrada')
+    // BUG CORRIGIDO (perícia técnica 2026-09): gerar-proposta/gerar-proposta-pdf
+    // já fazem essa checagem — aqui faltava, permitindo gerar uma declaração
+    // combinando o cabeçalho/dados de um cliente com o órgão/edital de uma
+    // licitação de OUTRO cliente, se os dois IDs enviados fossem incompatíveis.
+    if (bidding.client_id !== clientId) throw new Error('Cliente não corresponde a esta licitação')
 
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL')!,
