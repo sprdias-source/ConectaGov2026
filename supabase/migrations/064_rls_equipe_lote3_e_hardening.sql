@@ -102,17 +102,28 @@ revoke execute on function public.verificar_compliance_checklist() from public, 
 --     erro com uma mensagem amigável porque isso exigiria reimplantar
 --     convidar-membro só por essa causa rara.
 --
--- Protegido com exception handler: se já existir duplicata de verdade na
--- base (nunca confirmado, só suspeitado pela perícia), a constraint não é
--- criada e a migração segue pros itens acima sem falhar — avisa via notice
--- em vez de travar o script inteiro.
+-- Protegido em duas frentes, testado rodando de verdade contra um Postgres
+-- local (simulação real, não só leitura do SQL):
+--   1) checagem por existência (pg_constraint) ANTES de tentar criar — sem
+--      isso, rodar esta migração uma 2ª vez (ex: o usuário rodar de novo
+--      achando que algo falhou) quebrava com "relation ... already exists"
+--      (SQLSTATE 42P07, duplicate_table — a constraint UNIQUE cria um
+--      índice com o mesmo nome por trás, e um "when duplicate_object" não
+--      cobre esse código; só foi possível descobrir isso executando de
+--      verdade, não só lendo o SQL).
+--   2) exception handler pra unique_violation (23505) só pro caso de já
+--      existir duplicata de DADO de verdade na base (nunca confirmado, só
+--      suspeitado pela perícia) — aí a constraint não é criada e a
+--      migração segue pros itens acima sem falhar, avisando via notice.
 do $$
 begin
-  alter table team_members add constraint team_members_owner_member_unique
-    unique (owner_id, member_user_id);
+  if not exists (
+    select 1 from pg_constraint where conname = 'team_members_owner_member_unique'
+  ) then
+    alter table team_members add constraint team_members_owner_member_unique
+      unique (owner_id, member_user_id);
+  end if;
 exception
   when unique_violation then
     raise notice 'team_members já tem duplicatas de (owner_id, member_user_id) — resolva manualmente (apague o vínculo mais novo de cada duplicata) antes de rodar esta constraint de novo.';
-  when duplicate_object then
-    null; -- constraint já existe, migração idempotente
 end $$;
