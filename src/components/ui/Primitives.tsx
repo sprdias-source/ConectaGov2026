@@ -100,6 +100,7 @@ export function Card({ children, className = '' }: { children: ReactNode; classN
 // atrasado/perdeu).
 const STATUS_TONES: Record<string, 'positive' | 'negative' | 'warning' | 'accent' | 'neutral'> = {
   'Pago': 'positive',
+  'Recebido': 'positive',
   'Pendente': 'warning',
   'Atrasado': 'negative',
   'Vence Hoje': 'warning',
