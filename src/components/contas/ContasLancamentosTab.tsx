@@ -183,13 +183,13 @@ export default function ContasLancamentosTab() {
     return status === 'Pago' && t.type === 'Receber' ? 'Recebido' : status
   }
 
-  const handleStatusClick = (t: Transaction) => {
+  // Só chamada pelo botão "Pagar"/"Receber" da linha, que só aparece
+  // enquanto o lançamento está pendente (ver JSX abaixo) — depois de pago,
+  // reverter pra pendente passa a ser feito editando o lançamento (o
+  // modal de edição já tem o campo "Já pago/recebido").
+  const handleConfirmarBaixa = (t: Transaction) => {
     if (!podeEditar) return
-    if (t.status === 'Pago') {
-      updateTransactionStatus.mutate({ tx: t, newStatus: 'Pendente' })
-    } else {
-      setPayingTx(t)
-    }
+    setPayingTx(t)
   }
 
   const confirmPayment = (paymentDate: string, ajuste?: { desconto: number; juros: number; multa: number }) => {
@@ -318,14 +318,18 @@ export default function ContasLancamentosTab() {
                     {podeEditar && (
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => handleStatusClick(t)}
-                            title={t.status === 'Pago' ? 'Marcar como pendente' : `Confirmar ${t.type === 'Receber' ? 'recebimento' : 'pagamento'}`}
-                            className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition ${t.status === 'Pago' ? 'text-positive-400 hover:bg-base-800' : 'text-base-400 hover:text-positive-400 hover:bg-base-800'}`}
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            {t.status === 'Pago' ? (t.type === 'Receber' ? 'Recebido' : 'Pago') : (t.type === 'Receber' ? 'Receber' : 'Pagar')}
-                          </button>
+                          {t.status !== 'Pago' && (
+                            <button
+                              onClick={() => handleConfirmarBaixa(t)}
+                              title={`Confirmar ${t.type === 'Receber' ? 'recebimento' : 'pagamento'}`}
+                              className={`flex items-center gap-1 text-[12px] font-semibold transition ${
+                                t.type === 'Receber' ? 'text-positive-400 hover:text-positive-300' : 'text-negative-400 hover:text-negative-300'
+                              }`}
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              {t.type === 'Receber' ? 'Receber' : 'Pagar'}
+                            </button>
+                          )}
                           <button onClick={() => { setEditing(t); setModalOpen(true) }} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
