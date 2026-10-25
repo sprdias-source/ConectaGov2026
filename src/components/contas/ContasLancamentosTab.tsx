@@ -173,6 +173,16 @@ export default function ContasLancamentosTab() {
     }
   }
 
+  // Status "Pago" sozinho não deixa claro se foi um pagamento feito ou um
+  // recebimento recebido — aqui no mesmo extrato aparecem os dois tipos
+  // juntos. statusExibidoTransacao(t) continua sendo a fonte de verdade
+  // (Pendente/Atrasado/Vence Hoje/Pago); isso só troca o texto exibido
+  // quando já finalizado, sem alterar o valor gravado no banco.
+  const statusLabel = (t: Transaction) => {
+    const status = statusExibidoTransacao(t)
+    return status === 'Pago' && t.type === 'Receber' ? 'Recebido' : status
+  }
+
   const handleStatusClick = (t: Transaction) => {
     if (!podeEditar) return
     if (t.status === 'Pago') {
@@ -304,16 +314,17 @@ export default function ContasLancamentosTab() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3"><StatusBadge status={statusExibidoTransacao(t)} /></td>
+                    <td className="px-4 py-3"><StatusBadge status={statusLabel(t)} /></td>
                     {podeEditar && (
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => handleStatusClick(t)}
-                            title={t.status === 'Pago' ? 'Marcar como pendente' : 'Confirmar pagamento/recebimento'}
-                            className={`p-1.5 rounded transition ${t.status === 'Pago' ? 'text-positive-400 hover:bg-base-800' : 'text-base-400 hover:text-positive-400 hover:bg-base-800'}`}
+                            title={t.status === 'Pago' ? 'Marcar como pendente' : `Confirmar ${t.type === 'Receber' ? 'recebimento' : 'pagamento'}`}
+                            className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition ${t.status === 'Pago' ? 'text-positive-400 hover:bg-base-800' : 'text-base-400 hover:text-positive-400 hover:bg-base-800'}`}
                           >
                             <Check className="w-3.5 h-3.5" />
+                            {t.status === 'Pago' ? (t.type === 'Receber' ? 'Recebido' : 'Pago') : (t.type === 'Receber' ? 'Receber' : 'Pagar')}
                           </button>
                           <button onClick={() => { setEditing(t); setModalOpen(true) }} className="p-1.5 text-base-400 hover:text-accent-300 hover:bg-base-800 rounded transition">
                             <Pencil className="w-3.5 h-3.5" />

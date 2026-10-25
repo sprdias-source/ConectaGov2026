@@ -20,7 +20,7 @@ export default function Modal({
 
   return createPortal(
     <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 animate-fade-in">
-      <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" />
       <div className={`relative w-full ${maxWidth} bg-base-900 border border-base-700 rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto animate-rise`}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-base-800 sticky top-0 bg-base-900 z-10">
           <h2 className="font-display font-bold text-base text-base-100">{title}</h2>
