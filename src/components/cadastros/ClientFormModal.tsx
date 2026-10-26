@@ -11,7 +11,7 @@ import type { Client } from '../../types/domain'
 const emptyForm: Partial<Client> = {
   name: '', cnpj: '', address: '', cep: '', bairro: '', cidade: '', inscricaoEstadual: '',
   phone: '', whatsapp: '', email: '', website: '',
-  bancoNome: '', bancoAgencia: '', bancoConta: '',
+  bancoNome: '', bancoAgencia: '', bancoConta: '', percentualComissaoPadrao: undefined,
   responsavelNome: '', responsavelCpf: '', responsavelCargo: '', responsavelRg: '', responsavelEndereco: '', estadoCivil: '',
   porteEmpresa: '', cabecalhoDeclaracao: '',
   isMensalista: false, valorMensalidade: undefined, periodoMeses: 12, diaVencimento: 10,
@@ -217,6 +217,20 @@ export default function ClientFormModal({
               <Input value={form.bancoConta ?? ''} onChange={(e) => setForm({ ...form, bancoConta: e.target.value })} placeholder="00000-0" />
             </Field>
           </div>
+          <Field
+            label="% de Comissão Padrão deste Cliente"
+            badge={<span className="text-[9px] font-bold uppercase tracking-wider text-base-500 bg-base-850 border border-base-700 rounded px-1.5 py-0.5">Opcional</span>}
+          >
+            <Input
+              type="number" step="0.01" min={0} max={100} className="max-w-[160px]"
+              value={form.percentualComissaoPadrao ?? ''}
+              onChange={(e) => setForm({ ...form, percentualComissaoPadrao: e.target.value === '' ? null : parseFloat(e.target.value) || 0 })}
+              placeholder="Ex: 3"
+            />
+            <p className="text-[11px] text-base-500 mt-1">
+              Só uma sugestão: ao lançar um empenho novo pra este cliente, o percentual de comissão já vem preenchido com este valor (e aparece como lembrete) — mas continua livre pra editar em cada empenho.
+            </p>
+          </Field>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <Field label="Responsável Legal">
               <Input value={form.responsavelNome ?? ''} onChange={(e) => setForm({ ...form, responsavelNome: e.target.value })} placeholder="Nome completo" />

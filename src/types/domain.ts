@@ -60,6 +60,9 @@ export interface Client {
   estadoCivil: string | null
   porteEmpresa: string | null
   cabecalhoDeclaracao: string | null
+  // Opcional — só uma sugestão/lembrete usada ao lançar um empenho novo pra
+  // este cliente (ver EmpenhoFormModal.tsx), nunca trava o valor digitado.
+  percentualComissaoPadrao: number | null
   isMensalista: boolean
   valorMensalidade: number | null
   periodoMeses: number | null

@@ -32,7 +32,9 @@ const emptyForm = (clients: Client[]): Partial<Empenho> => ({
   dataEmpenho: todayLocalISO(),
   dataVencimento: null,
   valorEmpenhada: 0,
-  percentualComissao: 2,
+  // Mesma regra de handleTrocarCliente: usa o padrão do cliente já
+  // pré-selecionado, se tiver um cadastrado, em vez de sempre 2%.
+  percentualComissao: clients[0]?.percentualComissaoPadrao ?? 2,
   modoParcelamento: 'integral',
   quantidadeParcelas: 12,
   periodicidade: 'mensal',
@@ -143,6 +145,24 @@ export default function EmpenhoFormModal({
   const clientBiddings = biddings.filter((b) => b.clientId === form.clientId)
   const wonBiddings = clientBiddings.filter((b) => b.status === 'Ganhou')
 
+  const clienteSelecionado = clients.find((c) => c.id === form.clientId)
+
+  // Ao trocar de cliente num empenho NOVO (nunca na edição — lá o percentual
+  // já foi decidido e gravado), pré-preenche a Comissão (%) com o padrão
+  // cadastrado pro cliente, se ele tiver um — economiza o passo de digitar
+  // de novo o mesmo percentual de sempre, mas continua 100% editável.
+  const handleTrocarCliente = (clientId: string) => {
+    const cliente = clients.find((c) => c.id === clientId)
+    setForm({
+      ...form,
+      clientId,
+      biddingId: null,
+      percentualComissao: !initial && cliente?.percentualComissaoPadrao != null
+        ? cliente.percentualComissaoPadrao
+        : form.percentualComissao,
+    })
+  }
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
 
@@ -213,7 +233,7 @@ export default function EmpenhoFormModal({
         )}
 
         <Field label="Cliente / Órgão Parceiro" required>
-          <Select required value={form.clientId ?? ''} onChange={(e) => setForm({ ...form, clientId: e.target.value, biddingId: null })} disabled={!!initial}>
+          <Select required value={form.clientId ?? ''} onChange={(e) => handleTrocarCliente(e.target.value)} disabled={!!initial}>
             <option value="" disabled>Selecione o cliente...</option>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
@@ -312,6 +332,11 @@ export default function EmpenhoFormModal({
           </Field>
           <Field label="Comissão (%)" required>
             <Input type="number" step="0.01" min={0.01} required value={form.percentualComissao ?? ''} onChange={(e) => setForm({ ...form, percentualComissao: parseFloat(e.target.value) || 0 })} />
+            {clienteSelecionado?.percentualComissaoPadrao != null && (
+              <p className="text-[11px] text-accent-300 mt-1">
+                Padrão deste cliente: {clienteSelecionado.percentualComissaoPadrao}%
+              </p>
+            )}
           </Field>
         </div>
 

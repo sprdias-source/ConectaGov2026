@@ -993,6 +993,7 @@ export type Database = {
           estado_civil: string | null
           porte_empresa: string | null
           cabecalho_declaracao: string | null
+          percentual_comissao_padrao: number | null
           updated_at: string
           user_id: string
           valor_mensalidade: number | null
@@ -1029,6 +1030,7 @@ export type Database = {
           estado_civil?: string | null
           porte_empresa?: string | null
           cabecalho_declaracao?: string | null
+          percentual_comissao_padrao?: number | null
           updated_at?: string
           user_id: string
           valor_mensalidade?: number | null
@@ -1065,6 +1067,7 @@ export type Database = {
           estado_civil?: string | null
           porte_empresa?: string | null
           cabecalho_declaracao?: string | null
+          percentual_comissao_padrao?: number | null
           updated_at?: string
           user_id?: string
           valor_mensalidade?: number | null
