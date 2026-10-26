@@ -183,10 +183,24 @@ export function useBiddingAnalysis(biddingId?: string) {
   // por onde essa flag é lida na hora de preencher bidding_items de
   // verdade). Mexe só no array de itens dentro do JSON, sem tocar em mais
   // nada da análise.
+  //
+  // CORREÇÃO DE BUG (achado do usuário): lia `analysis?.analise` do cache
+  // do React Query (o `analysis` capturado na última renderização) em vez
+  // de reler do banco — clicar em dois checkboxes rapidamente, antes do
+  // primeiro clique ter dado a volta completa (escrever + invalidar +
+  // reconsultar + re-renderizar), fazia o segundo clique montar seu
+  // `itens` a partir do MESMO `analise` desatualizado de antes do
+  // primeiro clique, e gravar por cima — desfazendo o primeiro clique
+  // silenciosamente. Mesmo padrão de proteção já usado em sincronizarItens
+  // (LicitacaoPage.tsx): relê o registro direto do banco bem antes de
+  // montar o `itens` nesta mesma chamada.
   const alternarItemParticipando = useMutation({
     mutationFn: async (index: number) => {
       if (!biddingId) throw new Error('Licitação não informada')
-      const atual = analysis?.analise as { itens?: { participando?: boolean }[] } | null | undefined
+      const { data: row, error: fetchError } = await supabase
+        .from('bidding_analysis').select('analise').eq('bidding_id', biddingId).single()
+      if (fetchError) throw fetchError
+      const atual = row.analise as { itens?: { participando?: boolean }[] } | null
       if (!atual?.itens?.[index]) throw new Error('Item não encontrado na análise')
       const itens = atual.itens.map((it, i) => (i === index ? { ...it, participando: it.participando === false } : it))
       const { error } = await supabase.from('bidding_analysis').update({ analise: { ...atual, itens } }).eq('bidding_id', biddingId)
@@ -197,11 +211,15 @@ export function useBiddingAnalysis(biddingId?: string) {
 
   // Marcar/desmarcar todos de uma vez — útil quando só um ou dois itens do
   // meio de uma lista grande são exceção (mais rápido que desmarcar um por
-  // um a partir do padrão "todos participam").
+  // um a partir do padrão "todos participam"). Mesma releitura fresca do
+  // banco do que alternarItemParticipando, pelo mesmo motivo.
   const definirTodosParticipando = useMutation({
     mutationFn: async (participando: boolean) => {
       if (!biddingId) throw new Error('Licitação não informada')
-      const atual = analysis?.analise as { itens?: { participando?: boolean }[] } | null | undefined
+      const { data: row, error: fetchError } = await supabase
+        .from('bidding_analysis').select('analise').eq('bidding_id', biddingId).single()
+      if (fetchError) throw fetchError
+      const atual = row.analise as { itens?: { participando?: boolean }[] } | null
       if (!atual?.itens?.length) return
       const itens = atual.itens.map((it) => ({ ...it, participando }))
       const { error } = await supabase.from('bidding_analysis').update({ analise: { ...atual, itens } }).eq('bidding_id', biddingId)

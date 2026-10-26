@@ -1182,6 +1182,10 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   // aviso ia direto de "Salvando..." pra sumir, sem confirmar que gravou de
   // verdade (a mesma dúvida que gera "será que salvou mesmo?").
   const [statusSalvamento, setStatusSalvamento] = useState<'idle' | 'pendente' | 'salvando' | 'salvo'>('idle')
+  // Espelho em state (não só no ref) da mesma lista pendente — refs não
+  // podem ser lidos durante a renderização (ver itensEfetivos logo
+  // abaixo), só dentro de handlers/efeitos como flushItensPendentes.
+  const [itensPendentes, setItensPendentes] = useState<Partial<BiddingItem>[] | null>(null)
 
   // Garante que qualquer edição de item ainda não gravada (a sincronização é
   // debounçada 1,2s, ver handleItemsChange logo abaixo) já esteja no banco
@@ -1200,6 +1204,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
     const dados = pendenteRef.current
     if (!dados) return
     pendenteRef.current = null
+    setItensPendentes(null)
     setStatusSalvamento('salvando')
     try {
       await sincronizarItens.mutateAsync(dados)
@@ -1213,10 +1218,27 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
 
   const handleItemsChange = (novosItems: Partial<BiddingItem>[]) => {
     pendenteRef.current = novosItems
+    setItensPendentes(novosItems)
     setStatusSalvamento('pendente')
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
     timeoutRef.current = setTimeout(() => { flushItensPendentes().catch(() => {}) }, 1200)
   }
+
+  // CORREÇÃO DE BUG (achado do usuário): "Itens da Licitação"
+  // (BiddingItemsEditor) e a prévia editável do documento, logo abaixo,
+  // compartilham o mesmo autosave debounçado (handleItemsChange/
+  // pendenteRef), mas cada um calculava a próxima lista a partir do
+  // `items` já confirmado pelo banco — que, enquanto uma edição do OUTRO
+  // lado ainda está nos 1,2s do debounce (ex: acabou de marcar "Ganhou"
+  // num item ali em cima), ainda não reflete essa mudança. Editar aqui
+  // nesse meio-tempo reescrevia `pendenteRef.current` inteiro a partir
+  // desse `items` desatualizado, descartando silenciosamente o "Ganhou"
+  // que ainda nem tinha sido gravado — e alguns segundos depois, quando o
+  // autosave flushava essa versão sem ele, o checkbox "desmarcava
+  // sozinho" na tela. `itensEfetivos` é a MESMA lista que o autosave vai
+  // de fato gravar (o que ainda está pendente, ou o `items` do banco
+  // quando não há nada pendente) — os dois lados agora sempre partem dela.
+  const itensEfetivos = itensPendentes ?? items
 
   // Edição direta na tabela da prévia do documento — mesmo pipeline de
   // autosave debounçado usado pelo editor completo "Itens da Licitação"
@@ -1224,7 +1246,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   // gravação, e as duas visões ficam sempre em sincronia.
   const handleAlterarItemPreview = (id: string, patch: Partial<BiddingItem>) => {
     invalidarPdfPreview()
-    handleItemsChange(items.map((it) => (it.id === id ? { ...it, ...patch } : it)))
+    handleItemsChange(itensEfetivos.map((it) => (it.id === id ? { ...it, ...patch } : it)))
   }
 
   useEffect(() => {
@@ -1600,7 +1622,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
               Confira e corrija aqui se a importação automática do edital vier incompleta ou errada — "Adicionar Item" e "Importar Excel" são o plano B pra montar a lista na mão quando for preciso. Cada mudança grava sozinha, não precisa de botão de salvar.
             </p>
             <BiddingItemsEditor
-              items={items} onChange={handleItemsChange} tipoDisputa={bidding.tipoDisputa}
+              items={itensEfetivos} onChange={handleItemsChange} tipoDisputa={bidding.tipoDisputa}
               travarValorLicitado
             />
           </>
