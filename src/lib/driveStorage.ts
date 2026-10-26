@@ -34,14 +34,36 @@ interface RespostaDriveStorage {
   ok?: boolean
 }
 
+// CORREÇÃO DE BUG (achado do usuário): sem nenhum limite de tempo aqui, se a
+// Edge Function travasse ou a conexão caísse no meio do caminho, o fetch
+// ficava pendurado pra sempre — a tela de upload mostrava "Enviando... 0%"
+// indefinidamente, sem nunca liberar o botão nem mostrar erro nenhum pro
+// usuário tentar de novo. 90s é generoso pro upload de um arquivo de até
+// 20MB (já validado antes de chegar aqui), mas garante que a tela sempre
+// volte a responder.
+const TIMEOUT_DRIVE_STORAGE_MS = 90_000
+
 async function chamarDriveStorage(body: Record<string, unknown>): Promise<RespostaDriveStorage> {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) throw new Error('Não autenticado')
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/drive-storage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-    body: JSON.stringify(body),
-  })
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_DRIVE_STORAGE_MS)
+  let res: Response
+  try {
+    res = await fetch(`${SUPABASE_URL}/functions/v1/drive-storage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('O Google Drive demorou demais para responder. Tente novamente — se persistir, pode ser uma instabilidade temporária da conexão com o Drive.', { cause: err })
+    }
+    throw err
+  } finally {
+    clearTimeout(timeoutId)
+  }
   const resultado: RespostaDriveStorage = await res.json()
   if (!res.ok || resultado.error) throw new Error(resultado.error || 'Falha ao comunicar com o Google Drive')
   return resultado
