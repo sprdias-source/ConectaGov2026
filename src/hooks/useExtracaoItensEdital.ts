@@ -119,22 +119,38 @@ export function useExtracaoItensEdital(biddingId?: string) {
   // Liga/desliga "participando" de um item — mesma lógica de
   // alternarItemParticipando em useBiddingAnalysis.ts, só que aqui o array
   // de itens é a coluna inteira (não um campo dentro de um JSON maior).
+  //
+  // CORREÇÃO DE BUG (achado do usuário, mesmo de useBiddingAnalysis.ts):
+  // lia `extracao?.itens` do cache do React Query em vez de reler do
+  // banco — dois cliques rápidos nos checkboxes, antes do primeiro dar a
+  // volta completa, fazia o segundo gravar por cima dos itens de ANTES do
+  // primeiro clique, desfazendo-o silenciosamente.
   const alternarItemParticipando = useMutation({
     mutationFn: async (index: number) => {
       if (!biddingId) throw new Error('Licitação não informada')
-      if (!extracao?.itens?.[index]) throw new Error('Item não encontrado na extração')
-      const itens = extracao.itens.map((it, i) => (i === index ? { ...it, participando: it.participando === false } : it))
+      const { data: row, error: fetchError } = await supabase
+        .from('bidding_itens_extracao').select('itens').eq('bidding_id', biddingId).single()
+      if (fetchError) throw fetchError
+      const itensAtuais = (row.itens as ItemExtraido[] | null) ?? []
+      if (!itensAtuais[index]) throw new Error('Item não encontrado na extração')
+      const itens = itensAtuais.map((it, i) => (i === index ? { ...it, participando: it.participando === false } : it))
       const { error } = await supabase.from('bidding_itens_extracao').update({ itens: itens as unknown as Json }).eq('bidding_id', biddingId)
       if (error) throw error
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey }),
   })
 
+  // Mesma releitura fresca do banco do que alternarItemParticipando, pelo
+  // mesmo motivo.
   const definirTodosParticipando = useMutation({
     mutationFn: async (participando: boolean) => {
       if (!biddingId) throw new Error('Licitação não informada')
-      if (!extracao?.itens?.length) return
-      const itens = extracao.itens.map((it) => ({ ...it, participando }))
+      const { data: row, error: fetchError } = await supabase
+        .from('bidding_itens_extracao').select('itens').eq('bidding_id', biddingId).single()
+      if (fetchError) throw fetchError
+      const itensAtuais = (row.itens as ItemExtraido[] | null) ?? []
+      if (!itensAtuais.length) return
+      const itens = itensAtuais.map((it) => ({ ...it, participando }))
       const { error } = await supabase.from('bidding_itens_extracao').update({ itens: itens as unknown as Json }).eq('bidding_id', biddingId)
       if (error) throw error
     },

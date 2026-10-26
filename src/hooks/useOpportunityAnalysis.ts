@@ -221,10 +221,20 @@ export function useOpportunityAnalysis(opportunityId?: string) {
   // por onde essa flag é lida na hora de preencher bidding_items de
   // verdade). Mexe só no array de itens dentro do JSON, sem tocar em mais
   // nada da análise.
+  //
+  // CORREÇÃO DE BUG (achado do usuário, mesmo de useBiddingAnalysis.ts):
+  // lia `analysis?.analise` do cache do React Query em vez de reler do
+  // banco — dois cliques rápidos nos checkboxes, antes do primeiro dar a
+  // volta completa (escrever + invalidar + reconsultar + re-renderizar),
+  // fazia o segundo gravar por cima do `analise` de ANTES do primeiro
+  // clique, desfazendo-o silenciosamente.
   const alternarItemParticipando = useMutation({
     mutationFn: async (index: number) => {
       if (!opportunityId) throw new Error('Oportunidade não informada')
-      const atual = analysis?.analise as { itens?: { participando?: boolean }[] } | null | undefined
+      const { data: row, error: fetchError } = await supabase
+        .from('opportunity_analysis').select('analise').eq('opportunity_id', opportunityId).single()
+      if (fetchError) throw fetchError
+      const atual = row.analise as { itens?: { participando?: boolean }[] } | null
       if (!atual?.itens?.[index]) throw new Error('Item não encontrado na análise')
       const itens = atual.itens.map((it, i) => (i === index ? { ...it, participando: it.participando === false } : it))
       const { error } = await supabase.from('opportunity_analysis').update({ analise: { ...atual, itens } }).eq('opportunity_id', opportunityId)
@@ -235,11 +245,15 @@ export function useOpportunityAnalysis(opportunityId?: string) {
 
   // Marcar/desmarcar todos de uma vez — útil quando só um ou dois itens do
   // meio de uma lista grande são exceção (mais rápido que desmarcar um por
-  // um a partir do padrão "todos participam").
+  // um a partir do padrão "todos participam"). Mesma releitura fresca do
+  // banco do que alternarItemParticipando, pelo mesmo motivo.
   const definirTodosParticipando = useMutation({
     mutationFn: async (participando: boolean) => {
       if (!opportunityId) throw new Error('Oportunidade não informada')
-      const atual = analysis?.analise as { itens?: { participando?: boolean }[] } | null | undefined
+      const { data: row, error: fetchError } = await supabase
+        .from('opportunity_analysis').select('analise').eq('opportunity_id', opportunityId).single()
+      if (fetchError) throw fetchError
+      const atual = row.analise as { itens?: { participando?: boolean }[] } | null
       if (!atual?.itens?.length) return
       const itens = atual.itens.map((it) => ({ ...it, participando }))
       const { error } = await supabase.from('opportunity_analysis').update({ analise: { ...atual, itens } }).eq('opportunity_id', opportunityId)
