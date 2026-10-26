@@ -10,7 +10,20 @@ export const MODALIDADES_VALIDAS: BiddingModalidade[] = [
   'Convite', 'Leilão', 'Diálogo Competitivo', 'Dispensa de Licitação', 'Inexigibilidade',
 ]
 
-const normalizarTexto = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+// Categorias do checklist de habilitação — mesmas opções do formulário de
+// item novo na aba Checklist (LicitacaoPage). Ficam aqui (e não na página)
+// porque o importador de análise externa (importarAnaliseExterna.ts) e o
+// prompt que mandamos pro Claude/ChatGPT precisam casar exatamente com elas.
+export const CATEGORIAS_CHECKLIST = [
+  'Habilitação Jurídica',
+  'Regularidade Fiscal e Trabalhista',
+  'Qualificação Econômico-Financeira',
+  'Qualificação Técnica',
+  'Proposta',
+  'Outro',
+]
+
+export const normalizarTexto = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
 
 // A IA devolve a modalidade como texto livre — só aceitamos se bater com uma
 // das opções válidas do formulário, pra nunca gravar um valor fora do enum.
