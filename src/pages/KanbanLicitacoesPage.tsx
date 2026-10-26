@@ -175,9 +175,17 @@ function CardLicitacao({
       className={`relative bg-base-900 border border-base-800 rounded-lg p-3 flex flex-col gap-1.5 transition ${isDragging ? 'opacity-30' : ''}`}
     >
       {podeEditar && (
+        // onPointerDownCapture para a propagação pro TopScrollTable que
+        // envolve o quadro inteiro — sem isso, o "arrastar pra rolar" dele
+        // (ativa a 4px) competia com o drag do card (dnd-kit, ativa a 8px)
+        // e o quadro rolava sozinho no meio da tentativa de soltar o card
+        // na coluna certa. O listener do próprio dnd-kit, no mesmo
+        // elemento, continua disparando normalmente (stopPropagation não
+        // impede handlers do mesmo nó, só a subida pros ancestrais).
         <span
           {...attributes}
           {...listeners}
+          onPointerDownCapture={(e) => e.stopPropagation()}
           onClick={(e) => e.preventDefault()}
           title="Arraste pra mudar de etapa"
           className="absolute top-2 right-2 p-0.5 text-base-600 hover:text-base-400 cursor-grab active:cursor-grabbing touch-none"

@@ -100,7 +100,7 @@ Deno.serve(async (req) => {
     zip.file('word/document.xml', documentXml)
 
     const resultado = await zip.generateAsync({ type: 'base64' })
-    const nomeArquivo = `Declaracoes_${client.name.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_')}_${bidding.numero_edital ?? biddingId.slice(0, 8)}.docx`
+    const nomeArquivo = `Declaracoes_${client.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_')}_${bidding.numero_edital ?? biddingId.slice(0, 8)}.docx`
 
     return new Response(JSON.stringify({
       success: true,

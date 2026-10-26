@@ -20,15 +20,11 @@ export default function MonthYearPicker({
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  useEffect(() => {
-    if (open) setViewYear(year)
-  }, [open, year])
-
   return (
     <div className="relative" ref={ref}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => { setViewYear(year); setOpen((v) => !v) }}
         className="flex items-center gap-2 bg-base-850 border border-base-700 rounded-lg px-3 py-2 text-sm font-semibold text-base-100 hover:border-accent-400 transition"
       >
         <Calendar className="w-4 h-4 text-accent-400" />

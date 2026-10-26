@@ -427,7 +427,7 @@ Deno.serve(async (req) => {
     const resultado = await zip.generateAsync({ type: 'base64' })
 
     const prefixoArquivo = tipo === 'readequada' ? 'Proposta_Readequada' : 'Proposta'
-    const nomeArquivo = `${prefixoArquivo}_${client.name.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_')}_${bidding.numero_edital ?? biddingId.slice(0, 8)}.docx`
+    const nomeArquivo = `${prefixoArquivo}_${client.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_')}_${bidding.numero_edital ?? biddingId.slice(0, 8)}.docx`
 
     return new Response(JSON.stringify({
       success: true,

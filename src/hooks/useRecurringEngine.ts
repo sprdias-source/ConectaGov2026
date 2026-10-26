@@ -96,7 +96,16 @@ export function useRecurringEngine() {
           const day = tx.recurringDay ?? Number(tx.dueDate.slice(8, 10))
 
           const todayStr = todayLocalISO()
-          const futureCount = (children ?? []).filter((c) => c.due_date >= todayStr).length
+          // CORREÇÃO DE BUG (achado da perícia): o lançamento PAI também
+          // ocupa uma vaga do horizonte enquanto ainda está pendente e não
+          // vencido — sem contá-lo aqui, este motor sempre criava uma
+          // parcela a mais do que o HORIZON pretendido (a pré-geração em
+          // useTransactions.addTransactions já cria pai + 2 filhas = 3
+          // pendentes; esta contagem via só as filhas via a 3ª vaga como
+          // livre e inseria uma 4ª, inflando "A Pagar/Receber do Mês" e o
+          // Fluxo de Caixa projetado pra sempre por lançamento recorrente).
+          const paiOcupaVaga = tx.status !== 'Pago' && tx.dueDate >= todayStr
+          const futureCount = (children ?? []).filter((c) => c.due_date >= todayStr).length + (paiOcupaVaga ? 1 : 0)
 
           let toCreate = Math.max(0, HORIZON - futureCount)
           while (toCreate > 0) {

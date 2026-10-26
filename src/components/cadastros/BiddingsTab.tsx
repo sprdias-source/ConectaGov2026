@@ -145,8 +145,8 @@ export default function BiddingsTab() {
     }
   }
 
-  const handleGerarProposta = async (b: Bidding, tipo: 'normal' | 'readequada' = 'normal') => {
-    const key = `${b.id}:${tipo}`
+  const handleGerarProposta = async (b: Bidding) => {
+    const key = `${b.id}:normal`
     setGerandoPropostaKey(key)
     setErroGeracao(null)
     try {
@@ -158,7 +158,7 @@ export default function BiddingsTab() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session?.access_token}`,
         },
-        body: JSON.stringify({ clientId: b.clientId, biddingId: b.id, tipo }),
+        body: JSON.stringify({ clientId: b.clientId, biddingId: b.id, tipo: 'normal' }),
       })
       const resultado = await res.json()
       if (!res.ok || resultado.error) {
@@ -252,7 +252,7 @@ export default function BiddingsTab() {
         key: 'proposta',
         label: 'Gerar Proposta de Preços',
         icon: gerandoPropostaKey === `${b.id}:normal` ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />,
-        onClick: () => handleGerarProposta(b, 'normal'),
+        onClick: () => handleGerarProposta(b),
         disabled: gerandoPropostaKey === `${b.id}:normal`,
       },
     ]
@@ -260,9 +260,15 @@ export default function BiddingsTab() {
       itens.push({
         key: 'proposta-readequada',
         label: 'Gerar Proposta Readequada',
-        icon: gerandoPropostaKey === `${b.id}:readequada` ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileCheck2 className="w-4 h-4" />,
-        onClick: () => handleGerarProposta(b, 'readequada'),
-        disabled: gerandoPropostaKey === `${b.id}:readequada`,
+        icon: <FileCheck2 className="w-4 h-4" />,
+        // CORREÇÃO DE BUG (achado da perícia): este atalho só baixava o
+        // .docx no navegador, sem nunca gravar o anexo em "Proposta
+        // Readequada" — a pendência correspondente no Kanban nunca era
+        // marcada como resolvida por aqui, só pelo fluxo completo dentro da
+        // própria licitação. Em vez de duplicar aquele fluxo (upload pro
+        // Drive, arquivar versão anterior, marcar pendência), leva direto
+        // pra aba certa, que já faz tudo isso certo.
+        onClick: () => navigate(`/licitacoes/${b.id}?aba=proposta`),
       })
     }
     if (podeEditar) {
