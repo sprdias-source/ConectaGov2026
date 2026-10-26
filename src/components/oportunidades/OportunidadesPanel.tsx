@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
   Globe, MapPin, Plus, X, ChevronDown, ChevronRight, Upload, Eye, Trash2, Sparkles,
-  Check, XCircle, ArrowRight, ExternalLink, LayoutGrid, ClipboardList, FileText, Calendar, RotateCcw,
+  Check, XCircle, ArrowRight, ExternalLink, LayoutGrid, ClipboardList, FileText, Calendar, RotateCcw, ClipboardPaste,
 } from 'lucide-react'
 import { Button, Input, Select } from '../ui/FormControls'
 import { Card } from '../ui/Primitives'
@@ -12,6 +12,7 @@ import ErrorAlert from '../ui/ErrorAlert'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import PdfViewerModal from '../ui/PdfViewerModal'
 import { AnaliseEditalResumo } from '../shared/AnaliseEditalResumo'
+import { ImportarAnaliseModal, SeloAnaliseImportada } from '../shared/ImportarAnaliseModal'
 import { PerguntaEditalPanel } from '../shared/PerguntaEditalPanel'
 import { usePerguntaOportunidade } from '../../hooks/usePerguntaEdital'
 import { AnaliseJuridicaTabs } from '../shared/AnaliseJuridicaTabs'
@@ -158,7 +159,7 @@ function OportunidadeDetalhe({
   const { platforms } = usePlatforms()
   const { clients } = useClients()
   const { files, uploadFile, deleteFile } = useAttachedFiles('oportunidade', opportunity.id)
-  const { analysis, analisar, travado, limparAnalise, alternarItemParticipando, definirTodosParticipando, tentandoNovamenteAutomaticamente } = useOpportunityAnalysis(opportunity.id)
+  const { analysis, analisar, travado, limparAnalise, alternarItemParticipando, definirTodosParticipando, tentandoNovamenteAutomaticamente, importar } = useOpportunityAnalysis(opportunity.id)
   const {
     extracao: extracaoItens, extrair: extrairItens, travado: travadoExtracao, limparExtracao: limparExtracaoItens,
     alternarItemParticipando: alternarItemExtraido, definirTodosParticipando: definirTodosExtraidos,
@@ -181,6 +182,11 @@ function OportunidadeDetalhe({
   const tr = files.find((f) => f.category === 'Termo de Referência')
   const analise = (analysis?.analise ?? null) as AnaliseEdital | null
   const analiseProcessando = analysis?.status === 'processando' && !travado
+  const [importandoAnalise, setImportandoAnalise] = useState(false)
+  // Mesma regra da tela da licitação: não exige edital enviado (a análise
+  // pode ter sido feita fora, direto com o PDF), só não deixa importar por
+  // cima de uma análise de IA ainda rodando.
+  const podeImportar = podeEditar && !analiseProcessando && !analisar.isPending
 
   const handleSalvarDiasAviso = () => {
     const valor = parseInt(diasAviso, 10)
@@ -440,23 +446,45 @@ function OportunidadeDetalhe({
         </div>
       </div>
 
-      {edital && podeEditar && (
-        <div className="flex items-center justify-between bg-base-850/60 border border-base-800 rounded-lg px-3 py-2.5">
-          <div className="flex items-center gap-2">
+      {/* Sem edital, a barra aparece só com "Importar análise" — a análise
+          pode ter sido feita fora, direto com o PDF. */}
+      {podeEditar && (
+        <div className="flex items-center justify-between gap-2 flex-wrap bg-base-850/60 border border-base-800 rounded-lg px-3 py-2.5">
+          <div className="flex items-center gap-2 flex-wrap">
             <Sparkles className="w-3.5 h-3.5 text-accent-400" />
             <span className="text-[12px] text-base-300">
               {tentandoNovamenteAutomaticamente ? 'Tentando novamente automaticamente...' : analiseProcessando ? 'Analisando com IA...' : analise ? 'Análise disponível' : 'Ainda não analisado'}
             </span>
+            {!analiseProcessando && <SeloAnaliseImportada analise={analise} />}
             {analiseProcessando && !tentandoNovamenteAutomaticamente && <span className="text-[11px] text-base-500 italic">pode levar até 2 minutos em editais grandes/escaneados</span>}
             {tentandoNovamenteAutomaticamente && <span className="text-[11px] text-base-500 italic">o serviço de IA parece instável no momento — nova tentativa automática em andamento</span>}
           </div>
-          <Button variant="secondary" onClick={() => analisar.mutate()} disabled={analiseProcessando || analisar.isPending}>
-            {analiseProcessando || analisar.isPending ? 'Analisando...' : analise ? 'Analisar novamente' : 'Analisar com IA'}
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button variant="secondary" onClick={() => setImportandoAnalise(true)} disabled={!podeImportar}>
+              <ClipboardPaste className="w-4 h-4" /> Importar análise
+            </Button>
+            {edital && (
+              <Button variant="secondary" onClick={() => analisar.mutate()} disabled={analiseProcessando || analisar.isPending}>
+                {analiseProcessando || analisar.isPending ? 'Analisando...' : analise ? 'Analisar novamente' : 'Analisar com IA'}
+              </Button>
+            )}
+          </div>
         </div>
       )}
 
-      {travado && <p className="text-[11px] text-negative-400">A análise travou (demorou demais). Tenta "Analisar novamente".</p>}
+      {/* "Importar análise feita em outra IA" aparece junto dos três
+          casos em que a IA do sistema falhou (travado, erro, cota diária
+          esgotada — este último vem como status 'erro'). */}
+      {travado && (
+        <div>
+          <p className="text-[11px] text-negative-400">A análise travou (demorou demais). Tenta "Analisar novamente".</p>
+          {podeImportar && (
+            <button onClick={() => setImportandoAnalise(true)} className="flex items-center gap-1.5 text-[11px] text-base-400 hover:text-base-200 transition mt-1">
+              <ClipboardPaste className="w-3 h-3" /> Importar análise feita em outra IA
+            </button>
+          )}
+        </div>
+      )}
       {analysis?.status === 'erro' && (
         <div className="text-[11px] text-negative-400">
           <p>{mensagemAmigavelErroAnalise(analysis.erroMensagem)}</p>
@@ -466,8 +494,21 @@ function OportunidadeDetalhe({
               <p className="text-[10px] text-base-500 font-mono mt-1 break-all">{analysis.erroMensagem}</p>
             </details>
           )}
+          {podeImportar && (
+            <button onClick={() => setImportandoAnalise(true)} className="flex items-center gap-1.5 text-[11px] text-base-400 hover:text-base-200 transition mt-1">
+              <ClipboardPaste className="w-3 h-3" /> Importar análise feita em outra IA
+            </button>
+          )}
         </div>
       )}
+
+      <ImportarAnaliseModal
+        aberto={importandoAnalise}
+        onFechar={() => setImportandoAnalise(false)}
+        onAplicar={async (nova) => { await importar.mutateAsync(nova) }}
+        existente={!!analysis?.analise}
+        destino="oportunidade"
+      />
 
       {edital && podeEditar && (() => {
         const extraindo = (extracaoItens?.status === 'processando' && !travadoExtracao) || extrairItens.isPending

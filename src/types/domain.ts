@@ -807,6 +807,12 @@ export interface AnaliseEdital {
   clausulasRestritivas?: string
   conclusaoTecnica?: string
   checklistDocumentacao?: { descricao: string; categoria?: string | null; obrigatorio?: boolean }[]
+  // Preenchidos só quando a análise foi feita FORA do sistema (Claude,
+  // ChatGPT...) e colada via "Importar análise" — plano B pra quando a IA
+  // do sistema falha. Ficam dentro do próprio JSON de `analise` (nenhuma
+  // coluna nova) e servem só pra tela mostrar de onde o resultado veio.
+  importadaDe?: 'externa'
+  importadaEm?: string
 }
 
 // Configuração de cada tipo de certidão automática

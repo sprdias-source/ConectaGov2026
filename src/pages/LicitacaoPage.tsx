@@ -4,7 +4,7 @@ import {
   ArrowLeft, FileText, Upload, Plus, Trash2, CheckCircle2, Circle, Download, Eye,
   AlertCircle, Loader2, Sparkles, Award, Check, History, ChevronDown, ChevronUp,
   ClipboardList, Gavel, Wallet, Send, CircleDot, FileSignature, Info, Activity, RefreshCw, Wand2,
-  Paperclip, FolderDown, X, FileSpreadsheet, ScrollText, Copy, Printer, Calculator, Ban, RotateCcw, Archive, Lock,
+  Paperclip, FolderDown, X, FileSpreadsheet, ScrollText, Copy, Printer, Calculator, Ban, RotateCcw, Archive, Lock, ClipboardPaste,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
@@ -35,6 +35,7 @@ import type { ItemExtraido } from '../hooks/useExtracaoItensEdital'
 import { useAuditLogPorEntidade } from '../hooks/useAuditLog'
 import { useAnaliseJuridicaEdital, useLimparAnaliseJuridica } from '../hooks/useAnaliseJuridicaEdital'
 import type { TipoAnaliseJuridica } from '../hooks/useAnaliseJuridicaEdital'
+import { ImportarAnaliseModal, SeloAnaliseImportada } from '../components/shared/ImportarAnaliseModal'
 import { AnaliseEditalResumo } from '../components/shared/AnaliseEditalResumo'
 import { PerguntaEditalPanel } from '../components/shared/PerguntaEditalPanel'
 import { usePerguntaEdital } from '../hooks/usePerguntaEdital'
@@ -56,7 +57,7 @@ import {
 } from '../lib/csvPortalCompras'
 import type { ColunasPortal } from '../lib/csvPortalCompras'
 import { parseFlexibleNumber, compararNumeroItem, normalizarNumeroItem } from '../lib/numberParsing'
-import { mapearCamposDaAnalise, mapearItensDaAnalise, somarValorLicitado, mensagemAmigavelErroAnalise } from '../lib/analiseEdital'
+import { CATEGORIAS_CHECKLIST, mapearCamposDaAnalise, mapearItensDaAnalise, somarValorLicitado, mensagemAmigavelErroAnalise } from '../lib/analiseEdital'
 import { useToast } from '../hooks/useToast'
 import { CERT_CONFIG } from '../types/domain'
 import type { AnaliseEdital, AttachedFile, Bidding, BiddingChecklistItem, BiddingEtapa, BiddingItem, BiddingStatus, Client } from '../types/domain'
@@ -68,15 +69,6 @@ const ETAPAS_TRILHA: BiddingEtapa[] = [
   'Fase Recursal',
   'Aguardando Pregoeiro',
   'Adjudicada e Homologada',
-]
-
-const CATEGORIAS_CHECKLIST = [
-  'Habilitação Jurídica',
-  'Regularidade Fiscal e Trabalhista',
-  'Qualificação Econômico-Financeira',
-  'Qualificação Técnica',
-  'Proposta',
-  'Outro',
 ]
 
 const ABAS = [
@@ -2354,7 +2346,7 @@ function construirPreenchimento(analise: AnaliseEdital, itensAtuais: BiddingItem
 }
 
 function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding; temEdital: boolean; podeEditar: boolean }) {
-  const { analysis, analisar, travado, alternarItemParticipando, definirTodosParticipando } = useBiddingAnalysis(bidding.id)
+  const { analysis, analisar, travado, alternarItemParticipando, definirTodosParticipando, importar } = useBiddingAnalysis(bidding.id)
   const {
     extracao, extrair, travado: travadoExtracao,
     alternarItemParticipando: alternarItemExtraido,
@@ -2365,12 +2357,16 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
   const { showToast } = useToast()
   const [confirmandoPreenchimento, setConfirmandoPreenchimento] = useState(false)
   const [mostrandoUnlock, setMostrandoUnlock] = useState(false)
+  const [importandoAnalise, setImportandoAnalise] = useState(false)
   const { bloqueada, desbloquear } = useBiddingEditLock(bidding)
   const { perguntar, isPending: perguntando } = usePerguntaEdital(bidding.id)
 
   const status = analysis?.status
   const processando = (status === 'processando' && !travado) || analisar.isPending
   const analise = (analysis?.analise ?? null) as AnaliseEdital | null
+  // Não exige temEdital: quem importa pode ter feito a análise fora, direto
+  // com o PDF, sem nunca ter subido o edital aqui.
+  const podeImportar = podeEditar && !bloqueada && !processando
   // BUG CORRIGIDO (perícia técnica 2026-09): antes, "Preencher Licitação com
   // estes Dados" só existia quando `analise` (a análise completa) não era
   // nula — então quem usa SÓ o botão "Puxar Itens" (o caminho recomendado
@@ -2419,6 +2415,9 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
         <Button onClick={() => analisar.mutate()} disabled={!temEdital || processando || bloqueada}>
           {processando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           {processando ? 'Analisando...' : status === 'concluido' ? 'Analisar Novamente' : 'Analisar com IA'}
+        </Button>
+        <Button type="button" variant="secondary" onClick={() => setImportandoAnalise(true)} disabled={!podeImportar}>
+          <ClipboardPaste className="w-4 h-4" /> Importar análise
         </Button>
         {!temEdital && (
           <span className="text-[11px] text-base-500 italic">Envie o edital acima antes de analisar.</span>
@@ -2510,9 +2509,19 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
                   <p className="text-[10px] text-base-500 font-mono mt-1 break-all">{erroTecnico}</p>
                 </details>
               )}
-              <button onClick={() => analisar.mutate()} className="flex items-center gap-1.5 text-[11px] text-accent-300 hover:text-accent-200 transition mt-1.5">
-                <RefreshCw className="w-3 h-3" /> Tentar novamente
-              </button>
+              <div className="flex items-center gap-4 flex-wrap mt-1.5">
+                <button onClick={() => analisar.mutate()} className="flex items-center gap-1.5 text-[11px] text-accent-300 hover:text-accent-200 transition">
+                  <RefreshCw className="w-3 h-3" /> Tentar novamente
+                </button>
+                {/* Cobre os três casos deste bloco (erro, cota diária
+                    esgotada, travado) — justamente quando a IA do sistema
+                    não vai resolver tão cedo. */}
+                {podeImportar && (
+                  <button onClick={() => setImportandoAnalise(true)} className="flex items-center gap-1.5 text-[11px] text-base-400 hover:text-base-200 transition">
+                    <ClipboardPaste className="w-3 h-3" /> Importar análise feita em outra IA
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )
@@ -2527,6 +2536,14 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
 
       {status === 'concluido' && analise && (
         <div className="flex flex-col gap-4">
+          {analise.importadaDe === 'externa' && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="flex items-center gap-1.5 text-[12px] text-positive-400">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Análise concluída
+              </span>
+              <SeloAnaliseImportada analise={analise} />
+            </div>
+          )}
           <AnaliseEditalResumo
             analise={analise}
             onToggleItem={podeEditar ? (idx) => alternarItemParticipando.mutate(idx) : undefined}
@@ -2551,6 +2568,14 @@ function AnaliseEditalIA({ bidding, temEdital, podeEditar }: { bidding: Bidding;
         onCancel={() => setConfirmandoPreenchimento(false)}
         onConfirm={confirmarPreenchimento}
         isLoading={updateBidding.isPending}
+      />
+
+      <ImportarAnaliseModal
+        aberto={importandoAnalise}
+        onFechar={() => setImportandoAnalise(false)}
+        onAplicar={async (nova) => { await importar.mutateAsync(nova) }}
+        existente={!!analysis?.analise}
+        destino="licitação"
       />
 
       <UnlockWithPasswordDialog

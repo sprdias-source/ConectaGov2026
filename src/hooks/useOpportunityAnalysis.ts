@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { erroEhTemporario } from '../lib/analiseEdital'
-import type { Database } from '../types/database'
+import type { Database, Json } from '../types/database'
+import type { AnaliseEdital } from '../types/domain'
 
 export type OpportunityAnalysisStatus = 'processando' | 'concluido' | 'erro' | string
 
@@ -167,6 +168,54 @@ export function useOpportunityAnalysis(opportunityId?: string) {
     },
   })
 
+  // "Importar análise" — grava uma análise feita FORA do sistema (Claude,
+  // ChatGPT...) como se fosse o resultado da function, pra quando a IA do
+  // sistema falha (ver importarAnaliseExterna.ts). Mesmo upsert que a
+  // function faz (select da linha existente → update ou insert), com
+  // status já 'concluido': os efeitos da tela que reagem a uma análise
+  // nova (checklist, anexos de declaração, auto-import de itens) disparam
+  // igualzinho.
+  const importar = useMutation({
+    mutationFn: async (analise: AnaliseEdital) => {
+      if (!user) throw new Error('Não autenticado')
+      if (!opportunityId) throw new Error('Oportunidade não informada')
+      const { data: existente, error: selectError } = await supabase
+        .from('opportunity_analysis')
+        .select('id, status, updated_at')
+        .eq('opportunity_id', opportunityId)
+        .maybeSingle()
+      if (selectError) throw selectError
+      // Consulta o banco de novo (em vez de confiar em `travado`, que só
+      // atualiza a cada 5s): com uma análise de IA ainda rodando de
+      // verdade, a function gravaria o resultado dela POR CIMA da
+      // importação minutos depois, sem ninguém perceber.
+      if (existente?.status === 'processando'
+        && Date.now() - new Date(existente.updated_at).getTime() <= LIMITE_PROCESSANDO_MS) {
+        throw new Error('Há uma análise em andamento. Aguarde terminar ou espere ela travar.')
+      }
+      const analiseJson = analise as unknown as Json
+      if (existente) {
+        const { error } = await supabase
+          .from('opportunity_analysis')
+          .update({ status: 'concluido', analise: analiseJson, erro_mensagem: null, updated_at: new Date().toISOString() })
+          .eq('id', existente.id)
+        if (error) throw error
+      } else {
+        // user_id = dono efetivo da conta (mesma regra da function e de
+        // useAttachedFiles) — pra um membro de equipe, o uid dele não
+        // passaria no RLS. O trigger da migração 041 já corrige isso no
+        // banco, mas mandar o valor certo não depende dele existir.
+        const { data: ownerId, error: ownerError } = await supabase.rpc('owner_efetivo', { usuario_id: user.id })
+        if (ownerError) throw ownerError
+        const { error } = await supabase
+          .from('opportunity_analysis')
+          .insert({ user_id: ownerId, opportunity_id: opportunityId, status: 'concluido', analise: analiseJson })
+        if (error) throw error
+      }
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey }),
+  })
+
   // Liga/desliga "participando" de um item — o edital às vezes traz itens
   // que a empresa não vai disputar (ver mapearItensDaAnalise, o único ponto
   // por onde essa flag é lida na hora de preencher bidding_items de
@@ -207,6 +256,7 @@ export function useOpportunityAnalysis(opportunityId?: string) {
     limparAnalise,
     alternarItemParticipando,
     definirTodosParticipando,
+    importar,
     tentandoNovamenteAutomaticamente,
     tentativasAutomaticas,
   }
