@@ -308,6 +308,7 @@ export default function ContratosPage() {
   const contratoDuplicado = useMemo(() => {
     if (!client) return null
     return contracts.find((c) =>
+      c.status !== 'rescindido' &&
       c.clientId === client.id &&
       c.tipo === tipo &&
       c.retentorFixoMensal === valor &&

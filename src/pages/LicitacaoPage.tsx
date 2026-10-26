@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
-import { fromBiddingItemRow, toBiddingItemInsert } from '../lib/mappers'
+import { fromBiddingItemRow, toBiddingItemInsert, fromFileRow } from '../lib/mappers'
 import { useAuth } from '../hooks/useAuth'
 import { Button, Input, Select, Textarea, IconButton } from '../components/ui/FormControls'
 import { Drawer } from '../components/ui/Drawer'
@@ -933,6 +933,19 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   const [pdfPropostaPreview, setPdfPropostaPreview] = useState<{ url: string; nome: string } | null>(null)
   const [enviandoPropostaAssinada, setEnviandoPropostaAssinada] = useState(false)
 
+  // CORREÇÃO DE BUG (achado da perícia): a prévia do PDF só era invalidada
+  // ao gerar um Word novo — editar um item direto na tabela da prévia, mudar
+  // texto/dados bancários (Salvar Alterações) ou importar a proposta já
+  // assinada não limpavam `pdfPropostaPreview`, então "Baixar PDF" e o
+  // iframe continuavam mostrando/baixando a prévia antiga, com dados
+  // diferentes do que foi realmente salvo (ou já assinado) depois.
+  const invalidarPdfPreview = () => {
+    setPdfPropostaPreview((atual) => {
+      if (atual) URL.revokeObjectURL(atual.url)
+      return null
+    })
+  }
+
   // Texto editável que entra no Word e no PDF gerados (abertura antes da
   // tabela de itens, fechamento depois). Pré-preenchido com o mesmo texto
   // padrão que as functions usariam, pra não começar em branco.
@@ -968,6 +981,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   const handleBancoContaChange = (v: string) => { setBancoConta(v) }
 
   const handleSalvarTextoProposta = () => {
+    invalidarPdfPreview()
     updateBidding.mutate(
       {
         bidding: {
@@ -1041,7 +1055,23 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
 
       const bytes = Uint8Array.from(atob(resultado.fileBase64), (c) => c.charCodeAt(0))
       const blob = new Blob([bytes], { type: resultado.mimeType })
-      const arquivoAntigo = propostaReadequada
+      // CORREÇÃO DE BUG (achado da perícia): usar `propostaReadequada` (do
+      // cache do React Query, carregado quando a página abriu) deixava uma
+      // janela de condição de corrida — se duas abas gerassem a Proposta
+      // Readequada quase ao mesmo tempo, as duas capturavam o mesmo
+      // "arquivo antigo" e cada uma arquivava/apagava por cima da outra,
+      // deixando um anexo órfão (nem "atual" nem em "versões anteriores").
+      // Reler direto do banco bem antes de decidir o que arquivar encurta
+      // bastante essa janela (de "quando a página abriu" pra "agora mesmo").
+      const { data: anexosAtuais } = await supabase
+        .from('attached_files')
+        .select('*')
+        .eq('entity_type', 'licitacao')
+        .eq('entity_id', bidding.id)
+        .eq('category', 'Proposta Readequada')
+        .order('created_at', { ascending: false })
+        .limit(1)
+      const arquivoAntigo = anexosAtuais && anexosAtuais.length > 0 ? fromFileRow(anexosAtuais[0]) : null
       const file = new File([blob], resultado.fileName || 'proposta-readequada.docx', { type: resultado.mimeType })
       await uploadAnexoProposta.mutateAsync({ file, category: 'Proposta Readequada' })
       if (arquivoAntigo) {
@@ -1056,8 +1086,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
           await deleteAnexoProposta.mutateAsync(arquivoAntigo)
         }
       }
-      if (pdfPropostaPreview) URL.revokeObjectURL(pdfPropostaPreview.url)
-      setPdfPropostaPreview(null)
+      invalidarPdfPreview()
     } catch (err) {
       setErroDocx(err instanceof Error ? err.message : String(err))
     } finally {
@@ -1127,6 +1156,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   // de Documentos Finais, então não precisa de mais nada pra aparecer lá).
   const handleImportarPropostaAssinada = async (file: File) => {
     setEnviandoPropostaAssinada(true)
+    invalidarPdfPreview()
     try {
       const antigo = propostaReadequada
       await uploadAnexoProposta.mutateAsync({ file, category: 'Proposta Readequada' })
@@ -1201,6 +1231,7 @@ function AbaProposta({ bidding }: { bidding: Bidding }) {
   // logo abaixo (handleItemsChange), então editar aqui ou lá é a mesma
   // gravação, e as duas visões ficam sempre em sincronia.
   const handleAlterarItemPreview = (id: string, patch: Partial<BiddingItem>) => {
+    invalidarPdfPreview()
     handleItemsChange(items.map((it) => (it.id === id ? { ...it, ...patch } : it)))
   }
 

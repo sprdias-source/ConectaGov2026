@@ -412,7 +412,21 @@ export default function EmpenhoFormModal({
                   <Input type="number" min={1} max={60} required value={form.quantidadeParcelas ?? 3} onChange={(e) => setForm({ ...form, quantidadeParcelas: parseInt(e.target.value) || 1 })} />
                 </Field>
                 <p className="text-[11px] text-base-500 -mt-1">
-                  {`${form.quantidadeParcelas ?? 0} parcelas de ${formatBRL((form.valorComissaoTotal ?? 0) / Math.max(1, form.quantidadeParcelas ?? 1))} cada, uma por mês — continua sendo um único empenho (mesmo número, mesma nota fiscal); só o recebimento da comissão é dividido.`}
+                  {(() => {
+                    const total = Math.max(1, form.quantidadeParcelas ?? 1)
+                    // Mesmo arredondamento com resto absorvido na última
+                    // parcela que buildCommissionTransactions (useEmpenhos.ts)
+                    // realmente usa ao salvar — sem isso, o preview mostrava
+                    // o mesmo valor "por parcela" pras N, enquanto a última
+                    // salva ficava alguns centavos diferente (ex: R$1.000 em
+                    // 3x mostrava R$333,33 pra "cada", mas a 3ª era R$333,34).
+                    const parcela = Math.round(((form.valorComissaoTotal ?? 0) / total) * 100) / 100
+                    const ultima = Math.round(((form.valorComissaoTotal ?? 0) - parcela * (total - 1)) * 100) / 100
+                    const descricaoValor = total > 1 && ultima !== parcela
+                      ? `${formatBRL(parcela)} cada, e a última de ${formatBRL(ultima)}`
+                      : `${formatBRL(parcela)} cada`
+                    return `${total} parcelas de ${descricaoValor}, uma por mês — continua sendo um único empenho (mesmo número, mesma nota fiscal); só o recebimento da comissão é dividido.`
+                  })()}
                 </p>
               </>
             )}

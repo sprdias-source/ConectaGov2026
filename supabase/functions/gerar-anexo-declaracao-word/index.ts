@@ -179,7 +179,7 @@ Deno.serve(async (req: Request) => {
 
     const bytes = await Packer.toBuffer(doc)
     const fileBase64 = toBase64(new Uint8Array(bytes))
-    const nomeArquivo = `${(anexo.titulo || 'Declaracao').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_')}.docx`
+    const nomeArquivo = `${(anexo.titulo || 'Declaracao').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_')}.docx`
 
     return json({
       success: true,

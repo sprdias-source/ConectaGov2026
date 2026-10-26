@@ -268,7 +268,7 @@ Deno.serve(async (req: Request) => {
 
     const bytes = await doc.save()
     const fileBase64 = toBase64(bytes)
-    const nomeArquivo = `${(anexo.titulo || 'Declaracao').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_')}.pdf`
+    const nomeArquivo = `${(anexo.titulo || 'Declaracao').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_')}.pdf`
 
     return json({
       success: true,
