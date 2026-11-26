@@ -192,10 +192,10 @@ export default function ContasLancamentosTab() {
     setPayingTx(t)
   }
 
-  const confirmPayment = (paymentDate: string, ajuste?: { desconto: number; juros: number; multa: number }) => {
+  const confirmPayment = (paymentDate: string, ajuste?: { desconto: number; juros: number; multa: number }, accountId?: string | null) => {
     if (!payingTx) return
     updateTransactionStatus.mutate(
-      { tx: payingTx, newStatus: 'Pago', paymentDate, ...ajuste },
+      { tx: payingTx, newStatus: 'Pago', paymentDate, accountId, ...ajuste },
       { onSuccess: () => setPayingTx(null) }
     )
   }
@@ -368,6 +368,7 @@ export default function ContasLancamentosTab() {
             open={!!payingTx}
             onClose={() => setPayingTx(null)}
             transaction={payingTx}
+            accounts={accounts}
             onConfirm={confirmPayment}
             isSaving={updateTransactionStatus.isPending}
             error={updateTransactionStatus.error}
@@ -386,7 +387,18 @@ export default function ContasLancamentosTab() {
           <ConfirmDialog
             open={!!deleting}
             title="Excluir lançamento?"
-            description={`Tem certeza que deseja excluir "${deleting?.description}"?`}
+            description={
+              deleting?.status === 'Pago'
+                // CORREÇÃO DE BUG (achado da simulação): excluir Empenho ou
+                // Licitação já preserva o histórico financeiro (comissões
+                // pagas sobrevivem, só perdem o vínculo) — excluir a
+                // TRANSAÇÃO diretamente é a única forma de apagar um valor
+                // já recebido/pago de verdade pra sempre, sem nenhum aviso
+                // diferenciado disso antes. Isso afeta retroativamente
+                // Fluxo de Caixa, DRE e RBT12, que recalculam da tabela viva.
+                ? `Atenção: "${deleting?.description}" já está marcado como ${deleting.type === 'Receber' ? 'Recebido' : 'Pago'}. Excluir agora apaga esse valor para sempre do Fluxo de Caixa, da DRE e do Simples Nacional — para só desfazer o lançamento sem perder o histórico, use Editar e desmarque "Já pago/recebido" em vez de excluir.`
+                : `Tem certeza que deseja excluir "${deleting?.description}"?`
+            }
             confirmLabel="Excluir"
             danger
             onCancel={() => setDeleting(null)}

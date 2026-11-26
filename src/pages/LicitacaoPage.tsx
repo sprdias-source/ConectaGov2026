@@ -2902,11 +2902,23 @@ export default function LicitacaoPage() {
   // no repositório do cliente como documento manual, numa pasta com o
   // nome da categoria, pra ficar disponível se aparecer de novo em outra
   // licitação parecida, em vez de ficar preso só aqui.
-  const handleEnviarDocumentoGenerico = async (item: BiddingChecklistItem, file: File) => {
+  //
+  // Alguns itens do edital juntam várias exigências numa alínea só (ex:
+  // "5.2 c) Regularidade perante a Fazenda federal, estadual e
+  // municipal" — 3 certidões, um item). Como cada item só tem UM slot de
+  // documento (clientDocumentId), selecionar mais de um arquivo aqui
+  // preenche este item com o primeiro e CLONA o item (mesma numeração,
+  // descrição, categoria e obrigatoriedade) uma vez pra cada arquivo
+  // extra, já com o respectivo documento vinculado e atendido — assim o
+  // checklist passa a ter 3 linhas idênticas na descrição, cada uma com
+  // seu próprio arquivo, em vez de forçar 3 arquivos num slot só.
+  const handleEnviarDocumentoGenerico = async (item: BiddingChecklistItem, files: File[]) => {
+    if (files.length === 0) return
     setEnviandoItemId(item.id)
     try {
+      const [primeiro, ...extras] = files
       const { id: novoId } = await uploadClientDoc.mutateAsync({
-        file, tipo: 'manual', nome: file.name, pasta: item.categoria || 'Documentos Gerais',
+        file: primeiro, tipo: 'manual', nome: primeiro.name, pasta: item.categoria || 'Documentos Gerais',
       })
       // CORREÇÃO DE BUG: documento manual (CNPJ, Contrato Social...) não
       // tem data de validade, então a checagem de status pelo
@@ -2914,6 +2926,25 @@ export default function LicitacaoPage() {
       // sem marcar nada — sem esse atendido:true explícito o item ficava
       // preso em "faltando" pra sempre, mesmo com o arquivo já salvo.
       await updateItem.mutateAsync({ ...item, clientDocumentId: novoId, atendido: true })
+
+      for (const extra of extras) {
+        const { id: extraId } = await uploadClientDoc.mutateAsync({
+          file: extra, tipo: 'manual', nome: extra.name, pasta: item.categoria || 'Documentos Gerais',
+        })
+        await addItem.mutateAsync({
+          numeroEdital: item.numeroEdital,
+          descricao: item.descricao,
+          categoria: item.categoria,
+          obrigatorio: item.obrigatorio,
+          origem: item.origem === 'ia' ? 'ia' : 'manual',
+          clientDocumentId: extraId,
+          atendido: true,
+        })
+      }
+
+      if (extras.length > 0) {
+        showToast(`${files.length} arquivos enviados — este item virou ${files.length} linhas no checklist, uma por documento.`, 'success')
+      }
       setItemAbertoId(null)
     } catch (err) {
       showToast(`Erro ao enviar documento: ${err instanceof Error ? err.message : String(err)}`, 'error')
@@ -3597,12 +3628,13 @@ export default function LicitacaoPage() {
                             <div className="flex flex-col items-start gap-2 bg-base-900/40 border border-base-800 rounded-lg p-2.5">
                               <span className="text-[11px] text-base-400">Enviar documento (fica salvo no repositório do cliente, pasta "{item.categoria || 'Documentos Gerais'}"):</span>
                               <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-base-950 bg-accent-500 hover:bg-accent-400 rounded-lg px-3 py-1.5 cursor-pointer transition">
-                                {enviandoEste ? 'Enviando...' : 'Escolher arquivo'}
+                                {enviandoEste ? 'Enviando...' : 'Escolher arquivo(s)'}
                                 <input
-                                  type="file" accept=".pdf,.png,.jpg,.jpeg" className="hidden" disabled={enviandoEste}
-                                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleEnviarDocumentoGenerico(item, f); e.target.value = '' }}
+                                  type="file" accept=".pdf,.png,.jpg,.jpeg" multiple className="hidden" disabled={enviandoEste}
+                                  onChange={(e) => { const fs = Array.from(e.target.files ?? []); if (fs.length > 0) handleEnviarDocumentoGenerico(item, fs); e.target.value = '' }}
                                 />
                               </label>
+                              <span className="text-[10.5px] text-base-600 italic">Se este item pedir mais de um documento (ex: certidão federal + estadual + municipal), selecione todos de uma vez — cada arquivo vira uma linha própria no checklist.</span>
                             </div>
                           )}
                         </Drawer>
@@ -3733,7 +3765,7 @@ export default function LicitacaoPage() {
       <ConfirmDialog
         open={confirmandoExclusaoEdital}
         title="Excluir edital"
-        description="Isso também apaga a Análise de Edital, a Análise Jurídica e os itens de checklist sugeridos pela IA a partir deste PDF (os itens que você adicionou manualmente continuam). Use quando o PDF enviado estiver errado."
+        description="Isso também apaga a Análise de Edital, a Análise Jurídica e os itens de checklist sugeridos pela IA a partir deste PDF (os itens que você adicionou manualmente continuam). A tabela de Itens/Lotes da licitação (usada na Proposta Readequada) NÃO é apagada automaticamente — se o PDF errado já tinha gerado itens, revise ou use \"Puxar Itens\" de novo depois de enviar o PDF certo. Use quando o PDF enviado estiver errado."
         confirmLabel="Excluir tudo"
         danger
         isLoading={deleteAnexo.isPending}

@@ -2,23 +2,32 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Plus, Minus } from 'lucide-react'
 import { todayLocalISO } from '../../lib/dateUtils'
 import Modal from '../ui/Modal'
-import { Field, Input, Button } from '../ui/FormControls'
+import { Field, Input, Select, Button } from '../ui/FormControls'
 import CurrencyInput from '../ui/CurrencyInput'
 import ErrorAlert from '../ui/ErrorAlert'
-import type { Transaction } from '../../types/domain'
+import type { Transaction, FinancialAccount } from '../../types/domain'
 import { formatBRL } from '../../hooks/useAccountBalances'
 
 export default function QuickPaymentModal({
-  open, onClose, transaction, onConfirm, isSaving, error,
+  open, onClose, transaction, accounts, onConfirm, isSaving, error,
 }: {
   open: boolean
   onClose: () => void
   transaction: Transaction | null
-  onConfirm: (paymentDate: string, ajuste?: { desconto: number; juros: number; multa: number }) => void
+  // CORREÇÃO DE BUG (achado da simulação): a baixa rápida nunca pedia
+  // conta nenhuma — uma comissão de empenho (que nasce sem accountId, ver
+  // buildCommissionTransactions em useEmpenhos.ts) virava "Pago" sem
+  // movimentar nenhum saldo, e isso só se descobria indiretamente (contador
+  // "N lançamento(s) pago(s) sem conta vinculada" na sidebar). Pergunta a
+  // conta aqui só quando o lançamento ainda não tem uma — se já tem
+  // (definida na criação, ou editando o lançamento depois), não repete.
+  accounts: FinancialAccount[]
+  onConfirm: (paymentDate: string, ajuste?: { desconto: number; juros: number; multa: number }, accountId?: string | null) => void
   isSaving: boolean
   error?: unknown
 }) {
   const [paymentDate, setPaymentDate] = useState(() => todayLocalISO())
+  const [accountId, setAccountId] = useState<string>('')
   const [ajusteAberto, setAjusteAberto] = useState(false)
   const [desconto, setDesconto] = useState(0)
   const [juros, setJuros] = useState(0)
@@ -31,6 +40,7 @@ export default function QuickPaymentModal({
   useEffect(() => {
     if (open) {
       setPaymentDate(todayLocalISO())
+      setAccountId('')
       setAjusteAberto(false)
       setDesconto(0)
       setJuros(0)
@@ -41,10 +51,12 @@ export default function QuickPaymentModal({
   if (!transaction) return null
 
   const valorFinal = transaction.value - desconto + juros + multa
+  const precisaEscolherConta = !transaction.accountId
+  const contasSelecionaveis = accounts.filter((a) => a.type !== 'INTERNO')
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-    onConfirm(paymentDate, ajusteAberto ? { desconto, juros, multa } : undefined)
+    onConfirm(paymentDate, ajusteAberto ? { desconto, juros, multa } : undefined, precisaEscolherConta ? (accountId || null) : undefined)
   }
 
   return (
@@ -60,6 +72,21 @@ export default function QuickPaymentModal({
         <Field label={`Data efetiva do ${transaction.type === 'Receber' ? 'recebimento' : 'pagamento'}`} required>
           <Input type="date" required value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} autoFocus />
         </Field>
+
+        {precisaEscolherConta && (
+          <Field
+            label="Em qual conta?"
+            badge={<span className="text-[9px] font-bold uppercase tracking-wider text-warning-400 bg-warning-500/10 border border-warning-500/30 rounded px-1.5 py-0.5">Sem conta ainda</span>}
+          >
+            <Select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+              <option value="">Nenhuma (não afeta saldo de nenhuma conta)</option>
+              {contasSelecionaveis.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </Select>
+            <p className="text-[11px] text-base-500 mt-1">
+              Este lançamento ainda não tem conta vinculada — sem escolher uma, o valor não entra no saldo de nenhuma conta nem no Patrimônio Total.
+            </p>
+          </Field>
+        )}
 
         <button
           type="button"

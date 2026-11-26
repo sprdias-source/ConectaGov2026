@@ -79,9 +79,24 @@ Deno.serve(async (req) => {
     const zip = await JSZip.loadAsync(await templateBlob.arrayBuffer())
 
     const hoje = new Date()
+    // CORREÇÃO DE BUG (achado da simulação): esta function nunca lia
+    // client.cabecalho_declaracao — ao contrário de gerar-proposta (que
+    // monta o cabeçalho de página inteiro a partir dele), aqui o cabeçalho
+    // sempre saía só com nome/CNPJ via placeholders fixos, ignorando
+    // endereço/telefone/e-mail que o usuário formatou manualmente no
+    // cadastro. Adiciona cabecalho_cliente (mesmo fallback nome+CNPJ já
+    // usado em Analisar-anexos-declaracao/gerar-proposta) e os campos de
+    // contato que faltavam — se o modelo .docx não tiver esses
+    // placeholders, isso não tem efeito nenhum (substituirPlaceholders só
+    // troca o que existir de verdade no template).
+    const cabecalhoCliente = client.cabecalho_declaracao?.trim() || `${client.name}\nCNPJ: ${client.cnpj ?? ''}`
     const valores: Record<string, string> = {
       cliente_nome: escapeXml(client.name),
       cliente_cnpj: escapeXml(client.cnpj ?? ''),
+      cabecalho_cliente: escapeXml(cabecalhoCliente),
+      cliente_endereco: escapeXml(client.address ?? ''),
+      cliente_telefone: escapeXml(client.phone ?? ''),
+      cliente_email: escapeXml(client.email ?? ''),
       responsavel_nome: escapeXml(client.responsavel_nome ?? ''),
       responsavel_cpf: escapeXml(client.responsavel_cpf ?? ''),
       responsavel_cargo: escapeXml(client.responsavel_cargo ?? ''),

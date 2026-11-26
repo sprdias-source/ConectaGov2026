@@ -267,6 +267,15 @@ export function useBiddingChecklist(biddingId?: string) {
       origem?: 'manual' | 'ia'
       prazo?: string | null
       responsavelNome?: string | null
+      // Usado só ao clonar um item que pede vários documentos num item só
+      // (ex: "Regularidade perante a Fazenda federal, estadual e
+      // municipal" — uma alínea, 3 certidões) — ver handleEnviarDocumentoGenerico
+      // em LicitacaoPage.tsx: o 1º arquivo selecionado preenche o item
+      // original, cada arquivo extra vira um clone deste item já com o
+      // documento vinculado e atendido:true, em vez de forçar os 3 docs no
+      // mesmo clientDocumentId (que só guarda um).
+      clientDocumentId?: string | null
+      atendido?: boolean
     }) => {
       if (!user || !biddingId) throw new Error('Não autenticado')
       const clientDocumentTipo = sugerirTipoDocumento(item.descricao)
@@ -279,7 +288,8 @@ export function useBiddingChecklist(biddingId?: string) {
           obrigatorio: item.obrigatorio ?? true,
           origem: item.origem ?? 'manual',
           clientDocumentTipo,
-          atendido: false,
+          clientDocumentId: item.clientDocumentId ?? null,
+          atendido: item.atendido ?? false,
           prazo: item.prazo ?? null,
           responsavelNome: item.responsavelNome ?? null,
         }, user.id)

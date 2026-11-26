@@ -52,10 +52,20 @@ function qualificacaoPessoa(nome: string | null, cpf: string | null, estadoCivil
   return `${campo(nome)}, brasileiro(a), ${estadoCivil ? esc(estadoCivil.toLowerCase()) : NAO_INFORMADO}, inscrito(a) no CPF sob nº ${campo(cpf)}, residente e domiciliado(a) em ${campo(endereco)}`
 }
 
+// CORREÇÃO DE BUG (achado da simulação): o contrato sempre hardcodava
+// "sócio-administrador", mesmo quando o cliente tinha um Cargo do
+// Responsável diferente cadastrado (Diretor, Procurador etc.) — gerava
+// qualificação jurídica incorreta. Mantém "sócio-administrador" como
+// padrão (não quebra contratos de clientes que nunca preencheram o
+// campo), mas usa o cargo real quando ele existe.
+function cargoRepresentante(cargo: string | null | undefined): string {
+  return cargo?.trim() ? esc(cargo.trim().toLowerCase()) : 'sócio-administrador'
+}
+
 function blocoIdentificacao(client: Client, perfil: EmpresaPerfil | null): string {
   return `
     <p class="sec">1. IDENTIFICAÇÃO DAS PARTES CONTRATANTES:</p>
-    <p><b>CONTRATANTE:</b> ${campo(client.name)}, pessoa jurídica de direito privado, inscrita no CNPJ sob nº ${campo(client.cnpj)}, com sede em ${campo(client.address)}${client.cep ? `, CEP ${esc(client.cep)}` : ''}, neste ato representada por seu sócio-administrador, ${qualificacaoPessoa(client.responsavelNome, client.responsavelCpf, client.estadoCivil, client.responsavelEndereco)}.</p>
+    <p><b>CONTRATANTE:</b> ${campo(client.name)}, pessoa jurídica de direito privado, inscrita no CNPJ sob nº ${campo(client.cnpj)}, com sede em ${campo(client.address)}${client.cep ? `, CEP ${esc(client.cep)}` : ''}, neste ato representada por seu ${cargoRepresentante(client.responsavelCargo)}, ${qualificacaoPessoa(client.responsavelNome, client.responsavelCpf, client.estadoCivil, client.responsavelEndereco)}.</p>
     <p><b>CONTRATADA:</b> CONECTAGOV REPRESENTAÇÕES, pessoa jurídica de direito privado, inscrita no CNPJ sob nº 48.153.601/0001-60, com sede na Rua Dona Laura, nº 57, Centro, em Vacaria/RS, neste ato representada por seu sócio-administrador, ${qualificacaoPessoa(perfil?.representanteNome ?? null, perfil?.representanteCpf ?? null, perfil?.representanteEstadoCivil ?? null, perfil?.representanteEndereco ?? null)}.</p>
     <p>As partes acima identificadas têm, entre si, justo e acertado o presente Contrato de Prestação de Serviços de Assessoria e Representação, que se regerá pelas cláusulas descritas neste instrumento.</p>
   `

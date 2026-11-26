@@ -181,9 +181,13 @@ export function useTransactions() {
   })
 
   const updateTransactionStatus = useMutation({
-    mutationFn: async ({ tx, newStatus, paymentDate, desconto, juros, multa }: {
+    mutationFn: async ({ tx, newStatus, paymentDate, desconto, juros, multa, accountId }: {
       tx: Transaction; newStatus: 'Pendente' | 'Pago'; paymentDate?: string
       desconto?: number; juros?: number; multa?: number
+      // Só usado quando a baixa rápida pediu a conta (lançamento ainda sem
+      // accountId, ver QuickPaymentModal.tsx) — undefined significa "não
+      // mexe no accountId já salvo", nunca apaga uma conta já vinculada.
+      accountId?: string | null
     }) => {
       // valorOriginal é o valor cobrado, nunca muda. Ao dar baixa com
       // desconto/juros/multa, `value` (o campo usado em todo o resto do
@@ -206,6 +210,7 @@ export function useTransactions() {
           desconto: newStatus === 'Pago' ? (desconto ?? 0) : null,
           juros: newStatus === 'Pago' ? (juros ?? 0) : null,
           multa: newStatus === 'Pago' ? (multa ?? 0) : null,
+          ...(accountId !== undefined ? { account_id: accountId } : {}),
         })
         .eq('id', tx.id)
         .select()

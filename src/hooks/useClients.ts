@@ -54,7 +54,7 @@ function buildMensalidadeTransactions(client: Client): Partial<Transaction>[] {
 // mensalidade de um cliente. Parcelas já pagas nunca são tocadas — isso
 // preserva o histórico financeiro real mesmo se o usuário editar valor,
 // período ou data de início depois de já existirem pagamentos.
-async function syncMensalidadeTransactions(userId: string, client: Client) {
+async function syncMensalidadeTransactions(userId: string, client: Client): Promise<{ criadas: number; canceladas: number }> {
   // Descobre quais números de parcela já foram pagos, para não duplicar
   // numeração nem perder a referência deles ao reconstruir as pendentes.
   const { data: paidRows } = await supabase
@@ -65,22 +65,24 @@ async function syncMensalidadeTransactions(userId: string, client: Client) {
     .eq('status', 'Pago')
   const paidNumbers = new Set((paidRows ?? []).map((p) => p.projection_month_number))
 
-  await supabase
+  const { data: deletedRows } = await supabase
     .from('transactions')
     .delete()
     .eq('client_id', client.id)
     .eq('category', 'Mensalidade Assessoria')
     .neq('status', 'Pago')
+    .select('id')
+  const canceladas = deletedRows?.length ?? 0
 
   const allTxs = buildMensalidadeTransactions(client)
   const txs = allTxs.filter((t) => !paidNumbers.has(t.projectionMonthNumber ?? null))
-  if (txs.length === 0) return 0
+  if (txs.length === 0) return { criadas: 0, canceladas }
 
   const { error } = await supabase
     .from('transactions')
     .insert(txs.map((t) => toTransactionInsert(t, userId)))
   if (error) throw error
-  return txs.length
+  return { criadas: txs.length, canceladas }
 }
 
 export function useClients() {
@@ -116,8 +118,8 @@ export function useClients() {
         .single()
       if (error) throw error
       const created = fromClientRow(data)
-      const parcelas = await syncMensalidadeTransactions(user.id, created)
-      return { created, parcelas }
+      const { criadas } = await syncMensalidadeTransactions(user.id, created)
+      return { created, parcelas: criadas }
     },
     onSuccess: ({ created, parcelas }) => {
       invalidate()
@@ -139,8 +141,8 @@ export function useClients() {
         .single()
       if (error) throw error
       const updated = fromClientRow(data)
-      const parcelas = await syncMensalidadeTransactions(user.id, updated)
-      return { updated, parcelas }
+      const { criadas } = await syncMensalidadeTransactions(user.id, updated)
+      return { updated, parcelas: criadas }
     },
     onSuccess: ({ updated, parcelas }) => {
       invalidate()
@@ -158,18 +160,26 @@ export function useClients() {
       return client
     },
     onSuccess: (deleted) => {
-      // Licitações e empenhos são apagados em cascata pelo próprio banco
-      // (ON DELETE CASCADE). Transações NÃO são mais apagadas junto (migration
-      // 035 trocou pra ON DELETE SET NULL) — sobrevivem como histórico
-      // financeiro, só perdem o vínculo (client_id/bidding_id/empenho_id
-      // viram null). Por isso ainda invalidamos a query de transactions (o
-      // valor de client_id delas mudou), mas o texto do log não pode mais
-      // dizer que elas foram removidas.
+      // Licitações, oportunidades, empenhos e contratos são apagados em
+      // cascata pelo próprio banco (ON DELETE CASCADE). Transações NÃO são
+      // mais apagadas junto (migration 035 trocou pra ON DELETE SET NULL) —
+      // sobrevivem como histórico financeiro, só perdem o vínculo
+      // (client_id/bidding_id/empenho_id viram null). Por isso ainda
+      // invalidamos a query de transactions (o valor de client_id delas
+      // mudou), mas o texto do log não pode mais dizer que elas foram
+      // removidas.
+      // CORREÇÃO DE BUG (achado da simulação): faltava invalidar
+      // 'opportunities' e 'contracts' — como as duas também são apagadas em
+      // cascata no banco, sem isso a tela de Oportunidades (e a de
+      // Contratos) continuava mostrando a linha "fantasma" do registro já
+      // excluído até algum outro evento forçar um refetch.
       queryClient.invalidateQueries({ queryKey: ['clients'] })
       queryClient.invalidateQueries({ queryKey: ['biddings'] })
+      queryClient.invalidateQueries({ queryKey: ['opportunities'] })
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
       queryClient.invalidateQueries({ queryKey: ['empenhos'] })
-      logEvent('Excluiu Cliente', `Removeu o cadastro do cliente/órgão "${deleted.name}". Licitações e empenhos vinculados foram removidos automaticamente; transações já lançadas foram preservadas, só perdendo o vínculo com o cliente.`)
+      queryClient.invalidateQueries({ queryKey: ['contracts'] })
+      logEvent('Excluiu Cliente', `Removeu o cadastro do cliente/órgão "${deleted.name}". Licitações, oportunidades, empenhos e contratos vinculados foram removidos automaticamente; transações já lançadas foram preservadas, só perdendo o vínculo com o cliente.`)
     },
   })
 
@@ -184,14 +194,28 @@ export function useClients() {
         .select()
         .single()
       if (error) throw error
-      return fromClientRow(data)
+      const updated = fromClientRow(data)
+      // CORREÇÃO DE BUG (achado da simulação): inativar um cliente
+      // mensalista no meio do contrato não cancelava as parcelas de
+      // mensalidade ainda pendentes — elas continuavam vencendo e
+      // aparecendo normalmente em Transações/Fluxo de Caixa mesmo com o
+      // cliente marcado como inativo. Mesma função que já zera as parcelas
+      // pendentes ao editar valor/período/data (preserva as já pagas).
+      let parcelasCanceladas = 0
+      if (!isActive && updated.isMensalista) {
+        parcelasCanceladas = (await syncMensalidadeTransactions(updated.userId, { ...updated, isMensalista: false })).canceladas
+      }
+      return { updated, parcelasCanceladas }
     },
-    onSuccess: (updated) => {
+    onSuccess: ({ updated, parcelasCanceladas }) => {
       invalidate()
       logEvent(
         updated.isActive ? 'Reativou Cliente' : 'Inativou Cliente',
         `${updated.isActive ? 'Reativou' : 'Inativou'} o cliente/órgão "${updated.name}"`
       )
+      if (parcelasCanceladas > 0) {
+        logEvent('Cancelou Mensalidades', `Cancelou ${parcelasCanceladas} parcela(s) de mensalidade ainda pendente(s) de "${updated.name}" ao inativá-lo`)
+      }
     },
   })
 

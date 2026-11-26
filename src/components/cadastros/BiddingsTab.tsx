@@ -62,7 +62,7 @@ export default function BiddingsTab() {
     checkBiddingHasFinancialHistory(deleting.id).then((hasHistory) => {
       setFinancialWarning(
         hasHistory
-          ? 'Esta licitação possui empenhos faturados ou comissões já recebidas — todo esse histórico será perdido junto.'
+          ? 'Esta licitação possui empenhos faturados ou comissões já recebidas — os empenhos serão removidos, mas as comissões já pagas são preservadas no Financeiro (só perdem o vínculo com esta licitação).'
           : undefined
       )
     }).catch(() => {

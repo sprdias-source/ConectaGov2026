@@ -270,6 +270,12 @@ export interface Transaction {
   clientId: string | null
   biddingId: string | null
   empenhoId: string | null
+  // Liga o lançamento ao funcionário/sócio de origem (ex: salário líquido,
+  // guia de INSS/IRRF/FGTS gerados em "Lançar no Financeiro", ver
+  // FuncionariosPage.tsx) — opcional, null pra qualquer lançamento que não
+  // veio de um fechamento de folha. ON DELETE SET NULL (migração 067):
+  // excluir o funcionário nunca apaga o lançamento já gerado.
+  employeeId: string | null
   accountId: string | null
   value: number
   dueDate: string

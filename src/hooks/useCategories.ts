@@ -12,7 +12,8 @@ const DEFAULT_PAGAR = [
 
 const DEFAULT_RECEBER = [
   'Mensalidade Assessoria', 'Taxa de Participação Individual',
-  'Comissão de Êxito (Licitação Ganha)', 'Comissão de Êxito (Projetada - 12 meses)',
+  'Comissão de Êxito (Licitação Ganha)', 'Comissão de Êxito (Parcelada)',
+  'Comissão de Êxito (Recorrente)', 'Comissão de Êxito (Projetada - 12 meses)',
   'Consultoria Avulsa', 'Outras Receitas',
 ]
 
@@ -43,15 +44,22 @@ export function useCategories() {
 
       // Usuário já tinha categorias cadastradas de antes (de uma versão
       // anterior do sistema) — complementa só as que foram adicionadas
-      // depois (ex: INSS/IRRF/FGTS) e ainda não existem para ele, sem
-      // duplicar nem mexer no que já está lá.
+      // depois (ex: INSS/IRRF/FGTS, ou as de Comissão Parcelada/Recorrente
+      // — achado da simulação: sem isso elas nunca existiam como categoria
+      // de verdade, então nunca ganhavam grupo contábil e a DRE jogava toda
+      // comissão parcelada/recorrente em "Outras Receitas") e ainda não
+      // existem para ele, sem duplicar nem mexer no que já está lá.
       if (user) {
         const existingPagarNames = new Set(data.filter((c) => c.type === 'Pagar').map((c) => c.name))
-        const missing = DEFAULT_PAGAR.filter((name) => !existingPagarNames.has(name))
+        const existingReceberNames = new Set(data.filter((c) => c.type === 'Receber').map((c) => c.name))
+        const missing = [
+          ...DEFAULT_PAGAR.filter((name) => !existingPagarNames.has(name)).map((name) => ({ type: 'Pagar' as const, name })),
+          ...DEFAULT_RECEBER.filter((name) => !existingReceberNames.has(name)).map((name) => ({ type: 'Receber' as const, name })),
+        ]
         if (missing.length > 0) {
           const { data: added, error: addError } = await supabase
             .from('categories')
-            .insert(missing.map((name) => ({ user_id: user.id, type: 'Pagar', name })))
+            .insert(missing.map(({ type, name }) => ({ user_id: user.id, type, name })))
             .select()
           if (!addError && added) {
             return [...data, ...added].map(fromCategoryRow)
