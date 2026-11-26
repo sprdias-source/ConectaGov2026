@@ -229,7 +229,7 @@ export default function ClientsTab() {
                         {podeEditar && (
                           <>
                             <button
-                              onClick={() => toggleClientActive.mutate({ client: c, isActive: !c.isActive }, { onSuccess: (updated) => showToast(updated.isActive ? 'Cliente reativado.' : 'Cliente inativado.') })}
+                              onClick={() => toggleClientActive.mutate({ client: c, isActive: !c.isActive }, { onSuccess: ({ updated }) => showToast(updated.isActive ? 'Cliente reativado.' : 'Cliente inativado.') })}
                               title={c.isActive ? 'Inativar cliente (preserva histórico)' : 'Reativar cliente'}
                               className={`p-1.5 rounded transition hover:bg-base-800 ${c.isActive ? 'text-base-400 hover:text-warning-400' : 'text-positive-400 hover:text-positive-300'}`}
                             >
@@ -288,7 +288,7 @@ export default function ClientsTab() {
                     {podeEditar && (
                       <>
                         <button
-                          onClick={() => toggleClientActive.mutate({ client: c, isActive: !c.isActive }, { onSuccess: (updated) => showToast(updated.isActive ? 'Cliente reativado.' : 'Cliente inativado.') })}
+                          onClick={() => toggleClientActive.mutate({ client: c, isActive: !c.isActive }, { onSuccess: ({ updated }) => showToast(updated.isActive ? 'Cliente reativado.' : 'Cliente inativado.') })}
                           title={c.isActive ? 'Inativar cliente (preserva histórico)' : 'Reativar cliente'}
                           className={`p-1.5 rounded transition hover:bg-base-800 ${c.isActive ? 'text-base-400 hover:text-warning-400' : 'text-positive-400 hover:text-positive-300'}`}
                         >

@@ -3765,7 +3765,7 @@ export default function LicitacaoPage() {
       <ConfirmDialog
         open={confirmandoExclusaoEdital}
         title="Excluir edital"
-        description="Isso também apaga a Análise de Edital, a Análise Jurídica e os itens de checklist sugeridos pela IA a partir deste PDF (os itens que você adicionou manualmente continuam). A tabela de Itens/Lotes da licitação (usada na Proposta Readequada) NÃO é apagada automaticamente — se o PDF errado já tinha gerado itens, revise ou use \"Puxar Itens\" de novo depois de enviar o PDF certo. Use quando o PDF enviado estiver errado."
+        description="Isso também apaga a Análise de Edital, a Análise Jurídica e os itens de checklist sugeridos pela IA a partir deste PDF (os itens que você adicionou manualmente continuam). A tabela de Itens/Lotes da licitação (usada na Proposta Readequada) NÃO é apagada automaticamente — se o PDF errado já tinha gerado itens, revise ou use “Puxar Itens” de novo depois de enviar o PDF certo. Use quando o PDF enviado estiver errado."
         confirmLabel="Excluir tudo"
         danger
         isLoading={deleteAnexo.isPending}
