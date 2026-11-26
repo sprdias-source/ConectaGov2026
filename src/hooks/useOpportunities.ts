@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { excluirNoDrive, ehArquivoDrive } from '../lib/driveStorage'
 import { fromOpportunityRow, toOpportunityInsert, toBiddingInsert, toBiddingItemInsert } from '../lib/mappers'
 import { mapearCamposDaAnalise, mapearItensDaAnalise, somarValorLicitado } from '../lib/analiseEdital'
 import { useAuth } from './useAuth'
@@ -156,6 +157,35 @@ export function useOpportunities() {
 
   const deleteOpportunity = useMutation({
     mutationFn: async (o: Opportunity) => {
+      // CORREÇÃO DE BUG (achado da simulação): attached_files usa
+      // entity_type/entity_id polimórfico, sem FK nenhuma pra opportunities
+      // — excluir a oportunidade deixava o edital/TR anexado órfão na
+      // tabela, e o arquivo físico nunca era removido do Drive/Storage.
+      // Mesmo bug já corrigido pra licitação (deleteBidding, useBiddings.ts)
+      // não tinha sido replicado aqui. Mesmo padrão best-effort: apaga
+      // primeiro os REGISTROS (ponto de confirmação), só depois tenta
+      // limpar os arquivos físicos.
+      const { data: anexos } = await supabase
+        .from('attached_files')
+        .select('id, storage_path')
+        .eq('entity_type', 'oportunidade')
+        .eq('entity_id', o.id)
+
+      if (anexos?.length) {
+        const { error: anexosError } = await supabase
+          .from('attached_files')
+          .delete()
+          .eq('entity_type', 'oportunidade')
+          .eq('entity_id', o.id)
+        if (anexosError) throw anexosError
+
+        await Promise.all(anexos.map((a) =>
+          ehArquivoDrive(a.storage_path)
+            ? excluirNoDrive('attached_files', a.storage_path).catch(() => {})
+            : supabase.storage.from('client-documents').remove([a.storage_path]).catch(() => {})
+        ))
+      }
+
       const { error } = await supabase.from('opportunities').delete().eq('id', o.id)
       if (error) throw error
 

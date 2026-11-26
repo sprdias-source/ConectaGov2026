@@ -304,7 +304,7 @@ export function useBiddings() {
     onSuccess: (deleted) => {
       invalidate()
       queryClient.invalidateQueries({ queryKey: ['licitei_editais'] })
-      logEvent('Excluiu Licitação', `Removeu a licitação do órgão "${deleted.orgao}" referente ao objeto "${deleted.objeto}". Empenhos e lançamentos vinculados foram removidos automaticamente.`, { type: 'bidding', id: deleted.id })
+      logEvent('Excluiu Licitação', `Removeu a licitação do órgão "${deleted.orgao}" referente ao objeto "${deleted.objeto}". Empenhos vinculados foram removidos automaticamente; lançamentos financeiros já pagos foram preservados, só perdendo o vínculo com a licitação.`, { type: 'bidding', id: deleted.id })
     },
   })
 

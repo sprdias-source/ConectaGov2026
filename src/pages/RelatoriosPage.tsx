@@ -9,19 +9,22 @@ import { useFinancialAccounts } from '../hooks/useFinancialAccounts'
 import { useClients } from '../hooks/useClients'
 import { useCategories } from '../hooks/useCategories'
 import { useBiddings } from '../hooks/useBiddings'
+import { useContracts } from '../hooks/useContracts'
 import { usePagination, PaginationControls } from '../hooks/usePagination'
 import RelatorioLicitacoesCliente from '../components/relatorios/RelatorioLicitacoesCliente'
 import RelatorioRepassePorCliente from '../components/relatorios/RelatorioRepassePorCliente'
+import RelatorioContratos from '../components/relatorios/RelatorioContratos'
 
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 
 export default function RelatoriosPage() {
-  const [aba, setAba] = useState<'faturamento' | 'despesas' | 'licitacoes' | 'repasse'>('faturamento')
+  const [aba, setAba] = useState<'faturamento' | 'despesas' | 'licitacoes' | 'repasse' | 'contratos'>('faturamento')
   const { transactions } = useTransactions()
   const { accounts } = useFinancialAccounts()
   const { clients } = useClients()
   const { categoriesReceber, categoriesPagar } = useCategories()
   const { biddings } = useBiddings()
+  const { contracts } = useContracts()
 
   const tipo = aba === 'despesas' ? 'Pagar' : 'Receber'
   const categorias = aba === 'despesas' ? categoriesPagar : categoriesReceber
@@ -138,11 +141,19 @@ export default function RelatoriosPage() {
           >
             Repasse por Cliente
           </button>
+          <button
+            onClick={() => selecionarAba('contratos')}
+            className={`px-3 py-1.5 rounded-md text-[12px] font-semibold transition ${aba === 'contratos' ? 'bg-accent-500 text-base-950' : 'text-base-400 hover:text-base-100'}`}
+          >
+            Execução de Contratos
+          </button>
         </div>
 
         {aba === 'licitacoes' && <RelatorioLicitacoesCliente clients={clients} biddings={biddings} />}
 
         {aba === 'repasse' && <RelatorioRepassePorCliente clients={clients} transactions={transactions} accounts={accounts} />}
+
+        {aba === 'contratos' && <RelatorioContratos clients={clients} contracts={contracts} biddings={biddings} />}
 
         {(aba === 'faturamento' || aba === 'despesas') && <>
         <Card className="p-4 mb-4">

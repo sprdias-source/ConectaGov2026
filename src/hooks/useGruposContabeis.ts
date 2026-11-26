@@ -51,6 +51,8 @@ const CATEGORIA_PARA_GRUPO: Record<string, string> = {
   'Taxa de Participação Individual': 'Receita de Serviços',
   'Consultoria Avulsa': 'Receita de Serviços',
   'Comissão de Êxito (Licitação Ganha)': 'Receita de Comissões',
+  'Comissão de Êxito (Parcelada)': 'Receita de Comissões',
+  'Comissão de Êxito (Recorrente)': 'Receita de Comissões',
   'Comissão de Êxito (Projetada - 12 meses)': 'Receita de Comissões',
   'Outras Receitas': 'Outras Receitas',
 }

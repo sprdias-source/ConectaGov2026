@@ -603,7 +603,11 @@ Deno.serve(async (req: Request) => {
     // pra outra — em vez de pedir pra IA reproduzir a formatação toda vez
     // (arriscando variar), colamos o texto salvo no cadastro do cliente na
     // frente de cada anexo gerado, de forma determinística.
-    const cabecalho = client?.cabecalho_declaracao?.trim()
+    // CORREÇÃO DE BUG (achado da simulação): sem fallback, um cliente que
+    // nunca preencheu o cabeçalho (campo opcional no cadastro) gerava
+    // declarações sem NENHUMA identificação no topo — nem nome, nem CNPJ.
+    // Mesmo fallback mínimo já usado em gerar-proposta/gerar-proposta-pdf.
+    const cabecalho = client?.cabecalho_declaracao?.trim() || `${client?.name ?? ''}\nCNPJ: ${client?.cnpj ?? ''}`.trim()
 
     let criados = 0
     for (const a of anexosEncontrados) {

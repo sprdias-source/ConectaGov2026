@@ -87,7 +87,7 @@ export default function EmpenhosTab() {
     checkEmpenhoHasFinancialHistory(deleting.id).then((hasHistory) => {
       setFinancialWarning(
         hasHistory
-          ? 'Este empenho possui parcelas de comissão já pagas — todo esse histórico será perdido junto.'
+          ? 'Este empenho possui parcelas de comissão já pagas — essas parcelas são preservadas no Financeiro (só perdem o vínculo com este empenho); só as parcelas ainda pendentes serão removidas.'
           : undefined
       )
     }).catch(() => {

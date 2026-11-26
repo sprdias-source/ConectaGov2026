@@ -148,6 +148,13 @@ export default function FuncionariosPage() {
       paymentMethod: 'PIX',
       status: 'Pendente',
       naturezaSaidaSocio: tipoSaida,
+      // CORREÇÃO DE BUG (achado da simulação): antes só existia o nome em
+      // texto livre na description — sem employeeId, excluir ou renomear o
+      // funcionário quebrava a única forma de rastrear o histórico
+      // financeiro dele. As guias consolidadas de INSS/IRRF/FGTS (abaixo)
+      // continuam sem employeeId de propósito: são somadas de TODOS os
+      // colaboradores da competência, não pertencem a um só.
+      employeeId: selectedEmployee.id,
     }]
 
     addTransactions.mutate(novosLancamentos, {
@@ -445,7 +452,7 @@ export default function FuncionariosPage() {
           <ConfirmDialog
             open={!!deleting}
             title="Remover colaborador?"
-            description={`Tem certeza que deseja remover "${deleting?.name}" do quadro?`}
+            description={`Tem certeza que deseja remover "${deleting?.name}" do quadro? Lançamentos de folha/comissão já gerados a partir dele são preservados no Financeiro, só perdendo o vínculo direto com o colaborador.`}
             confirmLabel="Remover"
             danger
             onCancel={() => setDeleting(null)}

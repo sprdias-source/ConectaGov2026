@@ -2324,6 +2324,7 @@ export type Database = {
           desconto: number | null
           due_date: string
           empenho_id: string | null
+          employee_id: string | null
           id: string
           is_projected: boolean
           is_recurring: boolean
@@ -2360,6 +2361,7 @@ export type Database = {
           desconto?: number | null
           due_date: string
           empenho_id?: string | null
+          employee_id?: string | null
           id?: string
           is_projected?: boolean
           is_recurring?: boolean
@@ -2396,6 +2398,7 @@ export type Database = {
           desconto?: number | null
           due_date?: string
           empenho_id?: string | null
+          employee_id?: string | null
           id?: string
           is_projected?: boolean
           is_recurring?: boolean
@@ -2447,6 +2450,13 @@ export type Database = {
             columns: ["empenho_id"]
             isOneToOne: false
             referencedRelation: "empenhos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
             referencedColumns: ["id"]
           },
           {
